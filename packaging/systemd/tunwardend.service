@@ -1,0 +1,14 @@
+[Unit]
+Description=TunWarden privileged networking daemon
+Documentation=https://github.com/AidarKhusainov/tunwarden
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/tunwardend
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target
