@@ -6,9 +6,9 @@ import "time"
 type Format string
 
 const (
-	FormatUnknown Format = "unknown"
-	FormatURIList Format = "uri-list"
-	FormatBase64  Format = "base64"
+	FormatUnknown  Format = "unknown"
+	FormatURIList  Format = "uri-list"
+	FormatBase64   Format = "base64"
 	FormatXrayJSON Format = "xray-json"
 	FormatSingBox  Format = "sing-box"
 	FormatMihomo   Format = "mihomo"
