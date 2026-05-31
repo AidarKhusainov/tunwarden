@@ -20,9 +20,11 @@ This separation keeps behavior easier to review and test.
 ```text
 cmd/tunwarden
   -> internal/app/cli
-  -> internal/client
-  -> internal/api
-  -> internal/render
+  -> internal/client       # daemon-backed operations once IPC exists
+  -> internal/api          # shared request/response contracts
+  -> internal/render       # CLI output rendering helpers
+  -> internal/doctor       # local read-only diagnostics in foundation builds
+  -> internal/recovery     # local read-only recovery planning in foundation builds
 
 cmd/tunwardend
   -> internal/app/daemon
@@ -38,6 +40,8 @@ cmd/tunwardend
 ```
 
 The exact names may evolve, but the direction should remain stable.
+
+In the foundation build, `internal/app/cli` may call local read-only diagnostic packages such as `internal/doctor` and dry-run recovery planning packages such as `internal/recovery` directly. Once daemon IPC exists, privileged or daemon-owned behavior must move behind `internal/client` and `internal/api`.
 
 ## 3. Domain packages
 
@@ -58,7 +62,8 @@ CLI packages should:
 - parse user input;
 - call client or local read-only diagnostic abstractions;
 - render output;
-- keep command behavior aligned with `docs/cli.md`.
+- keep command behavior aligned with `docs/cli.md`;
+- avoid directly mutating privileged system networking state.
 
 ## 5. Daemon packages
 
