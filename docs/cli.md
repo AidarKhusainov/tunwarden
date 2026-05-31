@@ -368,7 +368,6 @@ Mutation level:
 
 v0.1 requirement:
 
-- `recover` replaces the early design name `panic-reset`;
 - `recover` must be dry-run only in v0.1;
 - `--execute` must not be implemented in v0.1.
 
@@ -427,16 +426,6 @@ Notes:
 - latency, URL testing, and auto-select are convenience features, not reliability foundations.
 
 ## 6. Naming decisions
-
-### `recover` instead of `panic-reset`
-
-The early name `panic-reset` is retired.
-
-Reasoning:
-
-- `panic` sounds like an internal crash state rather than a user task;
-- `reset` is too broad and may imply profile or settings deletion;
-- `recover` describes the user goal: inspect and recover TunWarden-owned networking/runtime state.
 
 ### `import` as convenience, not replacement
 
