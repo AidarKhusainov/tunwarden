@@ -58,9 +58,9 @@ Exit criteria:
 - Panic reset and rollback are treated as first-class requirements.
 - Documentation has one canonical location per concern.
 
-## 4. Phase 1: CLI, daemon, and local IPC foundation
+## 4. Phase 1: CLI, daemon, local IPC, and read-only diagnostics foundation
 
-Goal: create the basic process model without risky networking changes.
+Goal: create the basic process model and diagnostic surface without risky networking changes.
 
 Deliverables:
 
@@ -73,7 +73,15 @@ Deliverables:
 - `status` command,
 - `logs` command,
 - structured error model,
-- daemon startup recovery scan in read-only mode.
+- daemon startup recovery scan in read-only mode,
+- read-only Linux diagnostics for:
+  - default route,
+  - default interface,
+  - NetworkManager availability/state,
+  - systemd-resolved availability/state,
+  - DNS mode,
+  - nftables availability,
+  - stale TunWarden-owned resources.
 
 Exit criteria:
 
