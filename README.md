@@ -14,9 +14,9 @@ What exists now:
 - `tunwarden` CLI skeleton.
 - `tunwardend` daemon skeleton.
 - Read-only `doctor` command contract.
-- Dry-run `panic-reset` command contract.
+- Dry-run recovery command contract.
 - Initial internal models for transactions, profiles, and subscriptions.
-- Product, architecture, networking, subscription, roadmap, and development documentation.
+- Product, CLI, architecture, networking, subscription, roadmap, and development documentation.
 
 What does not exist yet:
 
@@ -31,11 +31,13 @@ What does not exist yet:
 2. **CLI-first:** the first-class interface is a deterministic command line.
 3. **Daemon-owned privilege:** privileged networking belongs in a supervised root daemon, not in a SUID frontend or GUI.
 4. **Transactional networking:** every privileged network mutation must have a plan, snapshot, verification path, and rollback path.
-5. **Observable behavior:** `status`, `doctor`, `plan`, logs, and explain commands must make route, DNS, firewall, and core state understandable.
-6. **Recoverability over feature count:** disconnect, rollback, and panic reset are core product capabilities, not maintenance helpers.
+5. **Observable behavior:** `status`, `doctor`, `plan`, logs, and scoped diagnostics must make route, DNS, firewall, and core state understandable.
+6. **Recoverability over feature count:** disconnect, rollback, and recovery are core product capabilities, not maintenance helpers.
 7. **Lightweight by default:** avoid unnecessary background components, hidden global mutation, and broad protocol expansion before reliability is proven.
 
 ## Commands available in the foundation build
+
+The current implementation may still expose early command names while the code catches up with the canonical CLI contract.
 
 ```bash
 go test ./...
@@ -46,6 +48,8 @@ go run ./cmd/tunwarden panic-reset
 go run ./cmd/tunwardend
 ```
 
+Canonical future command names are defined in [CLI contract](docs/cli.md). The early `panic-reset` command is being replaced by `recover` in the product contract.
+
 ## Intended lifecycle model
 
 ```text
@@ -53,7 +57,7 @@ plan -> snapshot -> apply -> verify -> commit
                              \-> rollback on failure
 ```
 
-`panic-reset` exists as an emergency recovery path. In the current build it prints a dry-run cleanup plan only.
+`recover` exists as the emergency recovery path. In early builds it is dry-run only and must not change host networking state.
 
 ## Documentation
 
@@ -64,7 +68,9 @@ Start with the documentation index:
 Primary documents:
 
 - [Product requirements](docs/product-requirements.md)
+- [CLI contract](docs/cli.md)
 - [Architecture](docs/architecture.md)
+- [Package boundaries](docs/package-boundaries.md)
 - [Networking and reliability requirements](docs/networking-reliability.md)
 - [Subscriptions and profiles](docs/subscriptions-and-profiles.md)
 - [Roadmap](docs/roadmap.md)
