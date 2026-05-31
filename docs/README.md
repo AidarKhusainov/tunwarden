@@ -12,6 +12,7 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 - If code behavior changes, update the related requirement or roadmap section in the same pull request.
 - Architecture and networking rules are requirements, not implementation notes.
 - CLI command names, arguments, flags, and milestone boundaries are owned by [CLI contract](./cli.md).
+- Package dependency direction is owned by [Package boundaries](./package-boundaries.md).
 - Historical uppercase documents are deprecated and must not be used as canonical references.
 
 ## Canonical documentation map
@@ -20,7 +21,8 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 | --- | --- |
 | [Product requirements](./product-requirements.md) | Product thesis, target users, scope, functional requirements, non-functional requirements, success metrics. |
 | [CLI contract](./cli.md) | Canonical command names, arguments, flags, output expectations, safety semantics, and milestone boundaries. |
-| [Architecture](./architecture.md) | CLI/daemon split, privilege boundary, state model, transaction model, engine abstraction, backend interfaces, package dependency rules. |
+| [Architecture](./architecture.md) | CLI/daemon split, privilege boundary, state model, transaction model, engine abstraction, backend interfaces. |
+| [Package boundaries](./package-boundaries.md) | Dependency direction between CLI, daemon, API, domain, planner, executor, and adapter packages. |
 | [Networking and reliability requirements](./networking-reliability.md) | TUN, routing, DNS, nftables, NetworkManager, sleep/resume, health checks, recovery, reliability tests. |
 | [Subscriptions and profiles](./subscriptions-and-profiles.md) | Subscription inputs, format adapters, normalized profile model, validation, update behavior, storage. |
 | [Roadmap](./roadmap.md) | Ordered implementation phases and milestone boundaries. |
