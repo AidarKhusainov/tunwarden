@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/AidarKhusainov/tunwarden/internal/doctor"
-	"github.com/AidarKhusainov/tunwarden/internal/recover"
+	"github.com/AidarKhusainov/tunwarden/internal/recovery"
 )
 
 const version = "0.0.0-dev"
@@ -40,7 +40,7 @@ func runCLI(ctx context.Context, args []string, stdout io.Writer) error {
 		}
 		return nil
 	case "recover":
-		plan := recover.Plan()
+		plan := recovery.Plan()
 		fmt.Fprint(stdout, plan.String())
 		return nil
 	default:
