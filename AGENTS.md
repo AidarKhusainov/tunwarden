@@ -18,6 +18,27 @@ Default posture:
 
 Do not treat generated code as final until it is reviewed against the repository contracts.
 
+## Source of truth
+
+`AGENTS.md` is not the source of truth for product behavior.
+
+Product behavior is owned by:
+
+- `docs/*` for product, CLI, architecture, state, security, networking, and roadmap contracts;
+- code and tests for implemented behavior.
+
+If `AGENTS.md` conflicts with documentation or code, stop and report the mismatch instead of silently choosing one.
+
+Update `AGENTS.md` only when agent workflow rules change. Update `docs/*` when product behavior changes.
+
+## Current milestone boundary
+
+The current foundation build is intentionally safe and mostly declarative.
+
+Do not implement TUN, route, DNS, nftables, firewall, kill-switch, or privileged daemon behavior unless the task explicitly targets that milestone and updates the matching docs and tests.
+
+Prefer proxy-only behavior, read-only diagnostics, planning, and recoverability foundations until the roadmap says otherwise.
+
 ## Canonical project context
 
 Read these documents before changing behavior:
@@ -85,21 +106,70 @@ Generated core configs are runtime output, not persistent source of truth. Write
 
 All status, diagnostics, plans, recovery output, JSON output, and logs must share the same redaction policy.
 
+## Technology selection
+
+Do not chase new tools or libraries only because they are newer.
+
+Prefer technologies that are:
+
+- actively maintained;
+- available on Tier 1 Linux targets;
+- reproducible in CI;
+- compatible with the documented architecture;
+- justified by a concrete product or maintenance benefit.
+
 ## Testing and validation
 
 Before proposing a PR, run the relevant checks when possible:
 
 ```bash
-gofmt -w .
+test -z "$(gofmt -l .)"
 go test ./...
 go run ./cmd/tunwarden version
 go run ./cmd/tunwarden doctor
 go run ./cmd/tunwarden recover
 ```
 
+Use `gofmt -w .` only when fixing formatting, not as the validation command.
+
+For non-documentation PRs, prefer this validation ladder:
+
+```bash
+test -z "$(gofmt -l .)"
+go test ./...
+go vet ./...
+```
+
+Run `govulncheck ./...` when changing dependencies, parsers, process execution, networking, privilege boundaries, generated configs, or secret handling.
+
 For code touching planning, state, CLI output, or security, add or update tests. Prefer deterministic unit tests and fixtures. Do not rely on root-only integration tests for basic correctness.
 
 If checks cannot be run, state that clearly in the PR body with the reason.
+
+## Change-specific acceptance criteria
+
+For CLI changes, include tests or fixtures for:
+
+- stdout/stderr separation;
+- exit code;
+- `--json` shape and `schema_version`;
+- redaction parity between human and JSON output.
+
+For Linux networking changes, the PR must state:
+
+- what system state can change;
+- how TunWarden ownership is marked;
+- how the plan can be inspected before execution;
+- how verification works;
+- how rollback works;
+- how `recover` detects and cleans stale state.
+
+For systemd unit changes, document:
+
+- required capabilities;
+- hardening options;
+- every relaxation from the baseline;
+- why the daemon needs each privilege.
 
 ## Pull request expectations
 
@@ -115,6 +185,10 @@ A good PR should include:
 - documentation updated in the same PR when behavior changes.
 
 Keep PRs narrow. If a task reveals a larger design issue, document it and open a follow-up issue instead of mixing unrelated work into the same PR.
+
+## Nested agent files
+
+Do not add nested `AGENTS.md` files unless a subpackage needs materially different rules.
 
 ## Agent behavior rules
 
