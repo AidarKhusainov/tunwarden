@@ -14,7 +14,7 @@ What exists now:
 - `tunwarden` CLI skeleton.
 - `tunwardend` daemon skeleton.
 - Read-only `doctor` command contract.
-- Dry-run recovery command contract.
+- Dry-run `recover` command contract.
 - Initial internal models for transactions, profiles, and subscriptions.
 - Product, CLI, architecture, state/security, networking, subscription, roadmap, and development documentation.
 
@@ -29,7 +29,7 @@ What does not exist yet:
 
 1. **Linux-first:** Ubuntu LTS and Debian stable are Tier 1. Fedora and Arch should be supported through explicit platform adapters.
 2. **CLI-first:** the first-class interface is a deterministic command line.
-3. **Daemon-owned privilege:** privileged networking belongs in a supervised daemon, not in a SUID frontend or GUI.
+3. **Daemon-owned privilege:** privileged networking belongs in a supervised daemon.
 4. **Transactional networking:** every privileged network mutation must have a plan, snapshot, verification path, and rollback path.
 5. **Observable behavior:** `status`, `doctor`, `plan`, logs, and scoped diagnostics must make route, DNS, firewall, and core state understandable without leaking secrets.
 6. **Recoverability over feature count:** disconnect, rollback, and recovery are core product capabilities, not maintenance helpers.
@@ -37,18 +37,16 @@ What does not exist yet:
 
 ## Commands available in the foundation build
 
-The current implementation may still expose early command names while the code catches up with the canonical CLI contract.
-
 ```bash
 go test ./...
 go run ./cmd/tunwarden version
 go run ./cmd/tunwarden doctor
-go run ./cmd/tunwarden panic-reset
+go run ./cmd/tunwarden recover
 
 go run ./cmd/tunwardend
 ```
 
-Canonical future command names are defined in [CLI contract](docs/cli.md). The early `panic-reset` command is being replaced by `recover` in the product contract.
+Canonical command names are defined in [CLI contract](docs/cli.md).
 
 ## Intended lifecycle model
 
@@ -57,7 +55,7 @@ plan -> snapshot -> apply -> verify -> commit
                              \-> rollback on failure
 ```
 
-`recover` exists as the emergency recovery path. In early builds it is dry-run only and must not change host networking state.
+`recover` exists as the recovery path. In early builds it is dry-run only and must not change host networking state.
 
 ## Documentation
 
