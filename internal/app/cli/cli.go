@@ -1,4 +1,4 @@
-package app
+package cli
 
 import (
 	"context"
@@ -14,12 +14,12 @@ import (
 
 const version = "0.0.0-dev"
 
-// RunCLI executes the user-facing TunWarden command line interface.
-func RunCLI(ctx context.Context, args []string) error {
-	return runCLI(ctx, args, os.Stdout)
+// Run executes the user-facing TunWarden command line interface.
+func Run(ctx context.Context, args []string) error {
+	return run(ctx, args, os.Stdout)
 }
 
-func runCLI(ctx context.Context, args []string, stdout io.Writer) error {
+func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if len(args) == 0 {
 		printUsage(stdout)
 		return nil

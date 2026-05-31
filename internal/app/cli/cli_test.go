@@ -1,4 +1,4 @@
-package app
+package cli
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 func TestRunCLIVersion(t *testing.T) {
 	var out bytes.Buffer
 
-	err := runCLI(context.Background(), []string{"version"}, &out)
+	err := run(context.Background(), []string{"version"}, &out)
 	if err != nil {
 		t.Fatalf("version failed: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestRunCLIVersion(t *testing.T) {
 func TestRunCLIUnknownCommand(t *testing.T) {
 	var out bytes.Buffer
 
-	err := runCLI(context.Background(), []string{"unknown"}, &out)
+	err := run(context.Background(), []string{"unknown"}, &out)
 	if err == nil {
 		t.Fatal("expected unknown command to fail")
 	}

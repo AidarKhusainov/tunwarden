@@ -92,17 +92,29 @@ Core process safety requirements are owned by [State and security requirements](
 The current foundation build uses this package layout:
 
 ```text
-cmd/tunwarden       user-facing CLI
-cmd/tunwardend      daemon entrypoint
-internal/app        executable entrypoints and command dispatch
-internal/doctor     safe diagnostics
-internal/network    transaction and network planning model
-internal/profile    normalized VPN profile model
-internal/recovery   recovery plan and future cleanup behavior
-internal/sub        subscription source model
+cmd/tunwarden              user-facing CLI entrypoint
+cmd/tunwardend             daemon entrypoint
+internal/app/cli           CLI command dispatch
+internal/app/daemon        daemon process skeleton
+internal/api               shared API contracts
+internal/client            CLI-side daemon client adapters
+internal/daemon            daemon coordination
+internal/doctor            safe local diagnostics
+internal/engine            core engine lifecycle coordination
+internal/network           transaction and network planning model
+internal/network/planner   pure network planning logic
+internal/network/executor  narrow platform adapters
+internal/profile           normalized VPN profile model
+internal/recovery          recovery plan and future cleanup behavior
+internal/render            CLI output rendering helpers
+internal/service           daemon-owned product orchestration
+internal/state             runtime and durable state ownership helpers
+internal/sub               subscription source model
 ```
 
 This layout is expected to evolve, but the CLI/daemon boundary and planner/executor split should remain stable architectural constraints.
+
+In the foundation build, `internal/app/cli` may call local read-only diagnostics and dry-run recovery planning directly. Privileged or daemon-owned behavior must move behind the daemon client/API boundary once it is implemented.
 
 Package dependency direction is owned by [Package boundaries](./package-boundaries.md).
 
