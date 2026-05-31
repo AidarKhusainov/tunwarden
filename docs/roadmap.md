@@ -17,7 +17,7 @@ The repository currently contains a foundation build:
 - `tunwarden` CLI skeleton,
 - `tunwardend` daemon skeleton,
 - read-only `doctor` command contract,
-- dry-run `panic-reset` command contract,
+- dry-run `recover` command contract,
 - initial transaction/profile/subscription models,
 - CI with `gofmt` and `go test`,
 - canonical documentation under `docs/`.
@@ -42,6 +42,7 @@ Deliverables:
 
 - documentation index,
 - product requirements,
+- CLI contract,
 - architecture requirements,
 - networking/reliability requirements,
 - subscription/profile requirements,
@@ -55,7 +56,7 @@ Exit criteria:
 - MVP scope is clear.
 - Non-goals are documented.
 - Networking invariants are documented.
-- Panic reset and rollback are treated as first-class requirements.
+- Recovery and rollback are treated as first-class requirements.
 - Documentation has one canonical location per concern.
 
 ## 4. Phase 1: CLI, daemon, local IPC, and read-only diagnostics foundation
@@ -99,6 +100,7 @@ Deliverables:
 
 - internal profile model,
 - manual profile support,
+- convenience `tunwarden import` entrypoint,
 - share link parser for initial protocols,
 - Base64 subscription parser,
 - subscription storage,
@@ -116,6 +118,8 @@ Initial protocols:
 Exit criteria:
 
 - Profiles can be imported, listed, shown, validated, and deleted.
+- Subscriptions can be added, listed, shown, updated, and deleted.
+- `tunwarden import` can detect supported share links and subscriptions.
 - Subscription update failure preserves last known good state.
 - Unsupported formats fail clearly.
 - Unsafe profile settings are reported as warnings rather than silently accepted.
@@ -127,6 +131,7 @@ Goal: start and stop Xray safely without touching system routes, DNS, TUN, or fi
 Deliverables:
 
 - Xray engine manager,
+- `doctor --core` Xray validation,
 - generated runtime config under `/run/tunwarden/`,
 - local SOCKS/HTTP/mixed inbound where supported,
 - core process supervision,
@@ -134,6 +139,7 @@ Deliverables:
 - forced stop,
 - core logs,
 - basic health check,
+- `plan --mode proxy-only`,
 - proxy-only `connect` and `disconnect`.
 
 Exit criteria:
@@ -156,7 +162,7 @@ Deliverables:
 - firewall planner,
 - TUN planner,
 - transaction model,
-- `tunwarden plan <profile>`,
+- `tunwarden plan --mode tun <profile>`,
 - planner unit tests,
 - fake system snapshots for common desktop topologies.
 
@@ -179,7 +185,7 @@ Deliverables:
 - systemd-resolved DNS apply,
 - nftables foundation,
 - transaction apply/commit/rollback,
-- `panic-reset --execute` or equivalent explicit destructive mode,
+- `recover --execute` explicit cleanup mode,
 - `doctor` checks for route/DNS/TUN/firewall/core state,
 - integration tests in Linux network namespaces where possible.
 
@@ -187,7 +193,7 @@ Exit criteria:
 
 - Failed connection attempts roll back.
 - Disconnect leaves no TunWarden-owned routes, rules, DNS, nftables state, TUN interfaces, generated configs, or child processes.
-- `panic-reset` works when disconnected and after simulated failure.
+- `recover --execute` works when disconnected and after simulated failure.
 - VPN server route bypasses TUN.
 - Strict kill-switch behavior is explicit and recoverable.
 
@@ -230,7 +236,7 @@ Deliverables:
 
 Exit criteria:
 
-- Fresh Ubuntu installation can install, start daemon, connect, disconnect, run `doctor`, run `panic-reset`, and uninstall safely.
+- Fresh Ubuntu installation can install, start daemon, connect, disconnect, run `doctor`, run `recover`, and uninstall safely.
 - Package removal has a documented cleanup policy.
 
 ## 11. Phase 8: Advanced features
@@ -278,6 +284,8 @@ Features:
 - Base64 subscription import,
 - Xray proxy-only mode,
 - status/logs/doctor basics,
+- `plan --mode proxy-only`,
+- dry-run `recover`,
 - no TUN mode yet.
 
 Second milestone:
@@ -292,5 +300,5 @@ Features:
 - transaction rollback,
 - systemd-resolved backend,
 - nftables foundation,
-- panic-reset,
+- `recover --execute`,
 - Ubuntu LTS test checklist.
