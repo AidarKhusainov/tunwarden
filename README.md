@@ -14,7 +14,7 @@ What exists now:
 - `tunwarden` CLI skeleton.
 - `tunwardend` daemon skeleton.
 - Read-only `doctor` command with local Linux host diagnostics.
-- Dry-run `recover` command contract.
+- Read-only `recover` dry-run scan for clearly TunWarden-owned recovery candidates.
 - Initial internal models for transactions, profiles, and subscriptions.
 - Product, CLI, architecture, state/security, networking, subscription, roadmap, and development documentation.
 
@@ -46,7 +46,7 @@ go run ./cmd/tunwarden recover
 go run ./cmd/tunwardend
 ```
 
-Canonical command names are defined in [CLI contract](docs/cli.md). The implemented v0.1 `doctor` checks are defined in [Doctor diagnostics](docs/doctor-diagnostics.md).
+Canonical command names are defined in [CLI contract](docs/cli.md). The implemented v0.1 `doctor` checks are defined in [Doctor diagnostics](docs/doctor-diagnostics.md). The implemented v0.1 `recover` scan is defined in [Recovery dry-run](docs/recovery-dry-run.md).
 
 ## Intended lifecycle model
 
@@ -68,6 +68,7 @@ Primary documents:
 - [Product requirements](docs/product-requirements.md)
 - [CLI contract](docs/cli.md)
 - [Doctor diagnostics](docs/doctor-diagnostics.md)
+- [Recovery dry-run](docs/recovery-dry-run.md)
 - [Architecture](docs/architecture.md)
 - [State and security requirements](docs/state-and-security.md)
 - [Package boundaries](docs/package-boundaries.md)
