@@ -98,6 +98,26 @@ func TestPlanWithFakeScannerRendersCleanHost(t *testing.T) {
 	}
 }
 
+func TestPlanWithFakeScannerDoesNotRenderCleanHostWhenWarningsExist(t *testing.T) {
+	plan := PlanWithOptions(context.Background(), Options{Scanner: fakeScanner{result: ScanResult{
+		Warnings: []Warning{{
+			Target:  "TUN interface tunwarden0",
+			Message: "ip command is unavailable",
+		}},
+	}}})
+
+	got := plan.String()
+	if strings.Contains(got, "No TunWarden-owned recovery candidates found.") {
+		t.Fatalf("warning-only output must not claim a clean host, got %q", got)
+	}
+	if !strings.Contains(got, "Warning: could not inspect TUN interface tunwarden0: ip command is unavailable") {
+		t.Fatalf("expected warning in output, got %q", got)
+	}
+	if !strings.Contains(got, "No changes were applied.") {
+		t.Fatalf("expected no-mutation footer, got %q", got)
+	}
+}
+
 func TestOSScannerDetectsOwnedResources(t *testing.T) {
 	runtimeDir := t.TempDir()
 	generatedDir := filepath.Join(runtimeDir, "generated")
@@ -191,6 +211,9 @@ func TestOSScannerPreservesInspectionWarnings(t *testing.T) {
 		t.Fatalf("expected one warning, got %#v", plan.Warnings)
 	}
 	got := plan.String()
+	if strings.Contains(got, "No TunWarden-owned recovery candidates found.") {
+		t.Fatalf("warning-only output must not claim a clean host, got %q", got)
+	}
 	if !strings.Contains(got, "Warning: could not inspect TUN interface tunwarden0") || !strings.Contains(got, "Operation not permitted") {
 		t.Fatalf("expected inspection warning in output, got %q", got)
 	}
