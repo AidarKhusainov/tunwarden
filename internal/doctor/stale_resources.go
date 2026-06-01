@@ -21,7 +21,7 @@ func staleResources(ctx context.Context, runner CommandRunner, opts staleResourc
 	var warnings []string
 
 	if opts.ipOK {
-		result, err := runner.Run(ctx, opts.ipPath, "link", "show", "dev", managedInterface)
+		result, err := runCommand(ctx, runner, opts.ipPath, "link", "show", "dev", managedInterface)
 		switch {
 		case commandSucceeded(result, err):
 			stale = append(stale, fmt.Sprintf("interface %s exists", managedInterface))
@@ -34,7 +34,7 @@ func staleResources(ctx context.Context, runner CommandRunner, opts staleResourc
 	}
 
 	if opts.nftOK {
-		result, err := runner.Run(ctx, opts.nftPath, "list", "table", "inet", "tunwarden")
+		result, err := runCommand(ctx, runner, opts.nftPath, "list", "table", "inet", "tunwarden")
 		switch {
 		case commandSucceeded(result, err):
 			stale = append(stale, fmt.Sprintf("nft table %s exists", managedNFTTable))
@@ -56,11 +56,23 @@ func staleResources(ctx context.Context, runner CommandRunner, opts staleResourc
 		warnings = append(warnings, fmt.Sprintf("cannot inspect runtime directory %s: %v", opts.runtimeDir, err))
 	}
 
+	message := staleResourceMessage(stale, warnings)
+	if len(stale) > 0 || len(warnings) > 0 {
+		return Check{Name: "stale-resources", Severity: SeverityWarning, Message: message}
+	}
+	return Check{Name: "stale-resources", Severity: SeverityOK, Message: message}
+}
+
+func staleResourceMessage(stale []string, warnings []string) string {
+	parts := make([]string, 0, 2)
 	if len(stale) > 0 {
-		return Check{Name: "stale-resources", Severity: SeverityWarning, Message: "found " + strings.Join(stale, "; ")}
+		parts = append(parts, "found "+strings.Join(stale, "; "))
 	}
 	if len(warnings) > 0 {
-		return Check{Name: "stale-resources", Severity: SeverityWarning, Message: strings.Join(warnings, "; ")}
+		parts = append(parts, "incomplete checks: "+strings.Join(warnings, "; "))
 	}
-	return Check{Name: "stale-resources", Severity: SeverityOK, Message: "no TunWarden-owned resources found"}
+	if len(parts) == 0 {
+		return "no TunWarden-owned resources found"
+	}
+	return strings.Join(parts, "; ")
 }
