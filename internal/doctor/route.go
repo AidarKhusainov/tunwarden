@@ -27,7 +27,7 @@ func defaultRoute(ctx context.Context, runner CommandRunner, ipPath string, ipOK
 		}
 	}
 
-	result, err := runner.Run(ctx, ipPath, "route", "show", "default")
+	result, err := runCommand(ctx, runner, ipPath, "route", "show", "default")
 	if !commandSucceeded(result, err) {
 		message := fmt.Sprintf("ip route show default failed: %s", commandFailureMessage(result, err))
 		return routeDiagnostics{
