@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/AidarKhusainov/tunwarden/internal/doctor"
+	"github.com/AidarKhusainov/tunwarden/internal/recovery"
 )
 
 func TestRunCLIVersion(t *testing.T) {
@@ -117,6 +118,33 @@ func TestRunCLIVersionRejectsArguments(t *testing.T) {
 	}
 	if got := ExitCode(err); got != 2 {
 		t.Fatalf("expected exit code 2, got %d", got)
+	}
+}
+
+func TestRunCLIRecoverRendersDryRunPlan(t *testing.T) {
+	var out bytes.Buffer
+
+	err := runWithOptions(context.Background(), []string{"recover"}, &out, options{
+		recover: func(context.Context) recovery.PlanResult {
+			return recovery.PlanResult{Candidates: []recovery.Candidate{
+				{Kind: "tun-interface", Description: "TUN interface", Target: "tunwarden0"},
+			}}
+		},
+	})
+	if err != nil {
+		t.Fatalf("recover failed: %v", err)
+	}
+
+	got := out.String()
+	want := []string{
+		"TunWarden recovery dry-run",
+		"Would recover TUN interface: tunwarden0",
+		"No changes were applied.",
+	}
+	for _, text := range want {
+		if !strings.Contains(got, text) {
+			t.Fatalf("expected output to contain %q, got %q", text, got)
+		}
 	}
 }
 
