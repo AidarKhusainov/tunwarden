@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
+
+const defaultCommandTimeout = 3 * time.Second
 
 // CommandResult contains a completed command's observable output.
 type CommandResult struct {
@@ -57,6 +60,13 @@ func (OSRunner) Run(ctx context.Context, name string, args ...string) (CommandRe
 	}
 
 	return result, err
+}
+
+func runCommand(ctx context.Context, runner CommandRunner, name string, args ...string) (CommandResult, error) {
+	cmdCtx, cancel := context.WithTimeout(ctx, defaultCommandTimeout)
+	defer cancel()
+
+	return runner.Run(cmdCtx, name, args...)
 }
 
 func commandSucceeded(result CommandResult, err error) bool {
