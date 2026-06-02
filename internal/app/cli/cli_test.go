@@ -3,11 +3,14 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/AidarKhusainov/tunwarden/internal/client"
 	"github.com/AidarKhusainov/tunwarden/internal/doctor"
 	"github.com/AidarKhusainov/tunwarden/internal/recovery"
+	"github.com/AidarKhusainov/tunwarden/internal/status"
 )
 
 func TestRunCLIVersion(t *testing.T) {
@@ -41,6 +44,124 @@ func TestExitCodeNil(t *testing.T) {
 	}
 }
 
+func TestRunCLIStatusHelp(t *testing.T) {
+	var out bytes.Buffer
+
+	err := run(context.Background(), []string{"status", "--help"}, &out)
+	if err != nil {
+		t.Fatalf("status --help failed: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "Usage:\n  tunwarden status") {
+		t.Fatalf("expected status help output, got %q", got)
+	}
+}
+
+func TestRunCLIHelpStatus(t *testing.T) {
+	var out bytes.Buffer
+
+	err := run(context.Background(), []string{"help", "status"}, &out)
+	if err != nil {
+		t.Fatalf("help status failed: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "Report TunWarden status") {
+		t.Fatalf("expected status help output, got %q", got)
+	}
+}
+
+func TestRunCLIStatusUsesDaemonWhenReachable(t *testing.T) {
+	var out bytes.Buffer
+
+	err := runWithOptions(context.Background(), []string{"status"}, &out, options{
+		daemonStatus: func(context.Context) (status.Report, error) {
+			return status.Report{
+				Daemon:           "running",
+				Connection:       "inactive",
+				RuntimeDirectory: status.RuntimeDirectory{Message: "present"},
+				Proxy:            "inactive",
+				TUN:              "disabled",
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("status failed: %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{"Daemon: running", "Connection: inactive", "Proxy: inactive", "TUN: disabled"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected %q in %q", want, got)
+		}
+	}
+}
+
+func TestRunCLIStatusFallsBackWhenDaemonUnavailable(t *testing.T) {
+	var out bytes.Buffer
+
+	err := runWithOptions(context.Background(), []string{"status"}, &out, options{
+		daemonStatus: func(context.Context) (status.Report, error) {
+			return status.Report{}, client.ErrDaemonUnavailable
+		},
+	})
+	if err != nil {
+		t.Fatalf("unavailable daemon with clean fallback should not fail: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "Daemon: not reachable") || !strings.Contains(got, "using local fallback") {
+		t.Fatalf("expected clear fallback output, got %q", got)
+	}
+}
+
+func TestRunCLIStatusWarnsWhenDaemonProtocolFails(t *testing.T) {
+	var out bytes.Buffer
+
+	err := runWithOptions(context.Background(), []string{"status"}, &out, options{
+		daemonStatus: func(context.Context) (status.Report, error) {
+			return status.Report{}, errors.New("bad daemon response")
+		},
+	})
+	if err == nil {
+		t.Fatal("expected protocol failure to return diagnostic exit")
+	}
+	if got := ExitCode(err); got != 3 {
+		t.Fatalf("expected exit 3, got %d", got)
+	}
+	if got := out.String(); !strings.Contains(got, "could not inspect daemon status API") {
+		t.Fatalf("expected daemon warning, got %q", got)
+	}
+}
+
+func TestRunCLIStatusRejectsUnsupportedArguments(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		wantMessage string
+	}{
+		{name: "json", args: []string{"status", "--json"}, wantMessage: "status --json is not implemented yet"},
+		{name: "garbage", args: []string{"status", "garbage"}, wantMessage: "unsupported status argument"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+
+			err := run(context.Background(), tt.args, &out)
+			if err == nil {
+				t.Fatalf("expected %v to fail", tt.args)
+			}
+			if got := ExitCode(err); got != 2 {
+				t.Fatalf("expected exit code 2, got %d", got)
+			}
+			if !strings.Contains(err.Error(), tt.wantMessage) {
+				t.Fatalf("expected error containing %q, got %q", tt.wantMessage, err.Error())
+			}
+			if got := out.String(); got != "" {
+				t.Fatalf("expected no stdout on usage error, got %q", got)
+			}
+		})
+	}
+}
+
 func TestRunCLIDoctorHelp(t *testing.T) {
 	var out bytes.Buffer
 
@@ -71,21 +192,9 @@ func TestRunCLIDoctorRejectsUnsupportedArguments(t *testing.T) {
 		args        []string
 		wantMessage string
 	}{
-		{
-			name:        "json",
-			args:        []string{"doctor", "--json"},
-			wantMessage: "doctor --json is not implemented yet",
-		},
-		{
-			name:        "core",
-			args:        []string{"doctor", "--core"},
-			wantMessage: "doctor --core is not implemented yet",
-		},
-		{
-			name:        "garbage",
-			args:        []string{"doctor", "garbage"},
-			wantMessage: "unsupported doctor argument",
-		},
+		{name: "json", args: []string{"doctor", "--json"}, wantMessage: "doctor --json is not implemented yet"},
+		{name: "core", args: []string{"doctor", "--core"}, wantMessage: "doctor --core is not implemented yet"},
+		{name: "garbage", args: []string{"doctor", "garbage"}, wantMessage: "unsupported doctor argument"},
 	}
 
 	for _, tt := range tests {
@@ -136,11 +245,7 @@ func TestRunCLIRecoverRendersDryRunPlan(t *testing.T) {
 	}
 
 	got := out.String()
-	want := []string{
-		"TunWarden recovery dry-run",
-		"Would recover TUN interface: tunwarden0",
-		"No changes were applied.",
-	}
+	want := []string{"TunWarden recovery dry-run", "Would recover TUN interface: tunwarden0", "No changes were applied."}
 	for _, text := range want {
 		if !strings.Contains(got, text) {
 			t.Fatalf("expected output to contain %q, got %q", text, got)
