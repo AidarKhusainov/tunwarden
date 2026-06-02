@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/AidarKhusainov/tunwarden/internal/api"
 )
 
 type fakeRunner struct {
@@ -44,6 +46,9 @@ func (r fakeRunner) Run(_ context.Context, name string, args ...string) (Command
 func TestRunWithOptionsReportsSuccessfulLinuxDiagnostics(t *testing.T) {
 	report := successfulReport(t)
 
+	if report.Source != SourceLocalFallback {
+		t.Fatalf("expected local fallback source, got %q", report.Source)
+	}
 	assertCheckOrder(t, report, []string{
 		"platform",
 		"iproute2",
@@ -158,6 +163,61 @@ func TestRunWithOptionsPreservesStaleResourceWarnings(t *testing.T) {
 	assertCheck(t, report, "stale-resources", SeverityWarning, "found interface tunwarden0 exists")
 	assertCheck(t, report, "stale-resources", SeverityWarning, "incomplete checks: cannot inspect nft table inet tunwarden")
 	assertCheck(t, report, "stale-resources", SeverityWarning, "Operation not permitted")
+}
+
+func TestRunWithOptionsDoesNotTreatLiveDaemonRuntimeDirAsStale(t *testing.T) {
+	runtimeDir := t.TempDir()
+	report := RunWithOptions(context.Background(), Options{
+		Runner: fakeRunner{
+			paths: map[string]string{
+				"ip":         "/usr/sbin/ip",
+				"nmcli":      "/usr/bin/nmcli",
+				"systemctl":  "/usr/bin/systemctl",
+				"resolvectl": "/usr/bin/resolvectl",
+				"nft":        "/usr/sbin/nft",
+			},
+			commands: map[string]fakeCommand{
+				"ip route show default": {
+					stdout: "default via 192.0.2.1 dev wlp0s20f3",
+				},
+				"ip link show dev tunwarden0": {
+					stderr:   "Device \"tunwarden0\" does not exist.",
+					exitCode: 1,
+					err:      errors.New("exit status 1"),
+				},
+				"nft list table inet tunwarden": {
+					stderr:   "Error: No such file or directory",
+					exitCode: 1,
+					err:      errors.New("exit status 1"),
+				},
+			},
+		},
+		RuntimeDir:              runtimeDir,
+		RuntimeDirOwnedByDaemon: true,
+	})
+
+	assertCheck(t, report, "stale-resources", SeverityOK, "no TunWarden-owned resources found")
+}
+
+func TestReportStringIncludesSource(t *testing.T) {
+	report := Report{Source: SourceDaemon, Checks: []Check{{Name: "daemon", Severity: SeverityOK, Message: "running"}}}
+	got := report.String()
+	if !strings.Contains(got, "Source: daemon") {
+		t.Fatalf("expected source line, got %q", got)
+	}
+}
+
+func TestDaemonConversionPreservesReportModel(t *testing.T) {
+	report := Report{Source: SourceDaemon, Checks: []Check{{Name: "daemon", Severity: SeverityOK, Message: "running"}}}
+	response := ToDaemon(report)
+	if err := api.ValidateDoctorResponse(response); err != nil {
+		t.Fatalf("daemon response should be valid: %v", err)
+	}
+	converted := FromDaemon(response)
+	if converted.Source != SourceDaemon {
+		t.Fatalf("expected daemon source, got %q", converted.Source)
+	}
+	assertCheck(t, converted, "daemon", SeverityOK, "running")
 }
 
 func successfulReport(t *testing.T) Report {
