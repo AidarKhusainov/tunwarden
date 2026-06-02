@@ -1,6 +1,6 @@
 # Doctor diagnostics
 
-This document defines the implemented v0.1 local diagnostics for `tunwarden doctor`.
+This document defines the implemented v0.1 diagnostics for `tunwarden doctor`.
 
 The command name, flags, exit codes, stdout/stderr rules, and JSON compatibility are owned by [CLI contract](./cli.md). This document owns the current read-only Linux diagnostic set and its safety boundaries.
 
@@ -19,15 +19,30 @@ It must not:
 
 It may inspect host state through read-only commands and filesystem checks.
 
+When `tunwardend` is reachable, the CLI requests the report through the local daemon API. When the daemon is missing, inaccessible, times out, or returns an invalid response, the CLI falls back to the same local read-only diagnostic model and prints a daemon warning.
+
 ## Human output contract
 
 The default human report starts with:
 
 ```text
 TunWarden doctor report
+Source: daemon|local fallback
 ```
 
-The v0.1 check order is stable enough for tests:
+Daemon-backed reports include:
+
+```text
+[OK] daemon: running
+```
+
+Local fallback reports include a daemon warning before local checks, for example:
+
+```text
+[WARN] daemon: daemon socket /run/tunwarden/tunwardend.sock does not exist; start tunwardend
+```
+
+The v0.1 local check order after any daemon reachability check is stable enough for tests:
 
 1. `platform`
 2. `iproute2`
@@ -42,12 +57,20 @@ The v0.1 check order is stable enough for tests:
 Each check uses one of these severities:
 
 - `OK`: the check completed and did not find an unhealthy condition;
-- `WARN`: the check completed with missing optional tooling, missing optional state, or incomplete visibility;
+- `WARN`: the check completed with missing optional tooling, missing optional state, incomplete visibility, or daemon fallback;
 - `FAIL`: a required diagnostic command failed in a way that makes the result unreliable.
 
 Missing host tools must produce `WARN` results instead of panics or crashes.
 
 ## v0.1 checks
+
+### `daemon`
+
+Reports whether diagnostics came from the daemon-backed path.
+
+When daemon diagnostics are available, this check is `OK` with message `running`.
+
+When daemon diagnostics are unavailable, this check is `WARN` and includes an actionable connection, timeout, or daemon protocol fallback message. Local diagnostics continue after this warning.
 
 ### `platform`
 
@@ -111,4 +134,4 @@ Detects known TunWarden-owned resource names:
 - nftables table `inet tunwarden` through `nft list table inet tunwarden`;
 - runtime path `/run/tunwarden` through filesystem metadata.
 
-Absent resources are healthy. Existing TunWarden-owned resources are reported as `WARN` until cleanup behavior is explicitly implemented in a later milestone.
+Absent resources are healthy. Existing TunWarden-owned resources are reported as `WARN` until cleanup behavior is explicitly implemented in a later milestone. When diagnostics run through a live daemon, the daemon-owned runtime directory itself is not treated as stale merely because it exists.
