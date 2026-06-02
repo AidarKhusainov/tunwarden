@@ -10,6 +10,7 @@ import (
 func TestFromDaemonRendersDaemonBackedStatus(t *testing.T) {
 	report := FromDaemon(api.StatusResponse{
 		Daemon:           "running",
+		Service:          api.ServiceSystemd,
 		Connection:       "inactive",
 		RuntimeDirectory: "present",
 		Proxy:            "inactive",
@@ -20,7 +21,7 @@ func TestFromDaemonRendersDaemonBackedStatus(t *testing.T) {
 		t.Fatalf("daemon-backed inactive status should be healthy: %#v", report)
 	}
 	got := report.String()
-	for _, want := range []string{"Daemon: running", "Connection: inactive", "Runtime directory: present", "Proxy: inactive", "TUN: disabled", "Stale state: none"} {
+	for _, want := range []string{"Daemon: running", "Service: systemd", "Connection: inactive", "Runtime directory: present", "Proxy: inactive", "TUN: disabled", "Stale state: none"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected output to contain %q, got %q", want, got)
 		}
@@ -30,6 +31,7 @@ func TestFromDaemonRendersDaemonBackedStatus(t *testing.T) {
 func TestWithDaemonUnavailableKeepsCleanFallbackHealthy(t *testing.T) {
 	report := WithDaemonUnavailable(Report{
 		Daemon:           "not running",
+		Service:          "none",
 		Connection:       "inactive",
 		RuntimeDirectory: RuntimeDirectory{Message: "missing"},
 		Proxy:            "inactive",
