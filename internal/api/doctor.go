@@ -1,8 +1,14 @@
 package api
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
-const DoctorPath = "/v1/doctor"
+const (
+	DoctorPath         = "/v1/doctor"
+	DoctorSourceDaemon = "daemon"
+)
 
 type DoctorResponse struct {
 	Source string        `json:"source"`
@@ -18,6 +24,9 @@ type DoctorCheck struct {
 func ValidateDoctorResponse(d DoctorResponse) error {
 	if d.Source == "" {
 		return errors.New("missing source field")
+	}
+	if d.Source != DoctorSourceDaemon {
+		return fmt.Errorf("invalid source field %q", d.Source)
 	}
 	if len(d.Checks) == 0 {
 		return errors.New("missing checks")
