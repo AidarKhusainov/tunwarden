@@ -207,6 +207,30 @@ func TestReportStringIncludesSource(t *testing.T) {
 	}
 }
 
+func TestReportStringRedactsDiagnostics(t *testing.T) {
+	uuid := "123e4567-e89b-12d3-a456-426614174000"
+	report := Report{
+		Source: "source token=source-secret " + uuid,
+		Checks: []Check{{
+			Name:     "check password=name-secret " + uuid,
+			Severity: SeverityWarning,
+			Message:  "failed with token=message-secret password=message-password trace_id=" + uuid,
+		}},
+	}
+
+	got := report.String()
+	for _, leaked := range []string{"source-secret", "name-secret", "message-secret", "message-password", uuid} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("doctor output leaked %q in %q", leaked, got)
+		}
+	}
+	for _, want := range []string{"token=REDACTED", "password=REDACTED", "123e…4000"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("doctor output should contain redacted marker %q, got %q", want, got)
+		}
+	}
+}
+
 func TestDaemonConversionPreservesReportModel(t *testing.T) {
 	report := Report{Source: SourceDaemon, Checks: []Check{{Name: "daemon", Severity: SeverityOK, Message: "running"}}}
 	response := ToDaemon(report)
