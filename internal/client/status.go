@@ -58,6 +58,9 @@ func (c StatusClient) Status(ctx context.Context) (api.StatusResponse, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
 		return api.StatusResponse{}, fmt.Errorf("daemon status response was invalid: %w", err)
 	}
+	if err := api.ValidateStatusResponse(status); err != nil {
+		return api.StatusResponse{}, fmt.Errorf("daemon status response was invalid: %w", err)
+	}
 	return status, nil
 }
 
