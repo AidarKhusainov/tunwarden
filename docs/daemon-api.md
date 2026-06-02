@@ -41,6 +41,7 @@ TUNWARDEN_RUNTIME_DIR=/tmp/tunwarden-dev go run ./cmd/tunwarden doctor
 For the manual systemd service in `packaging/systemd/tunwardend.service`, the packaged access model is:
 
 - systemd creates `/run/tunwarden` with `RuntimeDirectory=tunwarden` and `RuntimeDirectoryMode=0750`;
+- `packaging/sysusers.d/tunwarden.conf` declares the `tunwarden` system group for packaged installs;
 - `tunwardend` runs as `root:tunwarden`;
 - the daemon creates `/run/tunwarden/tunwardend.sock` and applies socket mode `0660`;
 - users that should run read-only CLI commands against the daemon need access through the `tunwarden` group.
