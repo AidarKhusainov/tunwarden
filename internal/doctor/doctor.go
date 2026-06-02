@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/AidarKhusainov/tunwarden/internal/api"
+	"github.com/AidarKhusainov/tunwarden/internal/render"
 )
 
 const (
@@ -157,9 +158,9 @@ func (r Report) HasFailures() bool {
 func (r Report) String() string {
 	var b strings.Builder
 	b.WriteString("TunWarden doctor report\n")
-	fmt.Fprintf(&b, "Source: %s\n", r.normalizedSource())
+	fmt.Fprintf(&b, "Source: %s\n", render.Redact(r.normalizedSource()))
 	for _, check := range r.Checks {
-		fmt.Fprintf(&b, "[%s] %s: %s\n", check.Severity, check.Name, check.Message)
+		fmt.Fprintf(&b, "[%s] %s: %s\n", check.Severity, render.Redact(check.Name), render.Redact(check.Message))
 	}
 	return b.String()
 }
