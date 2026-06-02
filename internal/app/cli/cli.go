@@ -294,9 +294,9 @@ func printStatusHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage:
   tunwarden status
 
-Report TunWarden status. The command uses daemon-backed status when the local
-Unix socket API is reachable and falls back to read-only local inspection when
-it is not.
+Report local TunWarden runtime state. The command uses daemon-backed status
+when the local Unix socket API is reachable and falls back to read-only local
+inspection when it is not.
 
 Implemented in v0.1:
   daemon-backed inactive status, conservative local fallback, runtime directory
