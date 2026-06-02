@@ -31,9 +31,16 @@ TUNWARDEN_RUNTIME_DIR=/tmp/tunwarden-dev go run ./cmd/tunwardend
 TUNWARDEN_RUNTIME_DIR=/tmp/tunwarden-dev go run ./cmd/tunwarden status
 ```
 
+The same local development model applies to daemon-backed diagnostics:
+
+```bash
+TUNWARDEN_RUNTIME_DIR=/tmp/tunwarden-dev go run ./cmd/tunwardend
+TUNWARDEN_RUNTIME_DIR=/tmp/tunwarden-dev go run ./cmd/tunwarden doctor
+```
+
 The packaged system service access model is deferred. It must explicitly define a Unix socket ownership policy, such as a dedicated `tunwarden` group with systemd socket or runtime directory settings. Until that packaging work exists, a root-owned default `/run/tunwarden/tunwardend.sock` may be inaccessible to unprivileged users and the CLI must continue to fall back to read-only local inspection.
 
-Read-only CLI commands must not require root. The packaged daemon access model must preserve that rule before daemon-backed status becomes the only status path.
+Read-only CLI commands must not require root. The packaged daemon access model must preserve that rule before daemon-backed status or diagnostics become the only path.
 
 ## Why D-Bus and polkit are deferred
 
@@ -41,15 +48,15 @@ D-Bus and polkit are intentionally not implemented in this issue.
 
 Reasons:
 
-- v0.1 status is read-only and does not require an authorization policy engine;
+- v0.1 status and diagnostics are read-only and do not require an authorization policy engine;
 - there are no privileged route, DNS, nftables, firewall, TUN, or core process mutations in this issue;
-- Unix sockets are enough for a local daemon health/status API;
+- Unix sockets are enough for a local daemon health/status/diagnostics API;
 - HTTP/JSON over Unix sockets is simple to unit test without a system bus;
 - polkit decisions should be introduced together with real privileged operations and documented authorization rules.
 
 D-Bus and polkit remain valid future options for packaged desktop integration and authorization, but adding them before daemon-owned mutations would increase complexity without improving the current user-visible behavior.
 
-## Implemented endpoint
+## Implemented endpoints
 
 ### `GET /v1/status`
 
@@ -82,6 +89,39 @@ All listed fields except `warnings` are required in daemon responses. The CLI tr
 
 This is an internal local API contract, not the public `status --json` CLI contract. `tunwarden status --json` remains deferred until the CLI JSON schema is implemented.
 
+### `GET /v1/doctor`
+
+Returns the current daemon-backed read-only diagnostics report.
+
+Current v0.1 response shape:
+
+```json
+{
+  "source": "daemon",
+  "checks": [
+    {
+      "name": "daemon",
+      "severity": "OK",
+      "message": "running"
+    }
+  ]
+}
+```
+
+Fields:
+
+| Field | Meaning |
+| --- | --- |
+| `source` | Report source. Daemon responses use `daemon`. |
+| `checks` | Ordered diagnostic checks rendered by `tunwarden doctor`. |
+| `checks[].name` | Stable check name. |
+| `checks[].severity` | One of `OK`, `WARN`, or `FAIL`. |
+| `checks[].message` | Human-readable diagnostic detail. |
+
+All listed fields are required. The CLI treats missing fields, invalid severities, invalid JSON, or unexpected HTTP status as daemon protocol errors and falls back to local read-only diagnostics with a daemon warning.
+
+This is an internal local API contract, not the public `doctor --json` CLI contract. `tunwarden doctor --json` remains deferred until the CLI JSON schema is implemented.
+
 ## Runtime lifecycle
 
 On startup, `tunwardend`:
@@ -92,7 +132,7 @@ On startup, `tunwardend`:
 4. fails explicitly when the socket path exists but is not a Unix socket;
 5. listens on the Unix socket;
 6. applies the socket mode;
-7. serves the read-only status endpoint.
+7. serves the read-only status and doctor endpoints.
 
 On graceful shutdown, `tunwardend`:
 
@@ -116,4 +156,4 @@ It must not:
 - start, stop, or supervise Xray;
 - mutate user profiles or subscriptions.
 
-The current endpoint only reports daemon availability and conservative inactive runtime state.
+The current endpoints only report daemon availability, conservative inactive runtime state, and read-only host diagnostics.

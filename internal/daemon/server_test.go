@@ -37,6 +37,40 @@ func TestServerExposesStatusOverUnixSocket(t *testing.T) {
 	}
 }
 
+func TestServerExposesDoctorOverUnixSocket(t *testing.T) {
+	runtimeDir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- (Server{RuntimeDir: runtimeDir}).Run(ctx) }()
+
+	doctorClient := client.DoctorClient{SocketPath: runtimeDir + "/tunwardend.sock", Timeout: time.Second}
+	var source string
+	var sawDaemonCheck bool
+	for i := 0; i < 50; i++ {
+		report, err := doctorClient.Doctor(context.Background())
+		if err == nil {
+			source = report.Source
+			for _, check := range report.Checks {
+				if check.Name == "daemon" && check.Severity == "OK" && check.Message == "running" {
+					sawDaemonCheck = true
+				}
+			}
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("server shutdown failed: %v", err)
+	}
+	if source != "daemon" {
+		t.Fatalf("expected daemon doctor source, got %q", source)
+	}
+	if !sawDaemonCheck {
+		t.Fatalf("expected daemon doctor check")
+	}
+}
+
 func TestServerRejectsNonSocketAtSocketPath(t *testing.T) {
 	runtimeDir := t.TempDir()
 	socketPath := filepath.Join(runtimeDir, api.SocketName)

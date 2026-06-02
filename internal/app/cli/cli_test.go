@@ -3,9 +3,11 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/AidarKhusainov/tunwarden/internal/client"
 	"github.com/AidarKhusainov/tunwarden/internal/doctor"
 	"github.com/AidarKhusainov/tunwarden/internal/recovery"
 	"github.com/AidarKhusainov/tunwarden/internal/status"
@@ -129,22 +131,13 @@ func TestRunCLIStatusRejectsUnsupportedArguments(t *testing.T) {
 		args        []string
 		wantMessage string
 	}{
-		{
-			name:        "json",
-			args:        []string{"status", "--json"},
-			wantMessage: "status --json is not implemented yet",
-		},
-		{
-			name:        "garbage",
-			args:        []string{"status", "garbage"},
-			wantMessage: "unsupported status argument",
-		},
+		{name: "json", args: []string{"status", "--json"}, wantMessage: "status --json is not implemented yet"},
+		{name: "garbage", args: []string{"status", "garbage"}, wantMessage: "unsupported status argument"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var out bytes.Buffer
-
 			err := run(context.Background(), tt.args, &out)
 			if err == nil {
 				t.Fatalf("expected %v to fail", tt.args)
@@ -181,8 +174,70 @@ func TestRunCLIHelpDoctor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("help doctor failed: %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "Run read-only local diagnostics") {
+	if got := out.String(); !strings.Contains(got, "daemon-backed diagnostics") {
 		t.Fatalf("expected doctor help output, got %q", got)
+	}
+}
+
+func TestRunCLIDoctorUsesDaemonWhenAvailable(t *testing.T) {
+	var out bytes.Buffer
+
+	err := runWithOptions(context.Background(), []string{"doctor"}, &out, options{
+		daemonDoctor: func(context.Context) (doctor.Report, error) {
+			return doctor.Report{Source: doctor.SourceDaemon, Checks: []doctor.Check{{Name: "daemon", Severity: doctor.SeverityOK, Message: "running"}}}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("doctor failed: %v", err)
+	}
+
+	got := out.String()
+	for _, text := range []string{"TunWarden doctor report", "Source: daemon", "[OK] daemon: running"} {
+		if !strings.Contains(got, text) {
+			t.Fatalf("expected output to contain %q, got %q", text, got)
+		}
+	}
+}
+
+func TestRunCLIDoctorFallsBackWhenDaemonUnavailable(t *testing.T) {
+	var out bytes.Buffer
+
+	err := runWithOptions(context.Background(), []string{"doctor"}, &out, options{
+		daemonDoctor: func(context.Context) (doctor.Report, error) {
+			return doctor.Report{}, fmt.Errorf("%w: daemon socket /tmp/tunwardend.sock does not exist; start tunwardend", client.ErrDaemonUnavailable)
+		},
+		doctor: func(context.Context) doctor.Report { return cleanDoctorReport() },
+	})
+	if err != nil {
+		t.Fatalf("doctor fallback failed: %v", err)
+	}
+
+	got := out.String()
+	for _, text := range []string{"Source: local fallback", "[WARN] daemon: daemon socket /tmp/tunwardend.sock does not exist; start tunwardend", "[OK] platform: linux/amd64"} {
+		if !strings.Contains(got, text) {
+			t.Fatalf("expected output to contain %q, got %q", text, got)
+		}
+	}
+}
+
+func TestRunCLIDoctorFallsBackOnDaemonTimeout(t *testing.T) {
+	var out bytes.Buffer
+
+	err := runWithOptions(context.Background(), []string{"doctor"}, &out, options{
+		daemonDoctor: func(context.Context) (doctor.Report, error) {
+			return doctor.Report{}, fmt.Errorf("%w: daemon socket /tmp/tunwardend.sock did not respond before timeout; start or restart tunwardend", client.ErrDaemonUnavailable)
+		},
+		doctor: func(context.Context) doctor.Report { return cleanDoctorReport() },
+	})
+	if err != nil {
+		t.Fatalf("doctor timeout fallback failed: %v", err)
+	}
+
+	got := out.String()
+	for _, text := range []string{"Source: local fallback", "[WARN] daemon: daemon socket /tmp/tunwardend.sock did not respond before timeout; start or restart tunwardend"} {
+		if !strings.Contains(got, text) {
+			t.Fatalf("expected output to contain %q, got %q", text, got)
+		}
 	}
 }
 
@@ -192,27 +247,14 @@ func TestRunCLIDoctorRejectsUnsupportedArguments(t *testing.T) {
 		args        []string
 		wantMessage string
 	}{
-		{
-			name:        "json",
-			args:        []string{"doctor", "--json"},
-			wantMessage: "doctor --json is not implemented yet",
-		},
-		{
-			name:        "core",
-			args:        []string{"doctor", "--core"},
-			wantMessage: "doctor --core is not implemented yet",
-		},
-		{
-			name:        "garbage",
-			args:        []string{"doctor", "garbage"},
-			wantMessage: "unsupported doctor argument",
-		},
+		{name: "json", args: []string{"doctor", "--json"}, wantMessage: "doctor --json is not implemented yet"},
+		{name: "core", args: []string{"doctor", "--core"}, wantMessage: "doctor --core is not implemented yet"},
+		{name: "garbage", args: []string{"doctor", "garbage"}, wantMessage: "unsupported doctor argument"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var out bytes.Buffer
-
 			err := run(context.Background(), tt.args, &out)
 			if err == nil {
 				t.Fatalf("expected %v to fail", tt.args)
@@ -247,9 +289,7 @@ func TestRunCLIRecoverRendersDryRunPlan(t *testing.T) {
 
 	err := runWithOptions(context.Background(), []string{"recover"}, &out, options{
 		recover: func(context.Context) recovery.PlanResult {
-			return recovery.PlanResult{Candidates: []recovery.Candidate{
-				{Kind: "tun-interface", Description: "TUN interface", Target: "tunwarden0"},
-			}}
+			return recovery.PlanResult{Candidates: []recovery.Candidate{{Kind: "tun-interface", Description: "TUN interface", Target: "tunwarden0"}}}
 		},
 	})
 	if err != nil {
@@ -257,12 +297,7 @@ func TestRunCLIRecoverRendersDryRunPlan(t *testing.T) {
 	}
 
 	got := out.String()
-	want := []string{
-		"TunWarden recovery dry-run",
-		"Would recover TUN interface: tunwarden0",
-		"No changes were applied.",
-	}
-	for _, text := range want {
+	for _, text := range []string{"TunWarden recovery dry-run", "Would recover TUN interface: tunwarden0", "No changes were applied."} {
 		if !strings.Contains(got, text) {
 			t.Fatalf("expected output to contain %q, got %q", text, got)
 		}
@@ -289,11 +324,7 @@ func TestRunCLIDoctorReturnsDiagnosticExitCodeForFailures(t *testing.T) {
 
 	err := runWithOptions(context.Background(), []string{"doctor"}, &out, options{
 		doctor: func(context.Context) doctor.Report {
-			return doctor.Report{Checks: []doctor.Check{{
-				Name:     "default-route",
-				Severity: doctor.SeverityFail,
-				Message:  "ip route show default failed: test failure",
-			}}}
+			return doctor.Report{Checks: []doctor.Check{{Name: "default-route", Severity: doctor.SeverityFail, Message: "ip route show default failed: test failure"}}}
 		},
 	})
 
@@ -316,4 +347,8 @@ func cleanStatusReport() status.Report {
 		Proxy:            "inactive",
 		TUN:              "not managed in this build",
 	}
+}
+
+func cleanDoctorReport() doctor.Report {
+	return doctor.Report{Source: doctor.SourceLocalFallback, Checks: []doctor.Check{{Name: "platform", Severity: doctor.SeverityOK, Message: "linux/amd64"}}}
 }

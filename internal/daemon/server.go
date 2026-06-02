@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"github.com/AidarKhusainov/tunwarden/internal/api"
+	"github.com/AidarKhusainov/tunwarden/internal/doctor"
 )
 
 type Server struct {
 	RuntimeDir string
 	Status     func(context.Context) api.StatusResponse
+	Doctor     func(context.Context) api.DoctorResponse
 }
 
 func (s Server) Run(ctx context.Context) error {
@@ -63,6 +65,20 @@ func (s Server) Run(ctx context.Context) error {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(statusFn(r.Context()))
 	})
+	mux.HandleFunc(api.DoctorPath, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		doctorFn := s.Doctor
+		if doctorFn == nil {
+			doctorFn = func(ctx context.Context) api.DoctorResponse {
+				return DefaultDoctor(ctx, runtimeDir)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(doctorFn(r.Context()))
+	})
 
 	httpServer := http.Server{Handler: mux}
 	errc := make(chan error, 1)
@@ -90,6 +106,13 @@ func (s Server) Run(ctx context.Context) error {
 
 func DefaultStatus(context.Context) api.StatusResponse {
 	return api.StatusResponse{Daemon: "running", Connection: "inactive", RuntimeDirectory: "present", Proxy: "inactive", TUN: "disabled"}
+}
+
+func DefaultDoctor(ctx context.Context, runtimeDir string) api.DoctorResponse {
+	report := doctor.RunWithOptions(ctx, doctor.Options{RuntimeDir: runtimeDir, RuntimeDirOwnedByDaemon: true})
+	report = doctor.WithSource(report, doctor.SourceDaemon)
+	report = doctor.WithDaemonCheck(report, doctor.SeverityOK, "running")
+	return doctor.ToDaemon(report)
 }
 
 func removeStaleSocket(path string) error {
