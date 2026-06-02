@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/AidarKhusainov/tunwarden/internal/client"
 	"github.com/AidarKhusainov/tunwarden/internal/doctor"
 	"github.com/AidarKhusainov/tunwarden/internal/recovery"
 	"github.com/AidarKhusainov/tunwarden/internal/status"
@@ -42,9 +43,10 @@ func ExitCode(err error) int {
 }
 
 type options struct {
-	doctor  func(context.Context) doctor.Report
-	recover func(context.Context) recovery.PlanResult
-	status  func(context.Context) status.Report
+	doctor       func(context.Context) doctor.Report
+	recover      func(context.Context) recovery.PlanResult
+	status       func(context.Context) status.Report
+	daemonStatus func(context.Context) (status.Report, error)
 }
 
 // Run executes the user-facing TunWarden command line interface.
@@ -199,7 +201,37 @@ func runStatus(ctx context.Context, opts options) status.Report {
 	if opts.status != nil {
 		return opts.status(ctx)
 	}
-	return status.Inspect(ctx)
+
+	daemonStatus, err := runDaemonStatus(ctx, opts)
+	if err == nil {
+		return daemonStatus
+	}
+
+	local := status.Inspect(ctx)
+	if client.IsDaemonUnavailable(err) {
+		return status.WithDaemonUnavailable(local, client.UnavailableMessage(err))
+	}
+
+	local.Warnings = append(local.Warnings, status.Warning{
+		Target:  "daemon status API",
+		Message: err.Error(),
+	})
+	if local.Connection == "inactive" {
+		local.Connection = "unknown (inspection incomplete)"
+	}
+	return local
+}
+
+func runDaemonStatus(ctx context.Context, opts options) (status.Report, error) {
+	if opts.daemonStatus != nil {
+		return opts.daemonStatus(ctx)
+	}
+
+	response, err := (client.StatusClient{}).Status(ctx)
+	if err != nil {
+		return status.Report{}, err
+	}
+	return status.FromDaemon(response), nil
 }
 
 func runDoctor(ctx context.Context, opts options) doctor.Report {
@@ -244,8 +276,9 @@ Usage:
   tunwarden help [command]
 
 Current status:
-  This is an early foundation build. Commands print contracts, local status,
-  diagnostics, and recovery plans; they do not yet mutate system networking state.
+  This is an early foundation build. Commands print contracts, daemon-backed
+  or local status, diagnostics, and recovery plans; they do not yet mutate
+  system networking state.
 `)
 }
 
@@ -261,14 +294,16 @@ func printStatusHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage:
   tunwarden status
 
-Report local TunWarden runtime state without requiring daemon IPC.
+Report TunWarden status. The command uses daemon-backed status when the local
+Unix socket API is reachable and falls back to read-only local inspection when
+it is not.
 
 Implemented in v0.1:
-  daemon fallback state, conservative connection/proxy/TUN state, runtime
-  directory state, stale runtime candidate summary, and recovery guidance.
+  daemon-backed inactive status, conservative local fallback, runtime directory
+  state, stale runtime candidate summary, and recovery guidance.
 
 Not implemented yet:
-  --json, daemon-backed active connection status
+  --json, active profile/mode, proxy process lifecycle, core health
 `)
 }
 
