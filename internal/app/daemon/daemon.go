@@ -3,9 +3,12 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
+
+	daemonapi "github.com/AidarKhusainov/tunwarden/internal/daemon"
 )
 
 // Run starts the privileged daemon skeleton.
@@ -13,14 +16,24 @@ import (
 // The daemon will eventually own all privileged networking mutations. Keeping
 // that responsibility out of the user CLI avoids SUID binaries and makes crash
 // recovery testable through one long-running process.
-func Run(ctx context.Context, _ []string) error {
+func Run(ctx context.Context, args []string) error {
+	return run(ctx, args, os.Stdout)
+}
+
+func run(ctx context.Context, args []string, stdout io.Writer) error {
+	if len(args) > 0 {
+		return fmt.Errorf("tunwardend does not accept arguments yet")
+	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	fmt.Println("tunwardend: daemon skeleton started")
-	fmt.Println("tunwardend: no network changes are applied in this build")
+	fmt.Fprintln(stdout, "tunwardend: daemon started")
+	fmt.Fprintln(stdout, "tunwardend: serving local status API over Unix socket")
+	fmt.Fprintln(stdout, "tunwardend: no network changes are applied in this build")
 
-	<-ctx.Done()
-	fmt.Println("tunwardend: shutdown requested")
+	if err := (daemonapi.Server{}).Run(ctx); err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, "tunwardend: shutdown complete")
 	return nil
 }
