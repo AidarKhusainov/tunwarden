@@ -12,9 +12,9 @@ What exists now:
 
 - Go module and CI skeleton.
 - `tunwarden` CLI skeleton.
-- `tunwardend` daemon skeleton with a read-only local Unix socket status API.
+- `tunwardend` daemon skeleton with read-only local Unix socket status and doctor APIs.
 - Read-only `status` command with daemon-backed status and local runtime fallback.
-- Read-only `doctor` command with local Linux host diagnostics.
+- Read-only `doctor` command with daemon-backed diagnostics and local Linux host fallback.
 - Read-only `recover` dry-run scan for clearly TunWarden-owned recovery candidates.
 - Initial internal models for transactions, profiles, and subscriptions.
 - Product, CLI, architecture, state/security, networking, subscription, roadmap, and development documentation.
