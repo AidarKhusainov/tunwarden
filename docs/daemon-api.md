@@ -20,6 +20,21 @@ TUNWARDEN_RUNTIME_DIR=/tmp/tunwarden-dev
 
 This keeps the first daemon API small, local-only, and testable with Go's standard library.
 
+## Access model
+
+The v0.1 server sets the daemon socket mode to `0660` and fails startup if permissions cannot be applied.
+
+For local development and manual testing, run both `tunwardend` and `tunwarden status` as the same user and set `TUNWARDEN_RUNTIME_DIR` to a user-owned directory, for example:
+
+```bash
+TUNWARDEN_RUNTIME_DIR=/tmp/tunwarden-dev go run ./cmd/tunwardend
+TUNWARDEN_RUNTIME_DIR=/tmp/tunwarden-dev go run ./cmd/tunwarden status
+```
+
+The packaged system service access model is deferred. It must explicitly define a Unix socket ownership policy, such as a dedicated `tunwarden` group with systemd socket or runtime directory settings. Until that packaging work exists, a root-owned default `/run/tunwarden/tunwardend.sock` may be inaccessible to unprivileged users and the CLI must continue to fall back to read-only local inspection.
+
+Read-only CLI commands must not require root. The packaged daemon access model must preserve that rule before daemon-backed status becomes the only status path.
+
 ## Why D-Bus and polkit are deferred
 
 D-Bus and polkit are intentionally not implemented in this issue.
@@ -63,6 +78,8 @@ Fields:
 | `tun` | TUN mode state. v0.1 reports `disabled`. |
 | `warnings` | Optional daemon-side visibility warnings. |
 
+All listed fields except `warnings` are required in daemon responses. The CLI treats missing required fields as a daemon protocol error and uses the existing warning/fallback path instead of rendering a healthy daemon-backed status.
+
 This is an internal local API contract, not the public `status --json` CLI contract. `tunwarden status --json` remains deferred until the CLI JSON schema is implemented.
 
 ## Runtime lifecycle
@@ -71,9 +88,11 @@ On startup, `tunwardend`:
 
 1. creates the runtime directory if needed;
 2. creates a daemon lock file;
-3. removes a stale socket path if present;
-4. listens on the Unix socket;
-5. serves the read-only status endpoint.
+3. removes only a stale Unix socket at the socket path if present;
+4. fails explicitly when the socket path exists but is not a Unix socket;
+5. listens on the Unix socket;
+6. applies the socket mode;
+7. serves the read-only status endpoint.
 
 On graceful shutdown, `tunwardend`:
 
