@@ -68,7 +68,7 @@ func runProfileList(store profile.Store, args []string, stdout io.Writer) error 
 	}
 
 	if jsonOutput {
-		return writeJSON(stdout, map[string]any{"schema_version": "v1", "profiles": profiles})
+		return writeJSON(stdout, okJSON(map[string]any{"profiles": profiles}))
 	}
 
 	fmt.Fprintln(stdout, "ID        NAME   PROTOCOL  SERVER       PORT")
@@ -90,7 +90,7 @@ func runProfileShow(store profile.Store, args []string, stdout io.Writer) error 
 	}
 
 	if jsonOutput {
-		return writeJSON(stdout, map[string]any{"schema_version": "v1", "profile": p})
+		return writeJSON(stdout, okJSON(map[string]any{"profile": p}))
 	}
 
 	fmt.Fprintf(stdout, "ID: %s\n", p.ID)
@@ -259,6 +259,19 @@ func writeJSON(stdout io.Writer, value any) error {
 	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)
+}
+
+func okJSON(fields map[string]any) map[string]any {
+	response := map[string]any{
+		"schema_version": "v1",
+		"status":         "ok",
+		"warnings":       []string{},
+		"errors":         []string{},
+	}
+	for key, value := range fields {
+		response[key] = value
+	}
+	return response
 }
 
 func profileCommandError(err error) error {
