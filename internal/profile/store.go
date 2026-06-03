@@ -183,20 +183,5 @@ func (s Store) save(profiles []Profile) error {
 	if err := os.Rename(tmpName, s.path); err != nil {
 		return fmt.Errorf("replace profile store atomically: %w", err)
 	}
-	if err := syncDir(dir); err != nil {
-		return err
-	}
-	return nil
-}
-
-func syncDir(path string) error {
-	dir, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open profile store directory for sync: %w", err)
-	}
-	defer dir.Close()
-	if err := dir.Sync(); err != nil {
-		return fmt.Errorf("sync profile store directory: %w", err)
-	}
 	return nil
 }
