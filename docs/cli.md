@@ -324,6 +324,19 @@ Purpose: inspect TunWarden daemon and core logs.
 
 Mutation level: read-only.
 
+Implemented in the issue #9 journald-backed daemon log view:
+
+- human output only;
+- recent `tunwardend.service` logs through `journalctl`;
+- `--follow` and `-f` for live log following;
+- `--daemon` as the explicit daemon log source;
+- `--since <duration>` passed to journalctl;
+- shared human-output redaction for each printed log line.
+
+`logs --json` and `logs --core` are deferred to separate issues. Until implemented, they must fail fast as invalid usage with exit code `2`.
+
+If `journalctl` is unavailable, the command must fail clearly with an actionable message.
+
 `-f` may alias `--follow` because it is a common log-following pattern.
 
 ### Plan
@@ -425,31 +438,11 @@ tunwarden doctor --firewall
 These commands are not part of v0.1 unless a later issue explicitly changes the milestone:
 
 ```bash
-tunwarden core check --xray <path>
-tunwarden explain routes
-tunwarden explain dns
-tunwarden explain firewall
-tunwarden latency
-tunwarden test-url
-tunwarden auto-select
+tunwarden reconnect
+tunwarden network ...
+tunwarden firewall ...
+tunwarden dns ...
+tunwarden debug ...
 ```
 
-Notes:
-
-- `core check` is deferred because `doctor --core` is the preferred user-facing workflow.
-- `explain ...` commands are deferred until `doctor` and `plan` output become too large for one command.
-- latency, URL testing, and auto-select are convenience features, not reliability foundations.
-
-## 6. Naming decisions
-
-### `import` as convenience, not replacement
-
-`tunwarden import` exists for first-run convenience and format detection.
-
-It must not replace explicit `profile` and `subscription` command groups, because profiles and subscriptions have different lifecycles.
-
-### `plan` is a safety command
-
-`plan` is required because TunWarden changes Linux networking in later milestones.
-
-It must not become decorative. If a plan cannot explain meaningful changes or non-changes, it should not be exposed for that mode yet.
+Rationale: these commands risk encouraging manual mutation before the daemon transaction model and recovery path are mature enough.
