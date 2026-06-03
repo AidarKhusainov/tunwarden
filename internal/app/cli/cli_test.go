@@ -339,6 +339,36 @@ func TestRunCLILogsParsesFollowDaemonAndSince(t *testing.T) {
 	}
 }
 
+func TestRunCLILogsAcceptsJournalctlCompatibleSinceValues(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		wantSince string
+	}{
+		{name: "negative-relative-token", args: []string{"logs", "--since", "-1h"}, wantSince: "-1h"},
+		{name: "negative-relative-equals", args: []string{"logs", "--since=-30min"}, wantSince: "-30min"},
+		{name: "positive-relative-token", args: []string{"logs", "--since", "+5min"}, wantSince: "+5min"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotOptions logs.Options
+			err := runWithOptions(context.Background(), tt.args, &bytes.Buffer{}, options{
+				logs: func(_ context.Context, _ io.Writer, opts logs.Options) error {
+					gotOptions = opts
+					return nil
+				},
+			})
+			if err != nil {
+				t.Fatalf("logs failed: %v", err)
+			}
+			if gotOptions.Since != tt.wantSince {
+				t.Fatalf("expected since %q, got %#v", tt.wantSince, gotOptions)
+			}
+		})
+	}
+}
+
 func TestRunCLILogsRejectsUnsupportedArguments(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -348,7 +378,8 @@ func TestRunCLILogsRejectsUnsupportedArguments(t *testing.T) {
 		{name: "json", args: []string{"logs", "--json"}, wantMessage: "logs --json is not implemented yet"},
 		{name: "core", args: []string{"logs", "--core"}, wantMessage: "logs --core is not implemented yet"},
 		{name: "missing-since", args: []string{"logs", "--since"}, wantMessage: "logs --since requires a value"},
-		{name: "flag-since", args: []string{"logs", "--since", "--follow"}, wantMessage: "logs --since requires a value"},
+		{name: "option-since", args: []string{"logs", "--since", "--follow"}, wantMessage: "logs --since requires a value"},
+		{name: "empty-since-equals", args: []string{"logs", "--since="}, wantMessage: "logs --since requires a value"},
 		{name: "garbage", args: []string{"logs", "garbage"}, wantMessage: "unsupported logs argument"},
 	}
 
