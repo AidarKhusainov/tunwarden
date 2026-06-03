@@ -3,6 +3,7 @@ package logs
 import (
 	"bytes"
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -10,7 +11,7 @@ import (
 
 func TestBuildJournalctlArgsDefaultsToRecentDaemonLogs(t *testing.T) {
 	got := BuildJournalctlArgs(Options{})
-	want := []string{"--unit", DaemonUnit, "--no-pager", "--output", "short", "--lines", DefaultLines}
+	want := []string{"--system", "--unit", DaemonUnit, "--no-pager", "--output", "short", "--lines", DefaultLines}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("journalctl args mismatch\nwant: %#v\n got: %#v", want, got)
 	}
@@ -18,7 +19,7 @@ func TestBuildJournalctlArgsDefaultsToRecentDaemonLogs(t *testing.T) {
 
 func TestBuildJournalctlArgsSupportsFollowAndSince(t *testing.T) {
 	got := BuildJournalctlArgs(Options{Follow: true, Since: "1 hour ago"})
-	want := []string{"--unit", DaemonUnit, "--no-pager", "--output", "short", "--since", "1 hour ago", "--follow"}
+	want := []string{"--system", "--unit", DaemonUnit, "--no-pager", "--output", "short", "--since", "1 hour ago", "--follow"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("journalctl args mismatch\nwant: %#v\n got: %#v", want, got)
 	}
@@ -44,6 +45,27 @@ func TestScanRedactedRedactsSensitiveLogContent(t *testing.T) {
 	}
 }
 
+func TestScanRedactedHandlesLongLogLines(t *testing.T) {
+	longMessage := strings.Repeat("x", 70*1024)
+	input := strings.NewReader("Jun 03 host tunwardend[123]: " + longMessage + "\n")
+	var out bytes.Buffer
+
+	if err := scanRedacted(&out, input); err != nil {
+		t.Fatalf("scanRedacted failed for long log line: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, longMessage) {
+		t.Fatalf("expected long log line to be preserved, got output length %d", len(got))
+	}
+}
+
+func TestScanRedactedReturnsWriteErrors(t *testing.T) {
+	wantErr := errors.New("write failed")
+	err := scanRedacted(errorWriter{err: wantErr}, strings.NewReader("Jun 03 host tunwardend[123]: daemon started\n"))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected write error %v, got %v", wantErr, err)
+	}
+}
+
 func TestRunReturnsActionableErrorWhenJournalctlIsMissing(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 
@@ -58,4 +80,12 @@ func TestRunReturnsActionableErrorWhenJournalctlIsMissing(t *testing.T) {
 	if got := out.String(); got != "" {
 		t.Fatalf("expected no stdout when journalctl is missing, got %q", got)
 	}
+}
+
+type errorWriter struct {
+	err error
+}
+
+func (w errorWriter) Write([]byte) (int, error) {
+	return 0, w.err
 }
