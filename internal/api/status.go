@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -9,13 +10,18 @@ import (
 const (
 	DefaultRuntimeDir = "/run/tunwarden"
 	RuntimeDirEnv     = "TUNWARDEN_RUNTIME_DIR"
+	ServiceEnv        = "TUNWARDEN_SERVICE"
 	SocketName        = "tunwardend.sock"
 	LockName          = "tunwardend.lock"
 	StatusPath        = "/v1/status"
+
+	ServiceManual  = "manual"
+	ServiceSystemd = "systemd"
 )
 
 type StatusResponse struct {
 	Daemon           string   `json:"daemon"`
+	Service          string   `json:"service"`
 	Connection       string   `json:"connection"`
 	RuntimeDirectory string   `json:"runtime_directory"`
 	Proxy            string   `json:"proxy"`
@@ -27,6 +33,10 @@ func ValidateStatusResponse(s StatusResponse) error {
 	switch {
 	case s.Daemon == "":
 		return errors.New("missing daemon field")
+	case s.Service == "":
+		return errors.New("missing service field")
+	case !ValidService(s.Service):
+		return fmt.Errorf("invalid service field %q", s.Service)
 	case s.Connection == "":
 		return errors.New("missing connection field")
 	case s.RuntimeDirectory == "":
@@ -45,6 +55,22 @@ func RuntimeDirFromEnv() string {
 		return dir
 	}
 	return DefaultRuntimeDir
+}
+
+func ServiceFromEnv() string {
+	if os.Getenv(ServiceEnv) == ServiceSystemd {
+		return ServiceSystemd
+	}
+	return ServiceManual
+}
+
+func ValidService(service string) bool {
+	switch service {
+	case ServiceManual, ServiceSystemd:
+		return true
+	default:
+		return false
+	}
 }
 
 func SocketPath(runtimeDir string) string {
