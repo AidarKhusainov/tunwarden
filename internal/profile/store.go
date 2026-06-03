@@ -36,7 +36,7 @@ func NewStore(path string) (Store, error) {
 // documented ~/.local/state/tunwarden/profiles.json fallback.
 func DefaultStorePath() (string, error) {
 	stateHome := os.Getenv("XDG_STATE_HOME")
-	if stateHome == "" {
+	if stateHome == "" || !filepath.IsAbs(stateHome) {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", fmt.Errorf("resolve TunWarden state directory: %w", err)
@@ -150,11 +150,12 @@ func (s Store) load() ([]Profile, error) {
 }
 
 func (s Store) save(profiles []Profile) error {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+	dir := filepath.Dir(s.path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create profile store directory: %w", err)
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".profiles-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".profiles-*.tmp")
 	if err != nil {
 		return fmt.Errorf("create temporary profile store: %w", err)
 	}
@@ -181,6 +182,21 @@ func (s Store) save(profiles []Profile) error {
 	}
 	if err := os.Rename(tmpName, s.path); err != nil {
 		return fmt.Errorf("replace profile store atomically: %w", err)
+	}
+	if err := syncDir(dir); err != nil {
+		return err
+	}
+	return nil
+}
+
+func syncDir(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open profile store directory for sync: %w", err)
+	}
+	defer dir.Close()
+	if err := dir.Sync(); err != nil {
+		return fmt.Errorf("sync profile store directory: %w", err)
 	}
 	return nil
 }
