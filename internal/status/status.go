@@ -47,6 +47,7 @@ type Warning struct {
 // Report is the local status snapshot rendered by the v0.1 CLI fallback.
 type Report struct {
 	Daemon           string
+	Service          string
 	Connection       string
 	RuntimeDirectory RuntimeDirectory
 	Proxy            string
@@ -73,7 +74,8 @@ func InspectWithOptions(ctx context.Context, opts Options) Report {
 	}
 
 	report := Report{
-		Daemon: "not running",
+		Daemon:  "not running",
+		Service: "none",
 		RuntimeDirectory: RuntimeDirectory{
 			Path: runtimeDir,
 		},
@@ -114,6 +116,7 @@ func InspectWithOptions(ctx context.Context, opts Options) Report {
 func FromDaemon(s api.StatusResponse) Report {
 	return Report{
 		Daemon:     s.Daemon,
+		Service:    s.Service,
 		Connection: s.Connection,
 		RuntimeDirectory: RuntimeDirectory{
 			State:   RuntimeDirectoryPresent,
@@ -141,6 +144,7 @@ func (r Report) String() string {
 	var b strings.Builder
 	b.WriteString("TunWarden status\n")
 	fmt.Fprintf(&b, "Daemon: %s\n", render.Redact(r.Daemon))
+	fmt.Fprintf(&b, "Service: %s\n", render.Redact(serviceLine(r.Service)))
 	fmt.Fprintf(&b, "Connection: %s\n", render.Redact(r.Connection))
 	fmt.Fprintf(&b, "Runtime directory: %s\n", render.Redact(r.RuntimeDirectory.Message))
 	fmt.Fprintf(&b, "Proxy: %s\n", render.Redact(r.Proxy))
@@ -252,6 +256,13 @@ func connectionState(candidates []Candidate, warnings []Warning) string {
 	default:
 		return "inactive"
 	}
+}
+
+func serviceLine(service string) string {
+	if service == "" {
+		return "unknown"
+	}
+	return service
 }
 
 func staleStateLine(candidates []Candidate, warnings []Warning) string {

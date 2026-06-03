@@ -17,6 +17,8 @@ The repository currently contains a foundation build:
 - `tunwarden` CLI skeleton,
 - `tunwardend` daemon skeleton,
 - local Unix socket HTTP/JSON daemon IPC for read-only status and doctor diagnostics,
+- manual systemd service unit with `/run/tunwarden` runtime directory handling and journald logging,
+- group-based daemon socket access model for the repository systemd unit,
 - read-only `status` with daemon-backed status and conservative local fallback,
 - read-only `doctor` with daemon-backed diagnostics and local fallback for platform, command availability, default route/interface, and stale TunWarden-owned resources,
 - dry-run `recover` command contract,
@@ -31,8 +33,8 @@ The repository does **not** yet contain:
 - subscription parsing,
 - TUN creation,
 - route/DNS/nftables mutation,
-- systemd unit files,
-- packaged daemon socket access model.
+- `.deb` package or installer,
+- auto-start enablement policy.
 
 ## 3. Phase 0: Documentation and repository foundation
 
@@ -97,6 +99,8 @@ Implemented foundation subset:
 - CLI skeleton,
 - daemon skeleton,
 - local Unix socket HTTP/JSON transport,
+- manual systemd unit for `tunwardend`,
+- journald logging through the systemd unit,
 - daemon-backed `status` with local fallback,
 - daemon-backed `doctor` with local fallback,
 - shared human-output redaction for implemented status and doctor output,
