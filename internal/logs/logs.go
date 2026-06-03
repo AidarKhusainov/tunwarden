@@ -30,13 +30,16 @@ func Run(ctx context.Context, stdout io.Writer, opts Options) error {
 		return errors.New("journalctl is not available; install systemd journal tools or run on a systemd/journald host")
 	}
 
-	fmt.Fprintln(stdout, "TunWarden daemon logs")
+	if _, err := fmt.Fprintln(stdout, "TunWarden daemon logs"); err != nil {
+		return fmt.Errorf("write logs header: %w", err)
+	}
 	return RunJournalctl(ctx, stdout, opts)
 }
 
 // BuildJournalctlArgs returns the exact journalctl argument vector for daemon logs.
 func BuildJournalctlArgs(opts Options) []string {
 	args := []string{
+		"--system",
 		"--unit", DaemonUnit,
 		"--no-pager",
 		"--output", "short",
@@ -70,19 +73,16 @@ func RunJournalctl(ctx context.Context, stdout io.Writer, opts Options) error {
 	}
 
 	var stderr bytes.Buffer
-	errc := make(chan error, 2)
-	go func() { errc <- scanRedacted(stdout, outPipe) }()
-	go func() { errc <- scanRedacted(&stderr, errPipe) }()
+	errc := make(chan scanResult, 2)
+	go func() { errc <- scanResult{name: "stdout", err: scanRedacted(stdout, outPipe)} }()
+	go func() { errc <- scanResult{name: "stderr", err: scanRedacted(&stderr, errPipe)} }()
 
 	waitErr := cmd.Wait()
-	stdoutErr := <-errc
-	stderrErr := <-errc
-
-	if stdoutErr != nil {
-		return fmt.Errorf("read journalctl output: %w", stdoutErr)
-	}
-	if stderrErr != nil {
-		return fmt.Errorf("read journalctl error output: %w", stderrErr)
+	for range 2 {
+		result := <-errc
+		if result.err != nil {
+			return fmt.Errorf("read journalctl %s: %w", result.name, result.err)
+		}
 	}
 	if waitErr != nil {
 		message := strings.TrimSpace(stderr.String())
@@ -94,10 +94,27 @@ func RunJournalctl(ctx context.Context, stdout io.Writer, opts Options) error {
 	return nil
 }
 
+type scanResult struct {
+	name string
+	err  error
+}
+
 func scanRedacted(dst io.Writer, src io.Reader) error {
-	scanner := bufio.NewScanner(src)
-	for scanner.Scan() {
-		fmt.Fprintln(dst, render.Redact(scanner.Text()))
+	reader := bufio.NewReader(src)
+	for {
+		line, err := reader.ReadString('\n')
+		if len(line) > 0 {
+			line = strings.TrimRight(line, "\r\n")
+			if _, writeErr := fmt.Fprintln(dst, render.Redact(line)); writeErr != nil {
+				return writeErr
+			}
+		}
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return err
 	}
-	return scanner.Err()
 }
