@@ -236,7 +236,7 @@ func parseLogsArgs(args []string) (logs.Options, error) {
 			// Daemon logs are the default and only implemented v0.1 source.
 		case "--since":
 			i++
-			if i >= len(args) || strings.TrimSpace(args[i]) == "" {
+			if i >= len(args) || strings.TrimSpace(args[i]) == "" || isLogsOption(args[i]) {
 				return opts, usageError("logs --since requires a value")
 			}
 			opts.Since = args[i]
@@ -249,6 +249,18 @@ func parseLogsArgs(args []string) (logs.Options, error) {
 		}
 	}
 	return opts, nil
+}
+
+func isLogsOption(arg string) bool {
+	if _, ok := strings.CutPrefix(arg, "--since="); ok {
+		return true
+	}
+	switch arg {
+	case "--follow", "-f", "--daemon", "--since", "--json", "--core":
+		return true
+	default:
+		return false
+	}
 }
 
 func runStatus(ctx context.Context, opts options) status.Report {
