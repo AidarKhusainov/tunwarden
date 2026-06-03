@@ -172,7 +172,7 @@ func parseProfileAddArgs(args []string) (profileAddArgs, error) {
 
 	p := profile.NewManual(parsed.name, parsed.server, parsed.port, parsed.protocol)
 	if err := profile.Validate(p); err != nil {
-		return parsed, usageError(err.Error())
+		return parsed, usageError("%s", err.Error())
 	}
 	return parsed, nil
 }
@@ -268,7 +268,7 @@ func profileCommandError(err error) error {
 	case errors.Is(err, profile.ErrAlreadyExists):
 		return exitError{code: 1, err: err}
 	case profile.IsValidationError(err):
-		return usageError(err.Error())
+		return usageError("%s", err.Error())
 	default:
 		return err
 	}
