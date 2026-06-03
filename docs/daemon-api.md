@@ -164,6 +164,12 @@ go build -o ./bin/tunwarden ./cmd/tunwarden
 go build -o ./bin/tunwardend ./cmd/tunwardend
 sudo install -m 0755 ./bin/tunwarden /usr/local/bin/tunwarden
 sudo install -m 0755 ./bin/tunwardend /usr/local/bin/tunwardend
+
+sudo install -m 0644 packaging/sysusers.d/tunwarden.conf /usr/lib/sysusers.d/tunwarden.conf
+sudo systemd-sysusers /usr/lib/sysusers.d/tunwarden.conf
+sudo usermod -aG tunwarden "$USER"
+# Start a new login session before running tunwarden status so group membership is active.
+
 sudo install -m 0644 packaging/systemd/tunwardend.service /etc/systemd/system/tunwardend.service
 sudo systemd-analyze verify /etc/systemd/system/tunwardend.service
 sudo systemctl daemon-reload
@@ -172,6 +178,12 @@ systemctl status tunwardend --no-pager
 tunwarden status
 journalctl -u tunwardend -n 50 --no-pager
 sudo systemctl stop tunwardend
+```
+
+If `systemd-sysusers` is unavailable during manual testing, create the system group explicitly before starting the service:
+
+```bash
+sudo groupadd --system tunwarden
 ```
 
 Expected daemon-backed status includes:
