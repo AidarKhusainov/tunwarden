@@ -70,9 +70,13 @@ func RunJournalctl(ctx context.Context, stdout io.Writer, opts Options) error {
 	}
 
 	var stderr bytes.Buffer
-	stdoutErr := scanRedacted(stdout, outPipe)
-	stderrErr := scanRedacted(&stderr, errPipe)
+	errc := make(chan error, 2)
+	go func() { errc <- scanRedacted(stdout, outPipe) }()
+	go func() { errc <- scanRedacted(&stderr, errPipe) }()
+
 	waitErr := cmd.Wait()
+	stdoutErr := <-errc
+	stderrErr := <-errc
 
 	if stdoutErr != nil {
 		return fmt.Errorf("read journalctl output: %w", stdoutErr)
