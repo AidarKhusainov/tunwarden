@@ -54,7 +54,7 @@ What does not exist yet:
 - `go run ./cmd/tunwardend`
 - `sudo systemctl start tunwardend` after manually installing `packaging/systemd/tunwardend.service` and the daemon binary.
 
-Canonical command names are defined in [CLI contract](docs/cli.md). The implemented manual profile behavior is defined in [Subscriptions and profiles](docs/subscriptions-and-profiles.md). The implemented v0.1 daemon transport is defined in [Daemon local API](docs/daemon-api.md). The implemented v0.1 `status` behavior is defined in [Status command](docs/status.md). The implemented v0.1 `doctor` checks are defined in [Doctor diagnostics](docs/doctor-diagnostics.md). The implemented v0.1 `logs` behavior is defined in [Logs command](docs/logs.md). The implemented v0.1 `recover` scan is defined in [Recovery dry-run](docs/recovery-dry-run.md).
+Canonical command names are defined in [CLI contract](docs/cli.md). The implemented manual profile behavior is defined in [Profile management](docs/profile-management.md). The implemented v0.1 daemon transport is defined in [Daemon local API](docs/daemon-api.md). The implemented v0.1 `status` behavior is defined in [Status command](docs/status.md). The implemented v0.1 `doctor` checks are defined in [Doctor diagnostics](docs/doctor-diagnostics.md). The implemented v0.1 `logs` behavior is defined in [Logs command](docs/logs.md). The implemented v0.1 `recover` scan is defined in [Recovery dry-run](docs/recovery-dry-run.md).
 
 ## Intended lifecycle model
 
@@ -82,6 +82,7 @@ Primary documents:
 - [Package boundaries](docs/package-boundaries.md)
 - [Networking and reliability requirements](docs/networking-reliability.md)
 - [Subscriptions and profiles](docs/subscriptions-and-profiles.md)
+- [Profile management](docs/profile-management.md)
 - [Roadmap](docs/roadmap.md)
 - [Development guide](docs/development.md)
 - [References](docs/references.md)
