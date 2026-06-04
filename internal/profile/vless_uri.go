@@ -1,6 +1,8 @@
 package profile
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -48,7 +50,10 @@ func ImportVLESSURI(raw string) (Profile, []string, error) {
 		return Profile{}, nil, err
 	}
 
-	query := u.Query()
+	query, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return Profile{}, nil, fmt.Errorf("invalid VLESS URI: query is not valid percent-encoding")
+	}
 	warnings := unsupportedVLESSOptionWarnings(query)
 
 	transport, err := vlessQueryValue(query, "type", false)
@@ -64,6 +69,9 @@ func ImportVLESSURI(raw string) (Profile, []string, error) {
 		return Profile{}, nil, err
 	}
 	if err := validateVLESSSecurity(security); err != nil {
+		return Profile{}, nil, err
+	}
+	if err := validateVLESSTransportSecurity(transport, security); err != nil {
 		return Profile{}, nil, err
 	}
 
@@ -124,13 +132,8 @@ func ImportVLESSURI(raw string) (Profile, []string, error) {
 	if name == "" {
 		name = fmt.Sprintf("vless-%s-%d", host, port)
 	}
-	id := NormalizeID(name)
-	if id == "" {
-		id = NormalizeID(fmt.Sprintf("vless-%s-%d", host, port))
-	}
 
 	p := Profile{
-		ID:               id,
 		Name:             name,
 		Source:           SourceImportedURI,
 		Engine:           EngineXray,
@@ -152,6 +155,7 @@ func ImportVLESSURI(raw string) (Profile, []string, error) {
 		RealityShortID:   realityShortID,
 		RealitySpiderX:   realitySpiderX,
 	}
+	p.ID = importedVLESSProfileID(p)
 	if err := Validate(p); err != nil {
 		return Profile{}, nil, err
 	}
@@ -206,7 +210,7 @@ func validateVLESSTransport(transport string) error {
 		return nil
 	}
 	switch strings.ToLower(transport) {
-	case "tcp", "ws", "grpc", "httpupgrade", "xhttp", "quic", "kcp":
+	case "tcp", "raw", "ws", "grpc", "httpupgrade", "xhttp", "quic", "kcp":
 		return nil
 	default:
 		return fmt.Errorf("unsupported VLESS transport %q", transport)
@@ -222,6 +226,18 @@ func validateVLESSSecurity(security string) error {
 		return nil
 	default:
 		return fmt.Errorf("unsupported VLESS security %q", security)
+	}
+}
+
+func validateVLESSTransportSecurity(transport, security string) error {
+	if !strings.EqualFold(security, "reality") {
+		return nil
+	}
+	switch strings.ToLower(transport) {
+	case "", "tcp", "raw", "xhttp", "grpc":
+		return nil
+	default:
+		return fmt.Errorf("unsupported VLESS transport/security combination: security %q is not compatible with transport %q", security, transport)
 	}
 }
 
@@ -253,4 +269,30 @@ func unsupportedVLESSOptionWarnings(query url.Values) []string {
 		warnings = append(warnings, fmt.Sprintf("unsupported VLESS option %q ignored", key))
 	}
 	return warnings
+}
+
+func importedVLESSProfileID(p Profile) string {
+	base := NormalizeID(p.Name)
+	if base == "" {
+		base = NormalizeID(fmt.Sprintf("vless-%s-%d", p.Server, p.Port))
+	}
+	if base == "" {
+		base = "vless-profile"
+	}
+
+	fingerprint := strings.Join([]string{
+		"vless",
+		strings.ToLower(p.Server),
+		strconv.FormatUint(uint64(p.Port), 10),
+		strings.ToLower(p.UserIdentity),
+		strings.ToLower(p.Transport),
+		strings.ToLower(p.Security),
+		strings.ToLower(p.Encryption),
+		strings.ToLower(p.Fingerprint),
+		strings.ToLower(p.ServerName),
+		p.RealityPublicKey,
+		p.RealityShortID,
+	}, "\x00")
+	sum := sha256.Sum256([]byte(fingerprint))
+	return base + "-" + hex.EncodeToString(sum[:])[:10]
 }
