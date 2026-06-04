@@ -1,0 +1,1 @@
+vless://00000000-0000-0000-0000-000000000001@example.com:443?type=tcp&security=reality&encryption=none&flow=xtls-rprx-vision&sni=example.com&fp=chrome&pbk=public-key&sid=abcd&spx=%2F#my-vless-profile
