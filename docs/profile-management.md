@@ -1,13 +1,14 @@
 # Profile management
 
-`tunwarden profile` is the implemented v0.1 command group for managing manual profiles before any connection is attempted.
+`tunwarden profile` is the implemented v0.1 command group for managing profiles before any connection is attempted.
 
-Canonical CLI shape is owned by [CLI contract](./cli.md). Broader profile and subscription normalization requirements are owned by [Subscriptions and profiles](./subscriptions-and-profiles.md). This document describes the implemented manual-profile behavior.
+Canonical CLI shape is owned by [CLI contract](./cli.md). Broader profile and subscription normalization requirements are owned by [Subscriptions and profiles](./subscriptions-and-profiles.md). This document describes the implemented profile behavior.
 
 ## Command shape
 
 ```bash
 tunwarden profile add --name test --server example.com --port 443 --protocol vless
+tunwarden profile import 'vless://00000000-0000-0000-0000-000000000001@example.com:443?type=tcp&security=tls#test'
 tunwarden profile list
 tunwarden profile list --json
 tunwarden profile show test
@@ -35,6 +36,26 @@ A successful add prints:
 Profile added: test
 ```
 
+`profile import <share-uri>` imports one supported share URI into the same local profile store. The issue #11 implementation supports VLESS share URIs only. It normalizes:
+
+- UUID user identity from the URI user component
+- server host and port
+- display name from the URI fragment, or a deterministic fallback name
+- `source: imported_uri`
+- `engine: xray`
+- `protocol: vless`
+- VLESS query metadata used by Xray-oriented profiles, including transport `type`, `security`, `encryption`, `flow`, `sni`, `alpn`, `fp`, `path`, `host`, `serviceName`, `pbk`, `sid`, and `spx`
+
+A successful import prints the profile ID and any parser warnings:
+
+```text
+Imported profile: test
+Warnings: 1
+- flow is preserved for future Xray config generation but is not applied in this build
+```
+
+Unsupported VLESS query options are reported as warnings and ignored. Unsupported URI schemes and malformed VLESS URIs fail clearly with exit code `2`.
+
 `profile list` prints a stable table:
 
 ```text
@@ -42,7 +63,7 @@ ID        NAME   PROTOCOL  SERVER       PORT
 test      test   vless     example.com  443
 ```
 
-`profile show <profile-id>` prints one normalized profile in human-readable form.
+`profile show <profile-id>` prints one normalized profile in human-readable form. Imported sensitive identity fields are redacted in human and JSON output according to the shared output redaction policy, while the local profile store keeps the complete normalized profile needed for future Xray config generation.
 
 `profile delete <profile-id> --yes` removes the profile from local user state. The explicit `--yes` is required in the current v0.1 non-interactive CLI path because profile deletion removes persistent user state.
 
@@ -63,7 +84,7 @@ test      test   vless     example.com  443
 
 `profile show --json` also includes `profile`.
 
-`profile add --json` and `profile delete --json` are not implemented in v0.1.
+`profile add --json`, `profile import --json`, and `profile delete --json` are not implemented in v0.1.
 
 ## Storage
 
@@ -85,6 +106,8 @@ The profile store is user-owned state and must not require root. Writes use an a
 
 Manual profile input must include a valid name, protocol, server, and port. Invalid input fails clearly with exit code `2`.
 
+VLESS URI import must include a UUID user identity, a valid server host, and a valid port. Unsupported VLESS transport or security values fail clearly instead of being silently normalized.
+
 Duplicate profile IDs fail without overwriting the existing profile.
 
 Corrupt, unreadable, unsupported, or internally invalid profile storage fails safely with a clear error instead of silently discarding or rewriting user state.
@@ -97,8 +120,7 @@ Profile management mutates persistent local TunWarden user state only. It must n
 
 The following are not implemented in v0.1:
 
-- `profile import <share-uri>`
-- VLESS URI import
+- VMess, Trojan, and Shadowsocks URI import
 - subscription parsing
 - Xray config generation
 - connect/disconnect behavior
