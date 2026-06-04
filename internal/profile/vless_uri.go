@@ -165,12 +165,10 @@ func validateVLESSUserID(id string) error {
 		return fmt.Errorf("invalid VLESS URI: user id is required")
 	case strings.ContainsAny(id, " \t\n\r"):
 		return fmt.Errorf("invalid VLESS URI: user id must not contain whitespace")
-	case uuidPattern.MatchString(id):
-		return nil
-	case len([]byte(id)) < 30:
-		return nil
+	case !uuidPattern.MatchString(id):
+		return fmt.Errorf("invalid VLESS URI: user id must be a UUID")
 	default:
-		return fmt.Errorf("invalid VLESS URI: user id must be a UUID or a custom string shorter than 30 bytes")
+		return nil
 	}
 }
 
