@@ -1,0 +1,1 @@
+vless://00000000-0000-0000-0000-000000000001@example.com?type=tcp&security=tls#missing-port

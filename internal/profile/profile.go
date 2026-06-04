@@ -25,6 +25,7 @@ const (
 	SourceManual       SourceType = "manual"
 	SourceSubscription SourceType = "subscription"
 	SourceImportedFile SourceType = "imported_file"
+	SourceImportedURI  SourceType = "imported_uri"
 )
 
 // Profile is the normalized internal VPN connection model.
@@ -32,16 +33,27 @@ const (
 // Subscription-specific formats should be parsed into this model before any
 // networking plan is created.
 type Profile struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Source      SourceType `json:"source"`
-	Engine      Engine     `json:"engine"`
-	Server      string     `json:"server"`
-	Port        uint16     `json:"port"`
-	Protocol    string     `json:"protocol"`
-	Transport   string     `json:"transport,omitempty"`
-	Security    string     `json:"security,omitempty"`
-	Fingerprint string     `json:"fingerprint,omitempty"`
+	ID               string     `json:"id"`
+	Name             string     `json:"name"`
+	Source           SourceType `json:"source"`
+	Engine           Engine     `json:"engine"`
+	Server           string     `json:"server"`
+	Port             uint16     `json:"port"`
+	Protocol         string     `json:"protocol"`
+	UserIdentity     string     `json:"user_identity,omitempty"`
+	Transport        string     `json:"transport,omitempty"`
+	Security         string     `json:"security,omitempty"`
+	Encryption       string     `json:"encryption,omitempty"`
+	Flow             string     `json:"flow,omitempty"`
+	ServerName       string     `json:"server_name,omitempty"`
+	ALPN             string     `json:"alpn,omitempty"`
+	Fingerprint      string     `json:"fingerprint,omitempty"`
+	Path             string     `json:"path,omitempty"`
+	HostHeader       string     `json:"host_header,omitempty"`
+	ServiceName      string     `json:"service_name,omitempty"`
+	RealityPublicKey string     `json:"reality_public_key,omitempty"`
+	RealityShortID   string     `json:"reality_short_id,omitempty"`
+	RealitySpiderX   string     `json:"reality_spider_x,omitempty"`
 }
 
 // ValidationError contains clear, stable field-level validation messages.
@@ -72,7 +84,7 @@ func Validate(p Profile) error {
 	}
 	if p.Source == "" {
 		messages = append(messages, "source is required")
-	} else if p.Source != SourceManual && p.Source != SourceSubscription && p.Source != SourceImportedFile {
+	} else if p.Source != SourceManual && p.Source != SourceSubscription && p.Source != SourceImportedFile && p.Source != SourceImportedURI {
 		messages = append(messages, fmt.Sprintf("unsupported source %q", p.Source))
 	}
 	if p.Engine == "" {
@@ -94,6 +106,9 @@ func Validate(p Profile) error {
 	}
 	if p.Port == 0 {
 		messages = append(messages, "port must be between 1 and 65535")
+	}
+	if p.Protocol == "vless" && p.Source == SourceImportedURI && strings.TrimSpace(p.UserIdentity) == "" {
+		messages = append(messages, "user_identity is required for imported VLESS profiles")
 	}
 	if len(messages) > 0 {
 		return ValidationError{Messages: messages}
