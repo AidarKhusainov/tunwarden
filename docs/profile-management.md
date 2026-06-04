@@ -8,7 +8,7 @@ Canonical CLI shape is owned by [CLI contract](./cli.md). Broader profile and su
 
 ```bash
 tunwarden profile add --name test --server example.com --port 443 --protocol vless
-tunwarden profile import 'vless://00000000-0000-0000-0000-000000000001@example.com:443?type=tcp&security=tls#test'
+tunwarden profile import '<vless-share-uri>'
 tunwarden profile list
 tunwarden profile list --json
 tunwarden profile show test
@@ -41,26 +41,27 @@ Profile added: test
 - UUID user identity from the URI user component
 - server host and port
 - display name from the URI fragment, or a deterministic fallback name
+- deterministic local `id` from the display name plus a hash of stable connection fields, including protocol, server, port, user identity, transport, security, encryption, fingerprint, SNI, and Reality key metadata
 - `source: imported_uri`
 - `engine: xray`
 - `protocol: vless`
 - VLESS query metadata used by Xray-oriented profiles, including transport `type`, `security`, `encryption`, `flow`, `sni`, `alpn`, `fp`, `path`, `host`, `serviceName`, `pbk`, `sid`, and `spx`
 
-A successful import prints the profile ID and any parser warnings:
+A successful import prints the deterministic profile ID and any parser warnings:
 
 ```text
-Imported profile: test
+Imported profile: test-a1b2c3d4e5
 Warnings: 1
 - flow is preserved for future Xray config generation but is not applied in this build
 ```
 
-Unsupported VLESS query options are reported as warnings and ignored. Unsupported URI schemes and malformed VLESS URIs fail clearly with exit code `2`.
+Unsupported VLESS query options are reported as warnings and ignored. Unsupported URI schemes, malformed percent-encoding in the URI query, unsupported VLESS transport/security values, and incompatible VLESS transport/security combinations fail clearly with exit code `2`.
 
 `profile list` prints a stable table:
 
 ```text
-ID        NAME   PROTOCOL  SERVER       PORT
-test      test   vless     example.com  443
+ID               NAME   PROTOCOL  SERVER       PORT
+test-a1b2c3d4e5  test   vless     example.com  443
 ```
 
 `profile show <profile-id>` prints one normalized profile in human-readable form. Imported sensitive identity fields are redacted in human and JSON output according to the shared output redaction policy, while the local profile store keeps the complete normalized profile needed for future Xray config generation.
@@ -106,9 +107,9 @@ The profile store is user-owned state and must not require root. Writes use an a
 
 Manual profile input must include a valid name, protocol, server, and port. Invalid input fails clearly with exit code `2`.
 
-VLESS URI import must include a UUID user identity, a valid server host, and a valid port. Unsupported VLESS transport or security values fail clearly instead of being silently normalized.
+VLESS URI import must include a UUID user identity, a valid server host, and a valid port. Unsupported VLESS transport or security values and incompatible transport/security pairs fail clearly instead of being silently normalized. The current v0.1 importer intentionally does not support VLESS custom string IDs; only UUID user identities are accepted.
 
-Duplicate profile IDs fail without overwriting the existing profile.
+Duplicate profile IDs fail without overwriting the existing profile. Imported VLESS IDs include a deterministic hash suffix so distinct VLESS profiles with the same display name can coexist while re-importing the same URI remains stable.
 
 Corrupt, unreadable, unsupported, or internally invalid profile storage fails safely with a clear error instead of silently discarding or rewriting user state.
 
@@ -120,6 +121,7 @@ Profile management mutates persistent local TunWarden user state only. It must n
 
 The following are not implemented in v0.1:
 
+- VLESS custom string IDs
 - VMess, Trojan, and Shadowsocks URI import
 - subscription parsing
 - Xray config generation
