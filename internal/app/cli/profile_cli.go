@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/AidarKhusainov/tunwarden/internal/profile"
+	"github.com/AidarKhusainov/tunwarden/internal/render"
 )
 
 func runProfileCommand(ctx context.Context, args []string, stdout io.Writer, opts options) error {
@@ -30,6 +31,8 @@ func runProfileCommand(ctx context.Context, args []string, stdout io.Writer, opt
 	switch strings.ToLower(args[0]) {
 	case "add":
 		return runProfileAdd(store, args[1:], stdout)
+	case "import":
+		return runProfileImport(store, args[1:], stdout)
 	case "list":
 		return runProfileList(store, args[1:], stdout)
 	case "show":
@@ -56,6 +59,30 @@ func runProfileAdd(store profile.Store, args []string, stdout io.Writer) error {
 	return nil
 }
 
+func runProfileImport(store profile.Store, args []string, stdout io.Writer) error {
+	uri, err := parseProfileImportArgs(args)
+	if err != nil {
+		return err
+	}
+
+	p, warnings, err := profile.ImportVLESSURI(uri)
+	if err != nil {
+		return usageError("%s", err.Error())
+	}
+	if err := store.Add(p); err != nil {
+		return profileCommandError(err)
+	}
+
+	fmt.Fprintf(stdout, "Imported profile: %s\n", p.ID)
+	if len(warnings) > 0 {
+		fmt.Fprintf(stdout, "Warnings: %d\n", len(warnings))
+		for _, warning := range warnings {
+			fmt.Fprintf(stdout, "- %s\n", render.Redact(warning))
+		}
+	}
+	return nil
+}
+
 func runProfileList(store profile.Store, args []string, stdout io.Writer) error {
 	jsonOutput, err := parseOptionalJSON(args, "profile list")
 	if err != nil {
@@ -68,12 +95,13 @@ func runProfileList(store profile.Store, args []string, stdout io.Writer) error 
 	}
 
 	if jsonOutput {
-		return writeJSON(stdout, okJSON(map[string]any{"profiles": profiles}))
+		return writeJSON(stdout, okJSON(map[string]any{"profiles": profilesForOutput(profiles)}))
 	}
 
 	fmt.Fprintln(stdout, "ID        NAME   PROTOCOL  SERVER       PORT")
 	for _, p := range profiles {
-		fmt.Fprintf(stdout, "%-9s %-6s %-9s %-12s %d\n", p.ID, p.Name, p.Protocol, p.Server, p.Port)
+		out := profileForOutput(p)
+		fmt.Fprintf(stdout, "%-9s %-6s %-9s %-12s %d\n", out.ID, out.Name, out.Protocol, out.Server, out.Port)
 	}
 	return nil
 }
@@ -89,17 +117,32 @@ func runProfileShow(store profile.Store, args []string, stdout io.Writer) error 
 		return profileCommandError(err)
 	}
 
+	out := profileForOutput(p)
 	if jsonOutput {
-		return writeJSON(stdout, okJSON(map[string]any{"profile": p}))
+		return writeJSON(stdout, okJSON(map[string]any{"profile": out}))
 	}
 
-	fmt.Fprintf(stdout, "ID: %s\n", p.ID)
-	fmt.Fprintf(stdout, "Name: %s\n", p.Name)
-	fmt.Fprintf(stdout, "Source: %s\n", p.Source)
-	fmt.Fprintf(stdout, "Engine: %s\n", p.Engine)
-	fmt.Fprintf(stdout, "Protocol: %s\n", p.Protocol)
-	fmt.Fprintf(stdout, "Server: %s\n", p.Server)
-	fmt.Fprintf(stdout, "Port: %d\n", p.Port)
+	fmt.Fprintf(stdout, "ID: %s\n", out.ID)
+	fmt.Fprintf(stdout, "Name: %s\n", out.Name)
+	fmt.Fprintf(stdout, "Source: %s\n", out.Source)
+	fmt.Fprintf(stdout, "Engine: %s\n", out.Engine)
+	fmt.Fprintf(stdout, "Protocol: %s\n", out.Protocol)
+	fmt.Fprintf(stdout, "Server: %s\n", out.Server)
+	fmt.Fprintf(stdout, "Port: %d\n", out.Port)
+	printOptionalProfileField(stdout, "User identity", out.UserIdentity)
+	printOptionalProfileField(stdout, "Transport", out.Transport)
+	printOptionalProfileField(stdout, "Security", out.Security)
+	printOptionalProfileField(stdout, "Encryption", out.Encryption)
+	printOptionalProfileField(stdout, "Flow", out.Flow)
+	printOptionalProfileField(stdout, "Server name", out.ServerName)
+	printOptionalProfileField(stdout, "ALPN", out.ALPN)
+	printOptionalProfileField(stdout, "Fingerprint", out.Fingerprint)
+	printOptionalProfileField(stdout, "Path", out.Path)
+	printOptionalProfileField(stdout, "Host header", out.HostHeader)
+	printOptionalProfileField(stdout, "Service name", out.ServiceName)
+	printOptionalProfileField(stdout, "Reality public key", out.RealityPublicKey)
+	printOptionalProfileField(stdout, "Reality short ID", out.RealityShortID)
+	printOptionalProfileField(stdout, "Reality spider X", out.RealitySpiderX)
 	return nil
 }
 
@@ -175,6 +218,28 @@ func parseProfileAddArgs(args []string) (profileAddArgs, error) {
 		return parsed, usageError("%s", err.Error())
 	}
 	return parsed, nil
+}
+
+func parseProfileImportArgs(args []string) (string, error) {
+	var uri string
+	for _, arg := range args {
+		switch arg {
+		case "--json":
+			return "", usageError("profile import --json is not implemented")
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return "", usageError("unsupported profile import argument %q", arg)
+			}
+			if uri != "" {
+				return "", usageError("profile import accepts exactly one share URI")
+			}
+			uri = arg
+		}
+	}
+	if uri == "" {
+		return "", usageError("profile import requires a share URI")
+	}
+	return uri, nil
 }
 
 func parseProfileShowArgs(args []string) (string, bool, error) {
@@ -287,22 +352,61 @@ func profileCommandError(err error) error {
 	}
 }
 
+func profilesForOutput(profiles []profile.Profile) []profile.Profile {
+	out := make([]profile.Profile, len(profiles))
+	for i, p := range profiles {
+		out[i] = profileForOutput(p)
+	}
+	return out
+}
+
+func profileForOutput(p profile.Profile) profile.Profile {
+	p.ID = render.Redact(p.ID)
+	p.Name = render.Redact(p.Name)
+	p.Server = render.Redact(p.Server)
+	p.Protocol = render.Redact(p.Protocol)
+	p.UserIdentity = render.Redact(p.UserIdentity)
+	p.Transport = render.Redact(p.Transport)
+	p.Security = render.Redact(p.Security)
+	p.Encryption = render.Redact(p.Encryption)
+	p.Flow = render.Redact(p.Flow)
+	p.ServerName = render.Redact(p.ServerName)
+	p.ALPN = render.Redact(p.ALPN)
+	p.Fingerprint = render.Redact(p.Fingerprint)
+	p.Path = render.Redact(p.Path)
+	p.HostHeader = render.Redact(p.HostHeader)
+	p.ServiceName = render.Redact(p.ServiceName)
+	p.RealityPublicKey = render.Redact(p.RealityPublicKey)
+	p.RealityShortID = render.Redact(p.RealityShortID)
+	p.RealitySpiderX = render.Redact(p.RealitySpiderX)
+	return p
+}
+
+func printOptionalProfileField(w io.Writer, label, value string) {
+	if value == "" {
+		return
+	}
+	fmt.Fprintf(w, "%s: %s\n", label, value)
+}
+
 func printProfileHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage:
   tunwarden profile add --name <name> --server <host> --port <port> --protocol <vless|vmess|trojan|shadowsocks>
+  tunwarden profile import <vless-share-uri>
   tunwarden profile list [--json]
   tunwarden profile show <profile-id> [--json]
   tunwarden profile delete <profile-id> --yes
 
-Manage manual profiles in local TunWarden user state. These commands never start
+Manage profiles in local TunWarden user state. These commands never start
 network processes and never mutate TUN, routes, DNS, nftables, or firewall state.
 
 Implemented in v0.1:
-  manual profile add, list, show, delete, validation, JSON list/show output, and
-  atomic local profile storage under the documented XDG user state location.
+  manual profile add/list/show/delete, VLESS share URI import, validation,
+  JSON list/show output, and atomic local profile storage under the documented
+  XDG user state location.
 
 Not implemented yet:
-  profile import, VLESS URI import, subscriptions, Xray config generation,
+  VMess/Trojan/Shadowsocks import, subscriptions, Xray config generation,
   connect/disconnect behavior
 `)
 }
