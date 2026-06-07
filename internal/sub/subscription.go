@@ -249,7 +249,7 @@ func FetchSource(ctx context.Context, source Source) ([]byte, error) {
 		}
 		return data, nil
 	case "http", "https":
-		client := &http.Client{Timeout: 30 * time.Second}
+		client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: sameOriginRedirectPolicy}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, source.URL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("fetch subscription %s: %w", source.ID, err)
@@ -273,6 +273,20 @@ func FetchSource(ctx context.Context, source Source) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported subscription URL scheme %q", u.Scheme)
 	}
+}
+
+func sameOriginRedirectPolicy(req *http.Request, via []*http.Request) error {
+	if len(via) >= 3 {
+		return fmt.Errorf("stopped after 3 redirects")
+	}
+	if len(via) == 0 {
+		return nil
+	}
+	previous := via[len(via)-1].URL
+	if !strings.EqualFold(req.URL.Scheme, previous.Scheme) || !strings.EqualFold(req.URL.Host, previous.Host) {
+		return fmt.Errorf("refusing cross-origin subscription redirect from %s://%s to %s://%s", previous.Scheme, previous.Host, req.URL.Scheme, req.URL.Host)
+	}
+	return nil
 }
 
 // ParseBase64Subscription decodes a Base64 URI-list subscription and imports
