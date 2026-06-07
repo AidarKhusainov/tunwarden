@@ -422,7 +422,8 @@ Implemented v0.1 behavior:
 - daemon-side profile validation before process start;
 - generated runtime Xray config under the daemon runtime directory;
 - daemon-managed Xray start and stop;
-- dropped Xray child credentials when `tunwardend` runs as root;
+- packaged `tunwardend` and Xray run as the unprivileged `tunwarden:tunwarden` service identity;
+- manual root `connect` is rejected instead of starting Xray as root;
 - graceful stop and forced-stop fallback;
 - idempotent disconnect;
 - Xray crash visible in daemon-backed `status`.
