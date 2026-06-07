@@ -191,8 +191,9 @@ The daemon service must start from least privilege. Every relaxation must be jus
 
 Implemented v0.1 service behavior:
 
-- `packaging/systemd/tunwardend.service` starts `tunwardend` as `root:tunwarden` so the daemon can own `/run/tunwarden` and expose a group-readable Unix socket.
-- The dedicated `tunwarden` group is the packaged socket access boundary for read-only CLI commands.
+- `packaging/systemd/tunwardend.service` starts `tunwardend` as `root:tunwarden` so the daemon can own `/run/tunwarden`, expose a group-readable Unix socket, and later host privileged network transaction code.
+- The current v0.1 unit grants no ambient or bounding capabilities.
+- The dedicated `tunwarden` group is the packaged socket access boundary for CLI commands that use the daemon.
 - `RuntimeDirectory=tunwarden` with `RuntimeDirectoryMode=0750` keeps `/run/tunwarden` accessible only to root and the `tunwarden` group.
 - The daemon itself applies socket mode `0660` to `/run/tunwarden/tunwardend.sock`.
 - `StateDirectory=tunwarden` reserves `/var/lib/tunwarden` for future daemon-owned persistent state, but v0.1 does not write persistent daemon state yet.
@@ -219,7 +220,8 @@ StateDirectoryMode=0750
 
 Notes:
 
-- v0.1 performs service startup only and must not mutate TUN, route, DNS, nftables, firewall, or core process state.
+- v0.1 proxy-only lifecycle may start and stop an Xray child process and mutate only generated runtime config state under the daemon runtime directory.
+- v0.1 must not mutate TUN, route, DNS, nftables, or firewall state.
 - The service intentionally grants no capabilities in v0.1. Add `CAP_NET_ADMIN` only when a later issue implements and documents daemon-owned TUN, route, DNS, or firewall mutations.
 - Add `CAP_NET_RAW` only if a concrete health check or networking feature needs it and the PR documents why.
 - Broad file permission bypass capabilities must not be in the baseline.
@@ -233,6 +235,8 @@ The core engine process is a child process managed by the daemon, not the owner 
 Rules:
 
 - The core process must not inherit broad daemon privileges unless strictly required.
+- In v0.1 proxy-only mode, if `tunwardend` is running as root, the Xray child must be started with dropped credentials.
+- The daemon must ensure the generated config path remains readable by the dropped Xray child while keeping generated config content private from normal users.
 - Generated core configs must be mode `0600`.
 - Generated core configs must be written atomically.
 - Generated core configs must be treated as runtime output, not persistent source of truth.
