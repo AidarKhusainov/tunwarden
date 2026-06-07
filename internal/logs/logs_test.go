@@ -25,6 +25,14 @@ func TestBuildJournalctlArgsSupportsFollowAndSince(t *testing.T) {
 	}
 }
 
+func TestBuildJournalctlArgsKeepsCoreFilteringInProcess(t *testing.T) {
+	got := BuildJournalctlArgs(Options{Core: true})
+	want := []string{"--system", "--unit", DaemonUnit, "--no-pager", "--output", "short", "--lines", DefaultLines}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("journalctl args mismatch\nwant: %#v\n got: %#v", want, got)
+	}
+}
+
 func TestScanRedactedRedactsSensitiveLogContent(t *testing.T) {
 	input := strings.NewReader("Jun 03 host tunwardend[123]: token=abc password=secret id=123e4567-e89b-12d3-a456-426614174000\n")
 	var out bytes.Buffer
@@ -42,6 +50,44 @@ func TestScanRedactedRedactsSensitiveLogContent(t *testing.T) {
 		if strings.Contains(got, text) {
 			t.Fatalf("expected sensitive value %q to be redacted, got %q", text, got)
 		}
+	}
+}
+
+func TestScanRedactedFilteredShowsOnlyCoreLines(t *testing.T) {
+	input := strings.NewReader(strings.Join([]string{
+		"Jun 03 host tunwardend[123]: tunwardend: daemon started",
+		"Jun 03 host tunwardend[123]: tunwardend: core xray started pid=42 profile=test",
+		"Jun 03 host tunwardend[123]: tunwardend: core xray stderr pid=42 profile=test: token=secret",
+		"Jun 03 host tunwardend[123]: tunwardend: status request handled",
+	}, "\n") + "\n")
+	var out bytes.Buffer
+
+	count, err := scanRedactedFiltered(&out, input, isCoreLogLine)
+	if err != nil {
+		t.Fatalf("scanRedactedFiltered failed: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 core log lines, got %d: %q", count, out.String())
+	}
+	got := out.String()
+	for _, text := range []string{"core xray started", "core xray stderr", "token=REDACTED"} {
+		if !strings.Contains(got, text) {
+			t.Fatalf("expected filtered output to contain %q, got %q", text, got)
+		}
+	}
+	for _, text := range []string{"daemon started", "status request handled", "token=secret"} {
+		if strings.Contains(got, text) {
+			t.Fatalf("expected filtered output to omit %q, got %q", text, got)
+		}
+	}
+}
+
+func TestIsCoreLogLineAcceptsSystemdChildProcessPrefix(t *testing.T) {
+	if !isCoreLogLine("Jun 03 host xray[5678]: started") {
+		t.Fatal("expected xray process journal line to be treated as a core log")
+	}
+	if isCoreLogLine("Jun 03 host tunwardend[123]: tunwardend: status request handled") {
+		t.Fatal("expected daemon status line not to be treated as a core log")
 	}
 }
 
