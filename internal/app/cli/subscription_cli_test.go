@@ -89,10 +89,10 @@ func TestRunCLISubscriptionUpdateRollbackPreservesLastKnownGood(t *testing.T) {
 	}
 
 	writeSubscriptionFixture(t, fixturePath, []string{shareLink(1, "changed.example", "443", "?type=tcp&security=tls", "stable")})
-	err := runWithOptions(context.Background(), []string{"subscription", "update", "stable"}, &bytes.Buffer{}, options{
-		profileStorePath:                  profileStorePath,
-		subscriptionAfterProfileApplyHook: func() error { return fmt.Errorf("injected subscription metadata failure") },
-	})
+	subscriptionAfterProfileApplyHook = func() error { return fmt.Errorf("injected subscription metadata failure") }
+	defer func() { subscriptionAfterProfileApplyHook = nil }()
+
+	err := runWithOptions(context.Background(), []string{"subscription", "update", "stable"}, &bytes.Buffer{}, opts)
 	if err == nil {
 		t.Fatal("expected injected update failure")
 	}
