@@ -15,6 +15,8 @@ import (
 	"github.com/AidarKhusainov/tunwarden/internal/sub"
 )
 
+var subscriptionAfterProfileApplyHook func() error
+
 func runSubscriptionCommand(ctx context.Context, args []string, stdout io.Writer, opts options) error {
 	if isHelp(args) {
 		printSubscriptionHelp(stdout)
@@ -45,7 +47,7 @@ func runSubscriptionCommand(ctx context.Context, args []string, stdout io.Writer
 		if err != nil {
 			return err
 		}
-		return runSubscriptionUpdate(ctx, store, profileStore, args[1:], stdout, opts)
+		return runSubscriptionUpdate(ctx, store, profileStore, args[1:], stdout)
 	default:
 		return usageError("unknown subscription subcommand %q", args[0])
 	}
@@ -114,7 +116,7 @@ func runSubscriptionShow(store sub.Store, args []string, stdout io.Writer) error
 	return nil
 }
 
-func runSubscriptionUpdate(ctx context.Context, store sub.Store, profileStore profile.Store, args []string, stdout io.Writer, opts options) error {
+func runSubscriptionUpdate(ctx context.Context, store sub.Store, profileStore profile.Store, args []string, stdout io.Writer) error {
 	id, err := parseSubscriptionUpdateArgs(args)
 	if err != nil {
 		return err
@@ -145,8 +147,8 @@ func runSubscriptionUpdate(ctx context.Context, store sub.Store, profileStore pr
 		}
 		return applyErr
 	}
-	if opts.subscriptionAfterProfileApplyHook != nil {
-		if err := opts.subscriptionAfterProfileApplyHook(); err != nil {
+	if subscriptionAfterProfileApplyHook != nil {
+		if err := subscriptionAfterProfileApplyHook(); err != nil {
 			return rollbackProfiles(err)
 		}
 	}
