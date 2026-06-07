@@ -369,16 +369,18 @@ Purpose: inspect TunWarden daemon and core logs.
 
 Mutation level: read-only.
 
-Implemented in the issue #9 journald-backed daemon log view:
+Implemented v0.1 journald-backed log behavior:
 
 - human output only;
 - recent `tunwardend.service` logs through the system journal with `journalctl --system`;
 - `--follow` and `-f` for live log following;
 - `--daemon` as the explicit daemon log source;
+- `--core` for Xray lifecycle lines and daemon-forwarded Xray stdout/stderr marked with `tunwardend: core xray ...`;
 - `--since <duration>` and `--since=<duration>` passed to journalctl, including relative values such as `-1h`;
-- shared human-output redaction for each printed log line.
+- shared human-output redaction for each printed log line;
+- clear no-core-log guidance when `--core` finds no recent matching lines in non-follow mode.
 
-`logs --json` and `logs --core` are deferred to separate issues. Until implemented, they must fail fast as invalid usage with exit code `2`.
+`logs --json` is deferred to a separate issue. Until implemented, it must fail fast as invalid usage with exit code `2`.
 
 If `journalctl` is unavailable, the command must fail clearly with an actionable message. If the current user cannot read the system journal, the command must surface the redacted `journalctl` error.
 
