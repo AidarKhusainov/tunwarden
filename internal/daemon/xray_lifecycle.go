@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	osuser "os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -77,6 +79,10 @@ func (m *XrayManager) Connect(ctx context.Context, req api.ConnectRequest) (api.
 	if err != nil {
 		return api.LifecycleResponse{}, err
 	}
+	childCredential, err := xrayChildCredential()
+	if err != nil {
+		return api.LifecycleResponse{}, err
+	}
 
 	m.mu.Lock()
 	if m.cmd != nil {
@@ -84,7 +90,7 @@ func (m *XrayManager) Connect(ctx context.Context, req api.ConnectRequest) (api.
 		return api.LifecycleResponse{}, errors.New("connection already active; run tunwarden disconnect before connecting another profile")
 	}
 
-	if err := writeRuntimeConfig(runtimeConfigPath, proxyPlan.XrayConfig); err != nil {
+	if err := writeRuntimeConfig(runtimeConfigPath, proxyPlan.XrayConfig, childCredential); err != nil {
 		m.mu.Unlock()
 		return api.LifecycleResponse{}, err
 	}
@@ -92,6 +98,9 @@ func (m *XrayManager) Connect(ctx context.Context, req api.ConnectRequest) (api.
 	cmd := exec.Command(xrayPath, "run", "-config", runtimeConfigPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	if childCredential != nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: childCredential}
+	}
 	if err := cmd.Start(); err != nil {
 		m.mu.Unlock()
 		removeGeneratedConfig(runtimeConfigPath)
@@ -312,13 +321,49 @@ func processExitMessage(err error) string {
 	return "Xray process exited unexpectedly: " + err.Error()
 }
 
-func writeRuntimeConfig(path string, content []byte) error {
+func xrayChildCredential() (*syscall.Credential, error) {
+	if os.Geteuid() != 0 {
+		return nil, nil
+	}
+
+	nobody, err := osuser.Lookup("nobody")
+	if err != nil {
+		return nil, fmt.Errorf("resolve unprivileged Xray user nobody: %w", err)
+	}
+	uid, err := parseUserID(nobody.Uid, "uid")
+	if err != nil {
+		return nil, err
+	}
+	gid := uint32(os.Getegid())
+	if gid == 0 {
+		gid, err = parseUserID(nobody.Gid, "gid")
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &syscall.Credential{Uid: uid, Gid: gid}, nil
+}
+
+func parseUserID(value string, name string) (uint32, error) {
+	parsed, err := strconv.ParseUint(value, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("parse nobody %s %q: %w", name, value, err)
+	}
+	return uint32(parsed), nil
+}
+
+func writeRuntimeConfig(path string, content []byte, owner *syscall.Credential) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create generated runtime config directory: %w", err)
 	}
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return fmt.Errorf("secure generated runtime config directory: %w", err)
+	}
+	if owner != nil {
+		if err := os.Chown(dir, int(owner.Uid), int(owner.Gid)); err != nil {
+			return fmt.Errorf("set generated runtime config directory owner: %w", err)
+		}
 	}
 
 	tmp, err := os.CreateTemp(dir, ".xray-*.tmp")
@@ -331,6 +376,12 @@ func writeRuntimeConfig(path string, content []byte) error {
 	if err := tmp.Chmod(0o600); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("secure temporary generated Xray config: %w", err)
+	}
+	if owner != nil {
+		if err := tmp.Chown(int(owner.Uid), int(owner.Gid)); err != nil {
+			_ = tmp.Close()
+			return fmt.Errorf("set temporary generated Xray config owner: %w", err)
+		}
 	}
 	if _, err := tmp.Write(content); err != nil {
 		_ = tmp.Close()
