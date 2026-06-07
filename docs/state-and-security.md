@@ -191,10 +191,12 @@ The daemon service must start from least privilege. Every relaxation must be jus
 
 Implemented v0.1 service behavior:
 
-- `packaging/systemd/tunwardend.service` starts `tunwardend` as `root:tunwarden` so the daemon can own `/run/tunwarden`, expose a group-readable Unix socket, and later host privileged network transaction code.
+- `packaging/sysusers.d/tunwarden.conf` creates the dedicated unprivileged `tunwarden` service identity.
+- `packaging/systemd/tunwardend.service` starts `tunwardend` as `tunwarden:tunwarden` because v0.1 proxy-only lifecycle does not require root.
+- Xray child processes inherit the same unprivileged service identity.
 - The current v0.1 unit grants no ambient or bounding capabilities.
 - The dedicated `tunwarden` group is the packaged socket access boundary for CLI commands that use the daemon.
-- `RuntimeDirectory=tunwarden` with `RuntimeDirectoryMode=0750` keeps `/run/tunwarden` accessible only to root and the `tunwarden` group.
+- `RuntimeDirectory=tunwarden` with `RuntimeDirectoryMode=0750` keeps `/run/tunwarden` accessible only to the service identity and the `tunwarden` group.
 - The daemon itself applies socket mode `0660` to `/run/tunwarden/tunwardend.sock`.
 - `StateDirectory=tunwarden` reserves `/var/lib/tunwarden` for future daemon-owned persistent state, but v0.1 does not write persistent daemon state yet.
 - `StandardOutput=journal` and `StandardError=journal` make daemon logs visible through `journalctl -u tunwardend`.
@@ -202,6 +204,8 @@ Implemented v0.1 service behavior:
 Current v0.1 hardening baseline:
 
 ```ini
+User=tunwarden
+Group=tunwarden
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
@@ -235,8 +239,8 @@ The core engine process is a child process managed by the daemon, not the owner 
 Rules:
 
 - The core process must not inherit broad daemon privileges unless strictly required.
-- In v0.1 proxy-only mode, if `tunwardend` is running as root, the Xray child must be started with dropped credentials.
-- The daemon must ensure the generated config path remains readable by the dropped Xray child while keeping generated config content private from normal users.
+- In v0.1 proxy-only packaged mode, `tunwardend` and Xray both run as the unprivileged `tunwarden` service identity.
+- Manual root execution of proxy-only `connect` must fail instead of starting Xray as root.
 - Generated core configs must be mode `0600`.
 - Generated core configs must be written atomically.
 - Generated core configs must be treated as runtime output, not persistent source of truth.
