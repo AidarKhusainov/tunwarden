@@ -107,7 +107,7 @@ func Validate(p Profile) error {
 	if p.Port == 0 {
 		messages = append(messages, "port must be between 1 and 65535")
 	}
-	if p.Protocol == "vless" && p.Source == SourceImportedURI && strings.TrimSpace(p.UserIdentity) == "" {
+	if p.Protocol == "vless" && (p.Source == SourceImportedURI || p.Source == SourceSubscription) && strings.TrimSpace(p.UserIdentity) == "" {
 		messages = append(messages, "user_identity is required for imported VLESS profiles")
 	}
 	if len(messages) > 0 {
