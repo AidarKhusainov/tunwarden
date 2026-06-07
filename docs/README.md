@@ -13,6 +13,7 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 - Architecture and networking rules are requirements, not implementation notes.
 - CLI command names, arguments, flags, and milestone boundaries are owned by [CLI contract](./cli.md).
 - Implemented manual and VLESS-import `tunwarden profile` behavior is owned by [Profile management](./profile-management.md).
+- Implemented Base64 URI-list `tunwarden subscription` behavior is owned by [Subscription management](./subscription-management.md).
 - Implemented `tunwarden plan --mode proxy-only` behavior is owned by [Proxy-only plan](./proxy-only-plan.md).
 - Implemented `tunwarden connect --mode proxy-only` and `tunwarden disconnect` behavior is owned by [Proxy-only lifecycle](./proxy-only-lifecycle.md).
 - The implemented v0.1 daemon transport is owned by [Daemon local API](./daemon-api.md).
@@ -31,6 +32,7 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 | [Product requirements](./product-requirements.md) | Product thesis, target users, scope, functional requirements, non-functional requirements, success metrics. |
 | [CLI contract](./cli.md) | Canonical command names, arguments, flags, output expectations, safety semantics, and milestone boundaries. |
 | [Profile management](./profile-management.md) | Implemented v0.1 manual profile add, VLESS profile import, list, show, delete, validation, storage, JSON output, and safety boundary. |
+| [Subscription management](./subscription-management.md) | Implemented v0.1 Base64 URI-list subscription add, list, show, update, VLESS import, JSON output, redaction, and safety boundary. |
 | [Proxy-only plan](./proxy-only-plan.md) | Implemented v0.1 read-only proxy-only planning, generated Xray config validation, local proxy listeners, JSON output, and safety boundary. |
 | [Proxy-only lifecycle](./proxy-only-lifecycle.md) | Implemented v0.1 daemon-managed Xray process lifecycle for `connect --mode proxy-only`, `disconnect`, generated runtime config cleanup, and safety boundary. |
 | [Daemon local API](./daemon-api.md) | Implemented v0.1 Unix socket daemon API transport, status and doctor endpoints, lifecycle, and safety boundary. |
@@ -107,6 +109,7 @@ tunwarden profile add --name test --server example.com --port 443 --protocol vle
 tunwarden profile import '<vless-share-uri>'
 tunwarden profile list
 tunwarden profile show <profile-id>
+tunwarden subscription add --name personal --url file:///tmp/sub.txt
 tunwarden subscription list
 tunwarden subscription update <subscription-id>
 
