@@ -24,7 +24,7 @@ This keeps the first daemon API small, local-only, and testable with Go's standa
 
 The v0.1 server sets the daemon socket mode to `0660` and fails startup if permissions cannot be applied.
 
-For local development and manual testing, run both `tunwardend` and `tunwarden` as the same user and set `TUNWARDEN_RUNTIME_DIR` to a user-owned directory, for example:
+For local development and manual testing, run both `tunwardend` and `tunwarden` as the same non-root user and set `TUNWARDEN_RUNTIME_DIR` to a user-owned directory, for example:
 
 ```bash
 TUNWARDEN_RUNTIME_DIR=/tmp/tunwarden-dev go run ./cmd/tunwardend
@@ -43,9 +43,10 @@ TUNWARDEN_RUNTIME_DIR=/tmp/tunwarden-dev go run ./cmd/tunwarden disconnect
 For the manual systemd service in `packaging/systemd/tunwardend.service`, the packaged access model is:
 
 - systemd creates `/run/tunwarden` with `RuntimeDirectory=tunwarden` and `RuntimeDirectoryMode=0750`;
-- `packaging/sysusers.d/tunwarden.conf` declares the `tunwarden` system group for packaged installs;
-- `tunwardend` runs as `root:tunwarden` so it can own daemon runtime state and later privileged networking, while the current unit grants no ambient or bounding capabilities;
-- proxy-only Xray child processes are started with dropped credentials when `tunwardend` is running as root;
+- `packaging/sysusers.d/tunwarden.conf` declares the unprivileged `tunwarden` service identity for packaged installs;
+- `tunwardend` runs as `tunwarden:tunwarden` because v0.1 proxy-only lifecycle does not require root;
+- Xray child processes inherit the same unprivileged service identity;
+- the current unit grants no ambient or bounding capabilities;
 - the daemon creates `/run/tunwarden/tunwardend.sock` and applies socket mode `0660`;
 - users that should run CLI commands against the daemon need access through the `tunwarden` group.
 
@@ -229,15 +230,15 @@ On startup, `tunwardend`:
 6. applies the socket mode;
 7. serves status, doctor, connect, and disconnect endpoints.
 
-When started by the repository systemd unit, systemd creates the runtime directory before daemon startup and captures daemon stdout/stderr in journald.
+When started by the repository systemd unit, systemd creates the runtime directory before daemon startup, owns it for `tunwarden:tunwarden`, and captures daemon stdout/stderr in journald.
 
 During proxy-only connect, `tunwardend`:
 
-1. validates the requested mode and profile snapshot;
-2. builds the proxy-only plan and generated Xray config using the existing planner/engine config generator;
-3. writes generated runtime config under `/run/tunwarden/generated/` using restrictive permissions and atomic replacement;
-4. starts Xray as a supervised child process;
-5. drops child credentials when the daemon itself is running as root;
+1. refuses to start Xray if the daemon process is running as root;
+2. validates the requested mode and profile snapshot;
+3. builds the proxy-only plan and generated Xray config using the existing planner/engine config generator;
+4. writes generated runtime config under `/run/tunwarden/generated/` using restrictive permissions and atomic replacement;
+5. starts Xray as a supervised child process under the same unprivileged service identity;
 6. records active state for daemon-backed status.
 
 On graceful daemon shutdown, `tunwardend`:
@@ -284,10 +285,10 @@ journalctl -u tunwardend -n 50 --no-pager
 sudo systemctl stop tunwardend
 ```
 
-If `systemd-sysusers` is unavailable during manual testing, create the system group explicitly before starting the service:
+If `systemd-sysusers` is unavailable during manual testing, create the system user explicitly before starting the service:
 
 ```bash
-sudo groupadd --system tunwarden
+sudo useradd --system --home-dir /var/lib/tunwarden --shell /usr/sbin/nologin --user-group tunwarden
 ```
 
 Expected daemon-backed inactive status includes:
