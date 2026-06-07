@@ -12,13 +12,15 @@ func TestSystemdUnitDocumentsSocketAccessModel(t *testing.T) {
 
 	for _, want := range []string{
 		"ExecStart=/usr/local/bin/tunwardend",
-		"User=root",
+		"User=tunwarden",
 		"Group=tunwarden",
 		"UMask=0007",
 		"Environment=TUNWARDEN_SERVICE=systemd",
 		"RuntimeDirectory=tunwarden",
 		"RuntimeDirectoryMode=0750",
 		"StateDirectory=tunwarden",
+		"CapabilityBoundingSet=",
+		"AmbientCapabilities=",
 		"StandardOutput=journal",
 		"StandardError=journal",
 	} {
