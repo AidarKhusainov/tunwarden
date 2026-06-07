@@ -1,11 +1,10 @@
 package daemon
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -97,18 +96,10 @@ func (m *XrayManager) Connect(ctx context.Context, req api.ConnectRequest) (api.
 	}
 
 	cmd := exec.Command(xrayPath, "run", "-config", runtimeConfigPath)
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		m.mu.Unlock()
-		removeGeneratedConfig(runtimeConfigPath)
-		return api.LifecycleResponse{}, fmt.Errorf("prepare Xray stdout: %w", err)
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		m.mu.Unlock()
-		removeGeneratedConfig(runtimeConfigPath)
-		return api.LifecycleResponse{}, fmt.Errorf("prepare Xray stderr: %w", err)
-	}
+	stdoutLog := newCoreLogWriter(p.ID, "stdout")
+	stderrLog := newCoreLogWriter(p.ID, "stderr")
+	cmd.Stdout = stdoutLog
+	cmd.Stderr = stderrLog
 	if err := cmd.Start(); err != nil {
 		m.mu.Unlock()
 		removeGeneratedConfig(runtimeConfigPath)
@@ -117,7 +108,8 @@ func (m *XrayManager) Connect(ctx context.Context, req api.ConnectRequest) (api.
 	}
 
 	pid := cmd.Process.Pid
-	outputDone := forwardCoreOutput(pid, p.ID, stdoutPipe, stderrPipe)
+	stdoutLog.setPID(pid)
+	stderrLog.setPID(pid)
 	logCoreStarted(pid, p.ID)
 
 	done := make(chan struct{})
@@ -141,7 +133,7 @@ func (m *XrayManager) Connect(ctx context.Context, req api.ConnectRequest) (api.
 	m.state = active
 	m.mu.Unlock()
 
-	go m.waitForExit(cmd, done, outputDone, runtimeConfigPath, p.ID)
+	go m.waitForExit(cmd, done, []*coreLogWriter{stdoutLog, stderrLog}, runtimeConfigPath, p.ID)
 	return lifecycleResponse(active), nil
 }
 
@@ -208,10 +200,10 @@ func (m *XrayManager) Status(context.Context) api.StatusResponse {
 	}
 }
 
-func (m *XrayManager) waitForExit(cmd *exec.Cmd, done chan struct{}, outputDone <-chan struct{}, runtimeConfigPath, profileID string) {
+func (m *XrayManager) waitForExit(cmd *exec.Cmd, done chan struct{}, coreLogs []*coreLogWriter, runtimeConfigPath, profileID string) {
 	err := cmd.Wait()
-	if outputDone != nil {
-		<-outputDone
+	for _, coreLog := range coreLogs {
+		coreLog.Flush()
 	}
 	pid := 0
 	if cmd.Process != nil {
@@ -345,42 +337,55 @@ func processExitMessage(err error) string {
 	return "Xray process exited unexpectedly: " + err.Error()
 }
 
-func forwardCoreOutput(pid int, profileID string, stdout, stderr io.Reader) <-chan struct{} {
-	done := make(chan struct{})
-	go func() {
-		var wg sync.WaitGroup
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			scanCoreOutput(pid, profileID, "stdout", stdout)
-		}()
-		go func() {
-			defer wg.Done()
-			scanCoreOutput(pid, profileID, "stderr", stderr)
-		}()
-		wg.Wait()
-		close(done)
-	}()
-	return done
+type coreLogWriter struct {
+	mu         sync.Mutex
+	pid        int
+	profileID  string
+	streamName string
+	pending    []byte
 }
 
-func scanCoreOutput(pid int, profileID, streamName string, src io.Reader) {
-	reader := bufio.NewReader(src)
-	for {
-		line, err := reader.ReadString('\n')
-		if len(line) > 0 {
-			line = strings.TrimRight(line, "\r\n")
-			log.Printf("tunwardend: core xray %s pid=%d profile=%s: %s", streamName, pid, render.Redact(profileID), render.Redact(line))
+func newCoreLogWriter(profileID, streamName string) *coreLogWriter {
+	return &coreLogWriter{profileID: profileID, streamName: streamName}
+}
+
+func (w *coreLogWriter) setPID(pid int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.pid = pid
+}
+
+func (w *coreLogWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	written := len(p)
+	for len(p) > 0 {
+		idx := bytes.IndexByte(p, '\n')
+		if idx < 0 {
+			w.pending = append(w.pending, p...)
+			break
 		}
-		if err == nil {
-			continue
-		}
-		if errors.Is(err, io.EOF) {
-			return
-		}
-		log.Printf("tunwardend: core xray log read failed stream=%s pid=%d profile=%s error=%s", streamName, pid, render.Redact(profileID), render.Redact(err.Error()))
+		w.pending = append(w.pending, p[:idx]...)
+		w.logPendingLocked()
+		p = p[idx+1:]
+	}
+	return written, nil
+}
+
+func (w *coreLogWriter) Flush() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.pending) == 0 {
 		return
 	}
+	w.logPendingLocked()
+}
+
+func (w *coreLogWriter) logPendingLocked() {
+	line := strings.TrimRight(string(w.pending), "\r")
+	w.pending = w.pending[:0]
+	log.Printf("tunwardend: core xray %s pid=%d profile=%s: %s", w.streamName, w.pid, render.Redact(w.profileID), render.Redact(line))
 }
 
 func logCoreStarted(pid int, profileID string) {
