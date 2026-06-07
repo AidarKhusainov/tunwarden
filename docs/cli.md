@@ -519,3 +519,9 @@ Notes:
 `tunwarden import` exists for first-run convenience and format detection.
 
 It must not replace explicit `profile` and `subscription` command groups, because profiles and subscriptions have different lifecycles.
+
+### `plan` is a safety command
+
+`plan` is required because TunWarden changes Linux networking in later milestones.
+
+It must not become decorative. If a plan cannot explain meaningful changes or non-changes, it should not be exposed for that mode yet.
