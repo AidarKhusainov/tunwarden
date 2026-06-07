@@ -340,6 +340,7 @@ func processExitMessage(err error) string {
 type coreLogWriter struct {
 	mu         sync.Mutex
 	pid        int
+	pidKnown   bool
 	profileID  string
 	streamName string
 	pending    []byte
@@ -353,6 +354,8 @@ func (w *coreLogWriter) setPID(pid int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.pid = pid
+	w.pidKnown = true
+	w.flushCompleteLinesLocked()
 }
 
 func (w *coreLogWriter) Write(p []byte) (int, error) {
@@ -360,15 +363,9 @@ func (w *coreLogWriter) Write(p []byte) (int, error) {
 	defer w.mu.Unlock()
 
 	written := len(p)
-	for len(p) > 0 {
-		idx := bytes.IndexByte(p, '\n')
-		if idx < 0 {
-			w.pending = append(w.pending, p...)
-			break
-		}
-		w.pending = append(w.pending, p[:idx]...)
-		w.logPendingLocked()
-		p = p[idx+1:]
+	w.pending = append(w.pending, p...)
+	if w.pidKnown {
+		w.flushCompleteLinesLocked()
 	}
 	return written, nil
 }
@@ -376,16 +373,29 @@ func (w *coreLogWriter) Write(p []byte) (int, error) {
 func (w *coreLogWriter) Flush() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.flushCompleteLinesLocked()
 	if len(w.pending) == 0 {
 		return
 	}
-	w.logPendingLocked()
+	w.logLineLocked(w.pending)
+	w.pending = w.pending[:0]
 }
 
-func (w *coreLogWriter) logPendingLocked() {
-	line := strings.TrimRight(string(w.pending), "\r")
-	w.pending = w.pending[:0]
-	log.Printf("tunwardend: core xray %s pid=%d profile=%s: %s", w.streamName, w.pid, render.Redact(w.profileID), render.Redact(line))
+func (w *coreLogWriter) flushCompleteLinesLocked() {
+	for {
+		idx := bytes.IndexByte(w.pending, '\n')
+		if idx < 0 {
+			return
+		}
+		w.logLineLocked(w.pending[:idx])
+		copy(w.pending, w.pending[idx+1:])
+		w.pending = w.pending[:len(w.pending)-idx-1]
+	}
+}
+
+func (w *coreLogWriter) logLineLocked(line []byte) {
+	cleanLine := strings.TrimRight(string(line), "\r")
+	log.Printf("tunwardend: core xray %s pid=%d profile=%s: %s", w.streamName, w.pid, render.Redact(w.profileID), render.Redact(cleanLine))
 }
 
 func logCoreStarted(pid int, profileID string) {
