@@ -110,7 +110,7 @@ func runJournalctl(ctx context.Context, stdout io.Writer, opts Options) (int, er
 
 	waitErr := cmd.Wait()
 	var stdoutCount int
-	for range 2 {
+	for i := 0; i < 2; i++ {
 		result := <-errc
 		if result.err != nil {
 			return stdoutCount, fmt.Errorf("read journalctl %s: %w", result.name, result.err)
