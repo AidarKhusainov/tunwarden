@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	txstate "github.com/AidarKhusainov/tunwarden/internal/state"
 )
 
 func TestInspectWithOptionsReportsCleanInactiveWhenRuntimeMissing(t *testing.T) {
@@ -99,6 +102,41 @@ func TestInspectWithOptionsReportsGeneratedRuntimeConfigs(t *testing.T) {
 	}
 	if !strings.Contains(got, "  - generated runtime configs: "+generatedDir+"\n") {
 		t.Fatalf("expected generated runtime config candidate, got %q", got)
+	}
+}
+
+func TestInspectWithOptionsReportsTransactionState(t *testing.T) {
+	runtimeDir := t.TempDir()
+	store := txstate.TransactionStore{RuntimeDir: runtimeDir}
+	tx := txstate.NewTransaction("tx-apply", "profile-1", "tun", time.Now().UTC())
+	tx.State = txstate.TransactionApplying
+	tx.Rollback = txstate.RollbackMetadata{
+		TUN: []txstate.TUNRollback{{
+			InterfaceName: "tunwarden0",
+			Owner:         txstate.TransactionOwner,
+		}},
+	}
+	path, err := store.Save(tx)
+	if err != nil {
+		t.Fatalf("save transaction: %v", err)
+	}
+
+	report := InspectWithOptions(context.Background(), Options{RuntimeDir: runtimeDir})
+	if !report.HasUnhealthyState() {
+		t.Fatal("pending transaction state should be unhealthy")
+	}
+	assertCandidate(t, report, "transaction-state", "transaction rollback state", path)
+
+	got := report.String()
+	want := []string{
+		"Transaction: pending apply\n",
+		"Rollback available: yes\n",
+		"State path: " + path + "\n",
+	}
+	for _, text := range want {
+		if !strings.Contains(got, text) {
+			t.Fatalf("expected output to contain %q, got %q", text, got)
+		}
 	}
 }
 
