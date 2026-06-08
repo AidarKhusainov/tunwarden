@@ -65,9 +65,17 @@ func staleResources(ctx context.Context, runner CommandRunner, opts staleResourc
 
 	message := staleResourceMessage(stale, warnings)
 	if len(stale) > 0 || len(warnings) > 0 {
-		return Check{Name: "stale-resources", Severity: SeverityWarning, Message: message}
+		return Check{
+			Name:     "stale-resources",
+			Severity: SeverityWarning,
+			Message:  message,
+		}
 	}
-	return Check{Name: "stale-resources", Severity: SeverityOK, Message: message}
+	return Check{
+		Name:     "stale-resources",
+		Severity: SeverityOK,
+		Message:  message,
+	}
 }
 
 func appendTransactionState(stale *[]string, warnings *[]string, runtimeDir string) {
@@ -76,7 +84,13 @@ func appendTransactionState(stale *[]string, warnings *[]string, runtimeDir stri
 		if !summary.RequiresCleanup {
 			continue
 		}
-		*stale = append(*stale, fmt.Sprintf("transaction %s %s; rollback available: %s; state path: %s", summary.ID, summary.StatusLine(), summary.RollbackLine(), summary.Path))
+		*stale = append(*stale, fmt.Sprintf(
+			"transaction %s %s; rollback available: %s; state path: %s",
+			summary.ID,
+			summary.StatusLine(),
+			summary.RollbackLine(),
+			summary.Path,
+		))
 	}
 	for _, warning := range scanWarnings {
 		*warnings = append(*warnings, "cannot inspect transaction state: "+warning)
