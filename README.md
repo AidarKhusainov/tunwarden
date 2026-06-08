@@ -30,7 +30,7 @@ What exists now:
 What does not exist yet:
 
 - No TUN/full-tunnel VPN mode is established yet.
-- No health-check apply plan is produced yet.
+- No privileged TUN/full-tunnel execution, verified leak protection, or health-check apply/verify behavior exists yet.
 - No route, policy-rule, DNS, nftables, or firewall mutation is applied yet.
 - No automatic Xray download/update is implemented yet.
 - No GUI is planned for the early product.
@@ -78,7 +78,7 @@ Canonical command names are defined in [CLI contract](docs/cli.md). The implemen
 
 `plan -> snapshot -> apply -> verify -> commit`, with rollback on failure.
 
-`plan --mode tun` currently performs the read-only snapshot and full-tunnel dry-run portions of that lifecycle. It produces intended TUN device, route, policy-rule, DNS, nftables/firewall, kill-switch, server-bypass, route-loop, warning, and rollback output, but it does not mutate the host and does not yet plan health-check apply behavior.
+`plan --mode tun` currently performs the read-only snapshot and full-tunnel dry-run portions of that lifecycle. It produces intended TUN device, route, policy-rule, DNS, nftables/firewall chain/rule, kill-switch, server-bypass, route-loop, warning, and rollback output, but it does not mutate the host and does not yet provide privileged execution, verified leak protection, or health-check apply/verify behavior.
 
 `connect --mode proxy-only` currently applies only daemon-owned Xray process lifecycle and generated runtime config state. It must not mutate TUN, routes, DNS, nftables, or firewall state.
 
