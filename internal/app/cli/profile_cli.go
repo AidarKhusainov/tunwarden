@@ -365,7 +365,7 @@ func profileForOutput(p profile.Profile) profile.Profile {
 	p.Name = render.Redact(p.Name)
 	p.Server = render.Redact(p.Server)
 	p.Protocol = render.Redact(p.Protocol)
-	p.UserIdentity = render.Redact(p.UserIdentity)
+	p.UserIdentity = redactedProfileUserIdentity(p)
 	p.Transport = render.Redact(p.Transport)
 	p.Security = render.Redact(p.Security)
 	p.Encryption = render.Redact(p.Encryption)
@@ -380,6 +380,18 @@ func profileForOutput(p profile.Profile) profile.Profile {
 	p.RealityShortID = render.Redact(p.RealityShortID)
 	p.RealitySpiderX = render.Redact(p.RealitySpiderX)
 	return p
+}
+
+func redactedProfileUserIdentity(p profile.Profile) string {
+	if strings.TrimSpace(p.UserIdentity) == "" {
+		return ""
+	}
+	switch strings.ToLower(p.Protocol) {
+	case "trojan", "shadowsocks":
+		return "REDACTED"
+	default:
+		return render.Redact(p.UserIdentity)
+	}
 }
 
 func printOptionalProfileField(w io.Writer, label, value string) {
