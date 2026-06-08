@@ -113,6 +113,34 @@ func TestRunCLIImportSubscriptionRollbackPreservesState(t *testing.T) {
 	}
 }
 
+func TestRunCLIImportMalformedTargetDoesNotLeakInput(t *testing.T) {
+	secretToken := "00000000-0000-0000-0000-000000000001"
+	secretTarget := "https://sub.example.invalid/sub3cr1pt1on3/%" + secretToken
+
+	var out bytes.Buffer
+	err := runWithOptions(context.Background(), []string{"import", secretTarget}, &out, options{profileStorePath: filepath.Join(t.TempDir(), "profiles.json")})
+	if err == nil {
+		t.Fatal("expected malformed import target to fail")
+	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected exit code 2, got %d", got)
+	}
+	if got := err.Error(); got != "invalid import target: malformed URI or URL" {
+		t.Fatalf("unexpected sanitized error: %q", got)
+	}
+	for _, leaked := range []string{secretTarget, secretToken, "sub3cr1pt1on3"} {
+		if strings.Contains(err.Error(), leaked) {
+			t.Fatalf("malformed import error leaked %q in %q", leaked, err.Error())
+		}
+		if strings.Contains(out.String(), leaked) {
+			t.Fatalf("malformed import stdout leaked %q in %q", leaked, out.String())
+		}
+	}
+	if out.Len() != 0 {
+		t.Fatalf("expected no stdout for malformed import target, got %q", out.String())
+	}
+}
+
 func TestRunCLIImportInvalidUsageExitCode(t *testing.T) {
 	err := runWithOptions(context.Background(), []string{"import", "--json", "vless://demo@example.com:443#demo"}, &bytes.Buffer{}, options{profileStorePath: filepath.Join(t.TempDir(), "profiles.json")})
 	if err == nil {
