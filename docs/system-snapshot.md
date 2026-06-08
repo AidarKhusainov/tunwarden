@@ -17,6 +17,12 @@ The snapshot layer may inspect:
 
 The snapshot layer must not create, update, or delete TUN devices, routes, DNS configuration, nftables tables, firewall rules, processes, or runtime files.
 
+## Server route resolution
+
+`profile.Profile.Server` may be an IP literal or a hostname. For IP literals, the snapshot collector may run a read-only route lookup directly against that IP. For hostnames, the collector must first resolve the hostname under a bounded context timeout and then run the route lookup against a resolved IP address.
+
+DNS resolution failures, empty DNS answers, and DNS timeouts must not fail the whole snapshot. They must produce an `unknown` server-route observation with a clear detail message so planners can warn about incomplete server-bypass visibility.
+
 ## Status vocabulary
 
 Every optional observation uses this vocabulary:
@@ -32,7 +38,7 @@ This vocabulary lets planners distinguish host limitations from stale state and 
 
 ## Planner contract
 
-`tunwarden plan --mode tun <profile-id>` consumes a snapshot and produces an inspectable read-only plan. The plan may warn about incomplete visibility, missing optional backends, missing IPv6 support, stale TunWarden-owned resources, or a server route that would loop through `tunwarden0`.
+`tunwarden plan --mode tun <profile-id>` consumes a snapshot and produces an inspectable read-only plan. The plan may warn about incomplete visibility, missing optional backends, missing IPv6 support, stale TunWarden-owned resources, DNS resolution failure, or a server route that would loop through `tunwarden0`.
 
 The TUN snapshot plan has no rollback steps because it does not mutate state. Future TUN execution work must still build a real transaction with before snapshot, desired plan, apply steps, verification, rollback steps, and recovery ownership.
 
