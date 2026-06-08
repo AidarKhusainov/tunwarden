@@ -408,6 +408,15 @@ Implemented TUN full-tunnel dry-run output:
 - policy-rule desired state for default IPv4 traffic through the TunWarden table;
 - VPN server bypass route and policy-rule desired state only when the current read-only snapshot resolved the server route to a concrete IP address;
 - blocked/incomplete server-bypass output and warnings when the server target is not a concrete IP address;
+- DNS desired state for systemd-resolved per-link DNS on `tunwarden0`;
+- DNS rollback intent to restore previous per-link DNS state where possible;
+- nftables/firewall desired state for TunWarden-owned `table inet tunwarden`;
+- typed nftables chain desired state, initially an `output` chain with `type filter`, `hook output`, `priority 0`, and `policy accept`;
+- typed nftables rule desired state for VPN server bypass, TUN egress allow, and non-TUN kill-switch blocking;
+- rule ownership markers and rollback keys for future apply, verify, and recover behavior;
+- VPN server bypass and non-TUN blocking according to the selected kill-switch policy;
+- nftables rollback intent to remove `inet tunwarden` if created by the transaction;
+- explicit kill-switch policy limitations and strict kill-switch recovery warnings;
 - current default IPv4 and IPv6 route state;
 - current default interface when detected;
 - route to the VPN server candidate after resolving hostname servers to an IP address with a read-only resolver timeout;
@@ -417,13 +426,13 @@ Implemented TUN full-tunnel dry-run output:
 - IPv4/IPv6 assumptions;
 - known TunWarden TUN device presence for names such as `tunwarden0`;
 - stale TunWarden-owned resources;
-- warnings for incomplete visibility, DNS resolution failure, optional backend absence, stale resources, and route-loop risk;
-- rollback steps for the planned TUN device, route, and policy-rule desired state;
+- warnings for incomplete visibility, DNS resolution failure, optional backend absence, stale resources, unsupported DNS/firewall environments, and route-loop risk;
+- rollback steps for the planned nftables, DNS, TUN device, route, and policy-rule desired state;
 - final `No changes were applied.` confirmation.
 
-Implemented TUN JSON output keeps the common `schema_version`, `status`, `warnings`, and `errors` fields. Top-level `mode` remains the CLI mode selector value `tun`. The command-specific `plan.tunnel_mode` field is `full-tunnel`. The `plan` object includes `profile`, `tun`, `routes`, `policy_rules`, `server_bypass`, safety flags, and the full current `snapshot`. The snapshot includes `os`, default routes, server route, DNS, NetworkManager, nftables, TUN devices, IPv4, IPv6, and stale resources with the same redaction policy as human output.
+Implemented TUN JSON output keeps the common `schema_version`, `status`, `warnings`, and `errors` fields. Top-level `mode` remains the CLI mode selector value `tun`. The command-specific `plan.tunnel_mode` field is `full-tunnel`. The `plan` object includes `profile`, `tun`, `routes`, `policy_rules`, `server_bypass`, `dns`, `firewall`, safety flags, and the full current `snapshot`. `plan.firewall.chains` and `plan.firewall.rules` contain typed nftables desired-state objects, including chain name/type/hook/priority/policy/action and rule chain/expression/verdict/action/reason/ownership/rollback key. The snapshot includes `os`, default routes, server route, DNS, NetworkManager, nftables, TUN devices, IPv4, IPv6, and stale resources with the same redaction policy as human output. `plan.claims_leak_protection` is `false` until apply, verify, rollback, and recover execution exist.
 
-The current `plan --mode tun` implementation is still read-only. It produces an intended TUN/route/policy-rule dry-run and rollback description, but it does not yet apply anything and does not yet produce DNS, nftables/firewall, kill-switch, or health-check apply plans.
+The current `plan --mode tun` implementation is still read-only. It produces intended TUN/route/policy-rule/DNS/nftables/firewall/kill-switch dry-run and rollback descriptions, but it does not apply anything and does not yet provide privileged execution, verified leak protection, or health-check apply/verify behavior.
 
 ### Connect and disconnect
 
@@ -503,7 +512,7 @@ tunwarden doctor --routes
 tunwarden doctor --firewall
 ```
 
-The current `plan --mode tun` implementation is the read-only full-tunnel TUN/route dry-run required before full TUN mutation work. It combines the current host snapshot with intended TUN device, route, policy-rule, VPN server bypass, route-loop warning, and rollback output. It still does not apply anything and does not yet plan DNS, nftables/firewall, kill-switch, or health-check apply behavior.
+The current `plan --mode tun` implementation is the read-only full-tunnel dry-run required before full TUN mutation work. It combines the current host snapshot with intended TUN device, route, policy-rule, VPN server bypass, DNS, nftables/firewall chains/rules, kill-switch, route-loop warning, and rollback output. It still does not apply anything and does not yet provide privileged execution, verified leak protection, or health-check apply/verify behavior.
 
 `connect --mode tun` must apply changes only through daemon-owned network transactions.
 
