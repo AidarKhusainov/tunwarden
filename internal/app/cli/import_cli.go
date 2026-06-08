@@ -27,7 +27,7 @@ func runImportCommand(ctx context.Context, args []string, stdout io.Writer, opts
 
 	u, err := url.Parse(target)
 	if err != nil {
-		return usageError("invalid import target: %s", err.Error())
+		return usageError("invalid import target: malformed URI or URL")
 	}
 	if u.Scheme == "" {
 		return usageError("import requires a VLESS share URI or a file/http/https subscription URL")
