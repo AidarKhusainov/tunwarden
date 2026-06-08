@@ -77,6 +77,27 @@ StateDirectory=tunwarden
 
 `LogsDirectory=tunwarden` is intentionally not required while the daemon logs to stdout/stderr and the unit sends those streams to journald. Add a logs directory only when file-based package logs become a real product requirement.
 
+#### Transaction runtime state
+
+The implemented transaction state schema is volatile daemon runtime state and is stored under:
+
+```text
+/run/tunwarden/transactions/<id>.json
+```
+
+Transaction files must be:
+
+- owned by TunWarden and include `owner: "tunwarden"`;
+- versioned with `schema_version: "tunwarden.transaction.v1"`;
+- written with file mode `0600` under a daemon-owned runtime directory;
+- written atomically with temp-file fsync, rename, and directory fsync;
+- safe to scan repeatedly after daemon restart;
+- free of persistent secrets.
+
+Transaction files may store non-secret rollback metadata for TunWarden-owned TUN devices, routes, policy rules, DNS state, nftables tables/chains, generated runtime config paths, and child-process labels or PIDs. They must not store share URIs, subscription URLs with provider tokens, passwords, authorization headers, private keys, or provider API tokens.
+
+`status`, `doctor`, and `recover` must be able to explain pending, failed, rolling-back, or otherwise stale transaction state using only redacted summaries. They must not apply cleanup as part of read-only inspection.
+
 ### 1.3 System networking state
 
 System networking state is not persistent application data.
@@ -126,6 +147,7 @@ status:
   daemon
   connection
   runtime
+  transactions
 
 doctor:
   checks
@@ -136,6 +158,20 @@ plan:
   steps
   rollback_steps
 ```
+
+Daemon-backed status may include `transactions`. Each item is a redacted summary with stable facts only:
+
+```json
+{
+  "id": "tx-1",
+  "state": "applying",
+  "rollback_available": true,
+  "requires_cleanup": true,
+  "path": "/run/tunwarden/transactions/tx-1.json"
+}
+```
+
+Human-readable transaction phrases such as `pending apply` are rendered by clients from `state` and cleanup flags; they are not a separate source of truth in the daemon API.
 
 ## 3. Output redaction
 
@@ -161,6 +197,7 @@ subscription: https://example.com/sub?token=REDACTED
 Rules:
 
 - Generated core configs must not be logged in full by default.
+- Transaction files must reject persistent secret-looking keys and values before they are written.
 - `logs`, `doctor`, `status`, `plan`, and `recover` must use the same redaction helpers.
 - A future explicit debug mode must document exactly what additional data it reveals.
 
