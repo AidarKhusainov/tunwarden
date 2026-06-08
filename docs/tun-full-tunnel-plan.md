@@ -14,13 +14,13 @@ The human output starts with `TunWarden TUN plan` and includes:
 - a policy rule that sends default IPv4 traffic to the TunWarden table;
 - an explicit VPN server bypass route through the current default gateway/interface when the server route resolves to a concrete IP address;
 - a DNS plan for systemd-resolved per-link DNS on `tunwarden0`, including rollback to the previous per-link DNS state where possible;
-- a firewall plan for a TunWarden-owned `inet tunwarden` nftables table, VPN server bypass, kill-switch policy behavior, recovery warning, and rollback by removing the owned table;
+- a firewall plan for a TunWarden-owned `inet tunwarden` nftables table, typed chain/rule desired state, VPN server bypass, kill-switch policy behavior, recovery warning, ownership markers, rollback keys, and rollback by removing the owned table;
 - current snapshot inputs for default route, server route, DNS, NetworkManager, nftables, IPv4/IPv6, TUN devices, and stale TunWarden-owned resources;
 - route-loop risks, unsupported backend warnings, kill-switch limitations, and stale-resource warnings;
 - rollback steps corresponding to the planned nftables, DNS, policy-rule, route, and TUN desired state;
 - `No changes were applied.`
 
-JSON output keeps the common `schema_version`, `status`, `warnings`, and `errors` fields. The command-specific `plan` object includes `tunnel_mode`, `tun`, `routes`, `policy_rules`, `server_bypass`, `dns`, `firewall`, and the current `snapshot`. Top-level `rollback_steps` correspond to the planned dry-run changes. `plan.claims_leak_protection` is `false` until apply, verify, rollback, and recover execution are implemented.
+JSON output keeps the common `schema_version`, `status`, `warnings`, and `errors` fields. The command-specific `plan` object includes `tunnel_mode`, `tun`, `routes`, `policy_rules`, `server_bypass`, `dns`, `firewall`, and the current `snapshot`. `plan.firewall` includes `chains` and `rules` arrays with typed nftables desired-state fields. Top-level `rollback_steps` correspond to the planned dry-run changes. `plan.claims_leak_protection` is `false` until apply, verify, rollback, and recover execution are implemented.
 
 ## Safety boundary
 
@@ -36,7 +36,10 @@ The planned system state is TunWarden-owned and must remain identifiable before 
 - routing table: `tunwarden` / `51820`;
 - policy rule priorities: `51819` for VPN server bypass and `51820` for default TunWarden traffic;
 - DNS backend: systemd-resolved per-link DNS on `tunwarden0`;
-- nftables table: `table inet tunwarden`.
+- nftables table: `table inet tunwarden`;
+- nftables chain: `output` with `type filter`, `hook output`, `priority 0`, and `policy accept`;
+- nftables rule ownership markers such as `tunwarden:firewall:server-bypass`, `tunwarden:firewall:tun-egress`, and `tunwarden:firewall:kill-switch`;
+- nftables rollback keys such as `inet/tunwarden/output/server-bypass`, `inet/tunwarden/output/tun-egress`, and `inet/tunwarden/output/kill-switch`.
 
 ## DNS plan
 
@@ -62,10 +65,19 @@ Firewall plan:
 - backend: nftables
 - create nftables table inet tunwarden
 - allow VPN server bypass outside TUN
+- allow traffic through tunwarden0
 - kill-switch policy: soft
 - block non-TUN traffic according to selected kill-switch policy
+Firewall chains:
+- create chain output type filter hook output priority 0 policy accept
+Firewall rules:
+- add output ip daddr <server-ip> -> accept owner=tunwarden:firewall:server-bypass rollback=inet/tunwarden/output/server-bypass
+- add output oifname "tunwarden0" -> accept owner=tunwarden:firewall:tun-egress rollback=inet/tunwarden/output/tun-egress
+- add output oifname != "tunwarden0" -> reject owner=tunwarden:firewall:kill-switch rollback=inet/tunwarden/output/kill-switch
 - rollback: remove inet tunwarden
 ```
+
+The planner models nftables desired state as typed chains and rules, not free-form renderer strings. This keeps the dry-run output useful for users while preserving a future executor/verify/recover path that can reason about chain name, hook, priority, expression, verdict, ownership, and rollback key.
 
 If nftables cannot be inspected, the firewall desired state is blocked and the plan emits an actionable warning. If a TunWarden-owned nftables table already exists, future apply must validate ownership or recover it before replacing rules.
 
