@@ -55,15 +55,12 @@ type Transaction struct {
 	Labels         map[string]string `json:"labels,omitempty"`
 }
 
-// SnapshotMetadata stores a non-secret pointer to the pre-change host state.
 type SnapshotMetadata struct {
 	CapturedAt time.Time `json:"captured_at,omitempty"`
 	Source     string    `json:"source,omitempty"`
 	Summary    []string  `json:"summary,omitempty"`
 }
 
-// DesiredPlan stores inspectable, non-secret plan metadata. Concrete executor
-// packages own the low-level command construction.
 type DesiredPlan struct {
 	PlanID string          `json:"plan_id,omitempty"`
 	TUN    TUNDesiredState `json:"tun,omitempty"`
@@ -137,8 +134,6 @@ type AppliedStep struct {
 	Owner       string    `json:"owner,omitempty"`
 }
 
-// RollbackMetadata is intentionally structured by resource type so repeated
-// cleanup planning can be deterministic and idempotent after daemon restart.
 type RollbackMetadata struct {
 	TUN              []TUNRollback             `json:"tun,omitempty"`
 	Routes           []RouteRollback           `json:"routes,omitempty"`
@@ -205,7 +200,6 @@ type HealthResult struct {
 	Message   string    `json:"message,omitempty"`
 }
 
-// TransactionSummary is safe for status, doctor, and recover output.
 type TransactionSummary struct {
 	ID                string           `json:"id"`
 	State             TransactionState `json:"state"`
@@ -220,8 +214,9 @@ type TransactionStore struct {
 }
 
 var (
-	transactionIDPattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
-	secretValuePattern    = regexp.MustCompile(`(?i)(vless|vmess|trojan|ss)://|https?://[^\s?]+\?[^\s]+|\b(token|password|passwd|secret|api[_-]?key|authorization|private[_-]?key)=`)
+	transactionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
+	secretValuePattern   = regexp.MustCompile(`(?i)(vless|vmess|trojan|ss)://|https?://[^\s?]+\?[^\s]+|\bbearer\s+[A-Za-z0-9._~+/-]+|\b(token|password|passwd|secret|api[_-]?key|authorization|private[_-]?key)=`)
+	secretKeys           = map[string]struct{}{"token": {}, "access_token": {}, "refresh_token": {}, "password": {}, "passwd": {}, "secret": {}, "client_secret": {}, "api_key": {}, "apikey": {}, "authorization": {}, "private_key": {}, "privatekey": {}, "reality_private_key": {}}
 	errEmptyTransactionID = errors.New("empty transaction id")
 )
 
@@ -230,16 +225,7 @@ func NewTransaction(id, profileID, mode string, now time.Time) Transaction {
 		now = time.Now().UTC()
 	}
 	now = now.UTC()
-	return Transaction{
-		SchemaVersion: TransactionSchemaVersion,
-		Owner:         TransactionOwner,
-		ID:            id,
-		ProfileID:     profileID,
-		Mode:          mode,
-		State:         TransactionPlanned,
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}
+	return Transaction{SchemaVersion: TransactionSchemaVersion, Owner: TransactionOwner, ID: id, ProfileID: profileID, Mode: mode, State: TransactionPlanned, CreatedAt: now, UpdatedAt: now}
 }
 
 func (s TransactionStore) Path(id string) (string, error) {
@@ -272,8 +258,9 @@ func (s TransactionStore) Save(tx Transaction) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return "", fmt.Errorf("create transaction directory %s: %w", filepath.Dir(path), err)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", fmt.Errorf("create transaction directory %s: %w", dir, err)
 	}
 
 	data, err := json.MarshalIndent(tx, "", "  ")
@@ -282,7 +269,7 @@ func (s TransactionStore) Save(tx Transaction) (string, error) {
 	}
 	data = append(data, '\n')
 
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+tx.ID+"-*.tmp")
+	tmp, err := os.CreateTemp(dir, "."+tx.ID+"-*.tmp")
 	if err != nil {
 		return "", fmt.Errorf("create transaction temp file: %w", err)
 	}
@@ -313,6 +300,9 @@ func (s TransactionStore) Save(tx Transaction) (string, error) {
 		return "", fmt.Errorf("replace transaction file %s: %w", path, err)
 	}
 	removeTmp = false
+	if err := syncDir(dir); err != nil {
+		return "", fmt.Errorf("sync transaction directory %s: %w", dir, err)
+	}
 	return path, nil
 }
 
@@ -421,11 +411,7 @@ func ValidateTransaction(tx Transaction) error {
 	if tx.UpdatedAt.IsZero() {
 		return errors.New("missing transaction updated_at")
 	}
-	data, err := json.Marshal(tx)
-	if err != nil {
-		return fmt.Errorf("encode transaction for secret scan: %w", err)
-	}
-	if secretValuePattern.Match(data) {
+	if containsPersistentSecret(tx) {
 		return errors.New("transaction contains data that looks like a persistent secret")
 	}
 	return nil
@@ -468,14 +454,7 @@ func MarkFailure(tx *Transaction, reason string, now time.Time) (bool, error) {
 }
 
 func (tx Transaction) Summary(path string) TransactionSummary {
-	rollbackAvailable := tx.Rollback.Available()
-	return TransactionSummary{
-		ID:                tx.ID,
-		State:             tx.State,
-		Path:              path,
-		RollbackAvailable: rollbackAvailable,
-		RequiresCleanup:   tx.RequiresCleanup(),
-	}
+	return TransactionSummary{ID: tx.ID, State: tx.State, Path: path, RollbackAvailable: tx.Rollback.Available(), RequiresCleanup: tx.RequiresCleanup()}
 }
 
 func (tx Transaction) RequiresCleanup() bool {
@@ -497,9 +476,7 @@ func (s TransactionSummary) StatusLine() string {
 		return "pending plan"
 	case TransactionApplying:
 		return "pending apply"
-	case TransactionApplied:
-		return "pending verification"
-	case TransactionVerifying:
+	case TransactionApplied, TransactionVerifying:
 		return "pending verification"
 	case TransactionCommitted:
 		return "committed"
@@ -522,6 +499,51 @@ func (s TransactionSummary) RollbackLine() string {
 		return "yes"
 	}
 	return "no"
+}
+
+func containsPersistentSecret(tx Transaction) bool {
+	data, err := json.Marshal(tx)
+	if err != nil {
+		return true
+	}
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return true
+	}
+	return containsPersistentSecretValue("", value)
+}
+
+func containsPersistentSecretValue(key string, value any) bool {
+	switch v := value.(type) {
+	case map[string]any:
+		for childKey, childValue := range v {
+			if containsPersistentSecretValue(childKey, childValue) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range v {
+			if containsPersistentSecretValue(key, child) {
+				return true
+			}
+		}
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return false
+		}
+		if isSecretKey(key) {
+			return true
+		}
+		return secretValuePattern.MatchString(trimmed)
+	}
+	return false
+}
+
+func isSecretKey(key string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(key), "-", "_"))
+	_, ok := secretKeys[normalized]
+	return ok
 }
 
 func validateTransactionID(id string) error {
@@ -567,6 +589,15 @@ func validTransition(from, to TransactionState) bool {
 	default:
 		return false
 	}
+}
+
+func syncDir(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func (s TransactionStore) now() time.Time {
