@@ -109,7 +109,19 @@ func TestRunCLIPlanTunRendersFullTunnelDryRun(t *testing.T) {
 		"VPN server bypass: add main 203.0.113.10/32 via 192.0.2.1 dev wlp0s20f3",
 		"Policy rules:",
 		"Routes:",
+		"DNS plan:",
+		"- backend: systemd-resolved per-link DNS",
+		"- target link: tunwarden0",
+		"- rollback: restore previous per-link DNS state where possible",
+		"Firewall plan:",
+		"- create nftables table inet tunwarden",
+		"- allow VPN server bypass outside TUN",
+		"- kill-switch policy: soft",
+		"- block non-TUN traffic according to selected kill-switch policy",
+		"- rollback: remove inet tunwarden",
 		"Rollback steps:",
+		"Remove nftables table inet tunwarden",
+		"Restore previous systemd-resolved",
 		"No changes were applied.",
 		"Default IPv4 route: detected, dev wlp0s20f3",
 		"DNS mode: systemd-resolved",
@@ -163,13 +175,25 @@ func TestRunCLIPlanTunJSONShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected JSON plan object, got %#v", got["plan"])
 	}
-	if plan["starts_xray"] != false || plan["writes_config"] != false || plan["modifies_system_networking"] != false || plan["tunnel_mode"] != "full-tunnel" {
+	if plan["starts_xray"] != false || plan["writes_config"] != false || plan["modifies_system_networking"] != false || plan["tunnel_mode"] != "full-tunnel" || plan["claims_leak_protection"] != false {
 		t.Fatalf("unexpected TUN plan safety flags: %#v", plan)
 	}
-	for _, key := range []string{"tun", "routes", "policy_rules", "server_bypass"} {
+	for _, key := range []string{"tun", "routes", "policy_rules", "server_bypass", "dns", "firewall"} {
 		if plan[key] == nil {
 			t.Fatalf("expected TUN plan JSON key %q, got %#v", key, plan)
 		}
+	}
+	dns, ok := plan["dns"].(map[string]any)
+	if !ok || dns["backend"] != "systemd-resolved per-link DNS" || dns["target_link"] != "tunwarden0" {
+		t.Fatalf("unexpected TUN DNS plan JSON: %#v", plan["dns"])
+	}
+	firewall, ok := plan["firewall"].(map[string]any)
+	if !ok || firewall["backend"] != "nftables" || firewall["family"] != "inet" || firewall["table"] != "tunwarden" {
+		t.Fatalf("unexpected TUN firewall plan JSON: %#v", plan["firewall"])
+	}
+	killSwitch, ok := firewall["kill_switch"].(map[string]any)
+	if !ok || killSwitch["policy"] != "soft" {
+		t.Fatalf("unexpected kill-switch JSON: %#v", firewall["kill_switch"])
 	}
 	snapshot, ok := plan["snapshot"].(map[string]any)
 	if !ok {
@@ -239,7 +263,7 @@ func TestRunCLIPlanHelp(t *testing.T) {
 		t.Fatalf("plan --help failed: %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{"tunwarden plan --mode proxy-only", "tunwarden plan --mode tun", "TUN planning snapshots"} {
+	for _, want := range []string{"tunwarden plan --mode proxy-only", "tunwarden plan --mode tun", "TUN/route/DNS/nftables kill-switch dry-run plan"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected plan help output to contain %q, got %q", want, got)
 		}
