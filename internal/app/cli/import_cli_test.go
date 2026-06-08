@@ -115,7 +115,7 @@ func TestRunCLIImportSubscriptionRollbackPreservesState(t *testing.T) {
 
 func TestRunCLIImportMalformedTargetDoesNotLeakInput(t *testing.T) {
 	secretToken := "00000000-0000-0000-0000-000000000001"
-	secretTarget := "https://sub.example.invalid/sub3cr1pt1on3/%" + secretToken
+	secretTarget := "https://sub.example.invalid/sub3cr1pt1on3/%zz-" + secretToken
 
 	var out bytes.Buffer
 	err := runWithOptions(context.Background(), []string{"import", secretTarget}, &out, options{profileStorePath: filepath.Join(t.TempDir(), "profiles.json")})
