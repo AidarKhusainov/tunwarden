@@ -52,7 +52,7 @@ Expected behavior:
 - prevent traffic loops,
 - clean up on disconnect/crash.
 
-The current foundation `plan --mode tun` implementation is still read-only, but it now produces a full-tunnel TUN/route dry-run plan from the current system snapshot. It shows intended TUN device, route, policy-rule, VPN server bypass, route-loop warning, and rollback output without creating TUN devices or mutating host routes/rules. DNS, nftables/firewall, kill-switch, health-check apply plans, and actual TUN execution remain future daemon-owned transaction work.
+The current foundation `plan --mode tun` implementation is still read-only, but it now produces a full-tunnel dry-run plan from the current system snapshot. It shows intended TUN device, route, policy-rule, DNS, nftables/firewall, VPN server bypass, kill-switch, route-loop warning, and rollback output without creating TUN devices or mutating host routes, rules, DNS, or firewall state. Health-check apply plans and actual TUN execution remain future daemon-owned transaction work.
 
 ### 3.3 Split-tunnel mode
 
@@ -216,6 +216,8 @@ The current dry-run planner must surface this as route-loop risk in human and JS
 
 Initial DNS integration should use systemd-resolved when available.
 
+The current dry-run plan must show the intended systemd-resolved per-link backend before applying anything and must warn clearly when `resolvectl` or systemd-resolved state cannot be inspected.
+
 ### DNS-002: Do not blindly overwrite /etc/resolv.conf
 
 Direct edits to `/etc/resolv.conf` are not allowed in normal operation.
@@ -234,7 +236,16 @@ resolvectl domain tunwarden0 '~.'
 resolvectl default-route tunwarden0 yes
 ```
 
-The current `plan --mode tun` implementation reports DNS snapshot visibility and warnings, but DNS apply planning remains future scope.
+The current `plan --mode tun` implementation reports DNS snapshot visibility and desired DNS state. It must show:
+
+```text
+DNS plan:
+- backend: systemd-resolved per-link DNS
+- target link: tunwarden0
+- rollback: restore previous per-link DNS state where possible
+```
+
+It still must not mutate DNS state.
 
 ### DNS-004: Bootstrap DNS must avoid loops
 
@@ -263,6 +274,8 @@ Initial implementation should use nftables.
 
 iptables fallback is future scope.
 
+The current dry-run plan must show the intended nftables backend before applying anything and must warn clearly when `nft` or nftables table visibility is unavailable.
+
 ### FW-002: TunWarden-owned table
 
 TunWarden must use a clearly named nftables table, for example:
@@ -271,7 +284,17 @@ TunWarden must use a clearly named nftables table, for example:
 nft table inet tunwarden
 ```
 
-The current `plan --mode tun` implementation reports nftables availability and TunWarden table presence, but nftables/firewall apply planning remains future scope.
+The current `plan --mode tun` implementation reports nftables availability and TunWarden table presence and also shows intended nftables/firewall desired state:
+
+```text
+Firewall plan:
+- create nftables table inet tunwarden
+- allow VPN server bypass outside TUN
+- block non-TUN traffic according to selected kill-switch policy
+- rollback: remove inet tunwarden
+```
+
+It still must not mutate nftables or firewall state.
 
 ### FW-003: Kill-switch modes
 
@@ -288,6 +311,8 @@ Suggested semantics:
 - `off`: no kill-switch; rollback restores direct connectivity.
 - `soft`: prevent accidental leaks during transition but restore direct connectivity on failure.
 - `strict`: block non-VPN traffic if VPN fails, except recovery/control traffic.
+
+The current dry-run planner exposes the selected kill-switch policy and its limitations. Strict kill-switch planning must warn that direct connectivity may remain blocked after VPN failure until TunWarden recovery removes owned nftables rules. No dry-run output may claim leak protection until apply, verify, rollback, and recover execution exist.
 
 ### FW-004: Recovery must override kill-switch
 
