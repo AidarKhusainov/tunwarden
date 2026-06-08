@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	netsnapshot "github.com/AidarKhusainov/tunwarden/internal/network/snapshot"
 )
 
 func TestRunCLIPlanProxyOnlyRendersDryRun(t *testing.T) {
@@ -77,14 +79,99 @@ func TestRunCLIPlanProxyOnlyJSONShape(t *testing.T) {
 	}
 }
 
+func TestRunCLIPlanTunRendersReadOnlySnapshot(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "profiles.json")
+	opts := options{
+		profileStorePath: storePath,
+		systemSnapshot: func(ctx context.Context, opts netsnapshot.Options) netsnapshot.Snapshot {
+			if opts.Server != "example.com" {
+				t.Fatalf("expected snapshot server example.com, got %q", opts.Server)
+			}
+			return netsnapshot.FakeResolvedDesktop()
+		},
+	}
+	profileID := importPlanTestProfile(t, opts)
+
+	var out bytes.Buffer
+	if err := runWithOptions(context.Background(), []string{"plan", "--mode", "tun", profileID}, &out, opts); err != nil {
+		t.Fatalf("plan --mode tun failed: %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"TUN planning snapshot",
+		"Mode: tun",
+		"Read-only: will not create TUN devices",
+		"Default IPv4 route: detected, dev wlp0s20f3",
+		"Default interface: wlp0s20f3",
+		"DNS mode: systemd-resolved",
+		"NetworkManager: detected",
+		"nftables: detected",
+		"TunWarden nftables table: missing",
+		"IPv4 assumption: detected",
+		"IPv6 assumption: missing",
+		"Stale TunWarden-owned resources: none detected",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected TUN plan output to contain %q, got %q", want, got)
+		}
+	}
+	if strings.Contains(got, "00000000-0000-0000-0000-000000000001") || strings.Contains(got, "public-key") {
+		t.Fatalf("TUN plan output leaked generated config secret material: %q", got)
+	}
+}
+
+func TestRunCLIPlanTunJSONShape(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "profiles.json")
+	opts := options{
+		profileStorePath: storePath,
+		systemSnapshot: func(ctx context.Context, opts netsnapshot.Options) netsnapshot.Snapshot {
+			return netsnapshot.FakeDesktopWithStaleTunWardenResources()
+		},
+	}
+	profileID := importPlanTestProfile(t, opts)
+
+	var out bytes.Buffer
+	if err := runWithOptions(context.Background(), []string{"plan", "--mode=tun", profileID, "--json"}, &out, opts); err != nil {
+		t.Fatalf("plan --mode tun --json failed: %v", err)
+	}
+	if strings.Contains(out.String(), "00000000-0000-0000-0000-000000000001") || strings.Contains(out.String(), "public-key") {
+		t.Fatalf("plan --mode tun --json leaked generated config secret material: %q", out.String())
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("decode TUN plan JSON: %v", err)
+	}
+	assertCommonJSON(t, got)
+	if got["mode"] != "tun" || got["status"] != "warn" {
+		t.Fatalf("unexpected TUN plan JSON status/mode: %#v", got)
+	}
+	plan, ok := got["plan"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected JSON plan object, got %#v", got["plan"])
+	}
+	if plan["starts_xray"] != false || plan["writes_config"] != false || plan["modifies_system_networking"] != false {
+		t.Fatalf("unexpected TUN plan safety flags: %#v", plan)
+	}
+	snapshot, ok := plan["snapshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected TUN snapshot object, got %#v", plan["snapshot"])
+	}
+	stale, ok := snapshot["stale_resources"].([]any)
+	if !ok || len(stale) != 2 {
+		t.Fatalf("expected two stale resources in snapshot, got %#v", snapshot["stale_resources"])
+	}
+}
+
 func TestRunCLIPlanRejectsInvalidArguments(t *testing.T) {
 	tests := []struct {
 		name        string
 		args        []string
 		wantMessage string
 	}{
-		{name: "missing-mode", args: []string{"plan", "test"}, wantMessage: "plan requires --mode proxy-only"},
-		{name: "unsupported-mode", args: []string{"plan", "--mode", "tun", "test"}, wantMessage: "unsupported plan mode"},
+		{name: "missing-mode", args: []string{"plan", "test"}, wantMessage: "plan requires --mode proxy-only or tun"},
+		{name: "unsupported-mode", args: []string{"plan", "--mode", "wireguard", "test"}, wantMessage: "unsupported plan mode"},
 		{name: "missing-profile", args: []string{"plan", "--mode", "proxy-only"}, wantMessage: "plan requires a profile id"},
 		{name: "unsupported-flag", args: []string{"plan", "--mode", "proxy-only", "--write", "test"}, wantMessage: "unsupported plan argument"},
 	}
@@ -129,8 +216,11 @@ func TestRunCLIPlanHelp(t *testing.T) {
 	if err := run(context.Background(), []string{"plan", "--help"}, &out); err != nil {
 		t.Fatalf("plan --help failed: %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "Usage:\n  tunwarden plan --mode proxy-only") || !strings.Contains(got, "does not start Xray") {
-		t.Fatalf("expected plan help output, got %q", got)
+	got := out.String()
+	for _, want := range []string{"tunwarden plan --mode proxy-only", "tunwarden plan --mode tun", "TUN planning snapshots"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected plan help output to contain %q, got %q", want, got)
+		}
 	}
 }
 
