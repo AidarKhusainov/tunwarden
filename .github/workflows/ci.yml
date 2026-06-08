@@ -25,9 +25,7 @@ jobs:
           cache: true
 
       - name: Go fmt check
-        run: |
-          gofmt -l .
-          test -z "$(gofmt -l .)"
+        run: test -z "$(gofmt -l .)"
 
       - name: Go test
         run: go test ./...
