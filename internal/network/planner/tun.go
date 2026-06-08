@@ -27,10 +27,27 @@ const (
 	DNSActionBlocked          = "blocked"
 	DNSRollbackRestore        = "restore previous per-link DNS state where possible"
 
-	FirewallBackendNftables = "nftables"
-	FirewallTableAction     = "create"
-	FirewallActionBlocked   = "blocked"
-	FirewallRollbackRemove  = "remove inet tunwarden"
+	FirewallBackendNftables    = "nftables"
+	FirewallTableAction        = "create"
+	FirewallActionAdd          = "add"
+	FirewallActionBlocked      = "blocked"
+	FirewallActionSkip         = "skip"
+	FirewallActionValidate     = "validate-or-replace"
+	FirewallRollbackRemove     = "remove inet tunwarden"
+	FirewallOutputChain        = "output"
+	FirewallChainTypeFilter    = "filter"
+	FirewallOutputHook         = "output"
+	FirewallOutputPriority     = 0
+	FirewallDefaultChainPolicy = "accept"
+	FirewallVerdictAccept      = "accept"
+	FirewallVerdictReject      = "reject"
+	FirewallVerdictDrop        = "drop"
+	FirewallServerBypassOwner  = "tunwarden:firewall:server-bypass"
+	FirewallTunEgressOwner     = "tunwarden:firewall:tun-egress"
+	FirewallKillSwitchOwner    = "tunwarden:firewall:kill-switch"
+	FirewallServerBypassKey    = "inet/tunwarden/output/server-bypass"
+	FirewallTunEgressKey       = "inet/tunwarden/output/tun-egress"
+	FirewallKillSwitchKey      = "inet/tunwarden/output/kill-switch"
 
 	KillSwitchPolicyOff    = "off"
 	KillSwitchPolicySoft   = "soft"
@@ -81,11 +98,32 @@ type TunFirewallPlan struct {
 	Family        string
 	Table         string
 	TableAction   string
-	ServerBypass  string
+	Chains        []TunFirewallChainPlan
+	Rules         []TunFirewallRulePlan
 	KillSwitch    TunKillSwitchPlan
 	Reason        string
 	Rollback      string
 	RollbackSteps []string
+}
+
+type TunFirewallChainPlan struct {
+	Name     string
+	Type     string
+	Hook     string
+	Priority int
+	Policy   string
+	Action   string
+	Reason   string
+}
+
+type TunFirewallRulePlan struct {
+	Chain       string
+	Expr        string
+	Verdict     string
+	Action      string
+	Reason      string
+	Ownership   string
+	RollbackKey string
 }
 
 type TunKillSwitchPlan struct {
@@ -176,7 +214,7 @@ func PlanTunWithOptions(p profile.Profile, s snapshot.Snapshot, opts TunOptions)
 	steps = append(steps,
 		fmt.Sprintf("Plan policy rule priority %d for default IPv4 traffic via %s", TunRulePriority, TunRoutingTable),
 		fmt.Sprintf("Plan DNS backend %s on link %s", dnsPlan.Backend, dnsPlan.TargetLink),
-		fmt.Sprintf("Plan nftables table %s %s with %s kill-switch policy", firewallPlan.Family, firewallPlan.Table, firewallPlan.KillSwitch.Policy),
+		fmt.Sprintf("Plan nftables table %s %s with %d chain(s), %d rule(s), and %s kill-switch policy", firewallPlan.Family, firewallPlan.Table, len(firewallPlan.Chains), len(firewallPlan.Rules), firewallPlan.KillSwitch.Policy),
 		"Leave TUN devices, routes, policy rules, DNS, nftables, firewall, and Xray process state unchanged in this dry-run",
 	)
 
@@ -233,27 +271,109 @@ func firewallPlan(s snapshot.Snapshot, policy string, device TunDevicePlan, serv
 		reason = fmt.Sprintf("nftables availability is %s; firewall mutation is unsafe until nft can be inspected", s.Nftables.Availability.Status)
 	}
 	if s.Nftables.TunWardenTable.Status == snapshot.StatusDetected {
-		tableAction = "validate-or-replace"
+		tableAction = FirewallActionValidate
 		reason = "TunWarden nftables table already exists; future apply must validate ownership or recover it before replacing rules"
 	}
-	serverBypass := "allow VPN server bypass outside TUN"
-	if serverIP == "" {
-		serverBypass = "blocked until VPN server bypass target resolves to a concrete IP"
-	}
 
+	ruleAction := firewallRuleAction(tableAction)
 	return TunFirewallPlan{
-		Backend:      FirewallBackendNftables,
-		Family:       snapshot.DefaultNFTFamily,
-		Table:        snapshot.DefaultNFTTable,
-		TableAction:  tableAction,
-		ServerBypass: serverBypass,
-		KillSwitch:   killSwitchPlan(policy, device),
-		Reason:       reason,
-		Rollback:     FirewallRollbackRemove,
+		Backend:     FirewallBackendNftables,
+		Family:      snapshot.DefaultNFTFamily,
+		Table:       snapshot.DefaultNFTTable,
+		TableAction: tableAction,
+		Chains: []TunFirewallChainPlan{{
+			Name:     FirewallOutputChain,
+			Type:     FirewallChainTypeFilter,
+			Hook:     FirewallOutputHook,
+			Priority: FirewallOutputPriority,
+			Policy:   FirewallDefaultChainPolicy,
+			Action:   tableAction,
+			Reason:   "own outbound full-tunnel filtering inside the TunWarden nftables table",
+		}},
+		Rules:      firewallRules(policy, device, serverIP, ruleAction),
+		KillSwitch: killSwitchPlan(policy, device),
+		Reason:     reason,
+		Rollback:   FirewallRollbackRemove,
 		RollbackSteps: []string{
 			fmt.Sprintf("Remove nftables table %s %s if created by this transaction", snapshot.DefaultNFTFamily, snapshot.DefaultNFTTable),
 		},
 	}
+}
+
+func firewallRuleAction(tableAction string) string {
+	switch tableAction {
+	case FirewallTableAction:
+		return FirewallActionAdd
+	case FirewallActionBlocked:
+		return FirewallActionBlocked
+	default:
+		return tableAction
+	}
+}
+
+func firewallRules(policy string, device TunDevicePlan, serverIP, action string) []TunFirewallRulePlan {
+	rules := []TunFirewallRulePlan{serverBypassFirewallRule(serverIP, action), tunEgressFirewallRule(device, action)}
+	if rule := killSwitchFirewallRule(policy, device, action); rule.Action != "" {
+		rules = append(rules, rule)
+	}
+	return rules
+}
+
+func serverBypassFirewallRule(serverIP, action string) TunFirewallRulePlan {
+	rule := TunFirewallRulePlan{
+		Chain:       FirewallOutputChain,
+		Expr:        "ip daddr " + serverIP,
+		Verdict:     FirewallVerdictAccept,
+		Action:      action,
+		Reason:      "allow VPN server control traffic outside TUN before non-TUN blocking",
+		Ownership:   FirewallServerBypassOwner,
+		RollbackKey: FirewallServerBypassKey,
+	}
+	if serverIP == "" {
+		rule.Expr = "ip daddr <server-ip>"
+		rule.Action = FirewallActionBlocked
+		rule.Reason = "VPN server bypass target is unknown; firewall bypass rule cannot be applied safely"
+	}
+	return rule
+}
+
+func tunEgressFirewallRule(device TunDevicePlan, action string) TunFirewallRulePlan {
+	return TunFirewallRulePlan{
+		Chain:       FirewallOutputChain,
+		Expr:        fmt.Sprintf("oifname %q", device.Name),
+		Verdict:     FirewallVerdictAccept,
+		Action:      action,
+		Reason:      "allow traffic that egresses through the TunWarden TUN interface",
+		Ownership:   FirewallTunEgressOwner,
+		RollbackKey: FirewallTunEgressKey,
+	}
+}
+
+func killSwitchFirewallRule(policy string, device TunDevicePlan, action string) TunFirewallRulePlan {
+	rule := TunFirewallRulePlan{
+		Chain:       FirewallOutputChain,
+		Expr:        fmt.Sprintf("oifname != %q", device.Name),
+		Action:      action,
+		Reason:      "block non-TUN traffic according to selected kill-switch policy",
+		Ownership:   FirewallKillSwitchOwner,
+		RollbackKey: FirewallKillSwitchKey,
+	}
+	switch policy {
+	case KillSwitchPolicyOff:
+		rule.Action = FirewallActionSkip
+		rule.Verdict = ""
+		rule.Reason = "kill-switch policy is off; do not install a non-TUN blocking rule"
+	case KillSwitchPolicyStrict:
+		rule.Verdict = FirewallVerdictDrop
+		rule.Reason = "strict kill-switch drops non-TUN traffic until recovery removes TunWarden-owned rules"
+	default:
+		rule.Verdict = FirewallVerdictReject
+		rule.Reason = "soft kill-switch rejects non-TUN traffic during transition and must restore direct connectivity on failure"
+	}
+	if action == FirewallActionBlocked && policy != KillSwitchPolicyOff {
+		rule.Action = FirewallActionBlocked
+	}
+	return rule
 }
 
 func killSwitchPlan(policy string, device TunDevicePlan) TunKillSwitchPlan {
