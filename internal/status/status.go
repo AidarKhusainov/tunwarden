@@ -58,46 +58,83 @@ type Report struct {
 	Warnings          []Warning
 }
 
-type Options struct{ RuntimeDir string }
+type Options struct {
+	RuntimeDir string
+}
 
-func Inspect(ctx context.Context) Report { return InspectWithOptions(ctx, Options{}) }
+func Inspect(ctx context.Context) Report {
+	return InspectWithOptions(ctx, Options{})
+}
 
 func InspectWithOptions(ctx context.Context, opts Options) Report {
 	runtimeDir := opts.RuntimeDir
 	if runtimeDir == "" {
 		runtimeDir = api.RuntimeDirFromEnv()
 	}
-	report := Report{Daemon: "not running", Service: "none", RuntimeDirectory: RuntimeDirectory{Path: runtimeDir}, Proxy: "inactive", TUN: "not managed in this build"}
+
+	report := Report{
+		Daemon: "not running",
+		Service: "none",
+		RuntimeDirectory: RuntimeDirectory{
+			Path: runtimeDir,
+		},
+		Proxy: "inactive",
+		TUN:   "not managed in this build",
+	}
+
 	select {
 	case <-ctx.Done():
 		report.Connection = "unknown (inspection incomplete)"
 		report.RuntimeDirectory.State = RuntimeDirectoryUnknown
 		report.RuntimeDirectory.Message = "unknown (inspection incomplete)"
-		report.Warnings = append(report.Warnings, Warning{Target: "runtime directory " + runtimeDir, Message: ctx.Err().Error()})
+		report.Warnings = append(report.Warnings, Warning{
+			Target:  "runtime directory " + runtimeDir,
+			Message: ctx.Err().Error(),
+		})
 		return report
 	default:
 	}
-	runtime, warn := inspectRuntimeDirectory(runtimeDir)
+
+	runtime, runtimeWarning := inspectRuntimeDirectory(runtimeDir)
 	report.RuntimeDirectory = runtime
-	if warn != nil {
-		report.Warnings = append(report.Warnings, *warn)
+	if runtimeWarning != nil {
+		report.Warnings = append(report.Warnings, *runtimeWarning)
 	}
-	generated, warn := inspectGeneratedRuntimeConfigs(filepath.Join(runtimeDir, generatedDirName))
+
+	generated, generatedWarning := inspectGeneratedRuntimeConfigs(filepath.Join(runtimeDir, generatedDirName))
 	report.Candidates = append(report.Candidates, generated...)
-	if warn != nil {
-		report.Warnings = append(report.Warnings, *warn)
+	if generatedWarning != nil {
+		report.Warnings = append(report.Warnings, *generatedWarning)
 	}
-	tx, txCandidates, txWarnings := inspectTransactions(runtimeDir)
-	report.Transactions = tx
-	report.Candidates = append(report.Candidates, txCandidates...)
-	report.Warnings = append(report.Warnings, txWarnings...)
+
+	transactions, transactionCandidates, transactionWarnings := inspectTransactions(runtimeDir)
+	report.Transactions = transactions
+	report.Candidates = append(report.Candidates, transactionCandidates...)
+	report.Warnings = append(report.Warnings, transactionWarnings...)
 	report.Candidates = append(report.Candidates, runtimeCandidate(runtime)...)
 	report.Connection = connectionState(report.Candidates, report.Warnings)
 	return report
 }
 
 func FromDaemon(s api.StatusResponse) Report {
-	return Report{Daemon: s.Daemon, Service: s.Service, Connection: s.Connection, Mode: s.Mode, RuntimeDirectory: RuntimeDirectory{State: RuntimeDirectoryPresent, Message: s.RuntimeDirectory}, RuntimeConfigPath: s.RuntimeConfigPath, Proxy: s.Proxy, TUN: s.TUN, Routes: s.Routes, DNS: s.DNS, Firewall: s.Firewall, Transactions: transactionsFromAPI(s.Transactions), Warnings: warningsFromStrings("daemon", s.Warnings)}
+	return Report{
+		Daemon:     s.Daemon,
+		Service:    s.Service,
+		Connection: s.Connection,
+		Mode:       s.Mode,
+		RuntimeDirectory: RuntimeDirectory{
+			State:   RuntimeDirectoryPresent,
+			Message: s.RuntimeDirectory,
+		},
+		RuntimeConfigPath: s.RuntimeConfigPath,
+		Proxy:             s.Proxy,
+		TUN:               s.TUN,
+		Routes:            s.Routes,
+		DNS:               s.DNS,
+		Firewall:          s.Firewall,
+		Transactions:      transactionsFromAPI(s.Transactions),
+		Warnings:          warningsFromStrings("daemon", s.Warnings),
+	}
 }
 
 func WithDaemonUnavailable(base Report, message string) Report {
@@ -229,50 +266,61 @@ func runtimeCandidate(runtime RuntimeDirectory) []Candidate {
 	}
 }
 
-func connectionState(c []Candidate, w []Warning) string {
-	if len(c) > 0 {
+func connectionState(candidates []Candidate, warnings []Warning) string {
+	if len(candidates) > 0 {
 		return "inactive (stale state detected)"
 	}
-	if len(w) > 0 {
+	if len(warnings) > 0 {
 		return "unknown (inspection incomplete)"
 	}
 	return "inactive"
 }
+
 func serviceLine(service string) string {
 	if service == "" {
 		return "unknown"
 	}
 	return service
 }
-func staleStateLine(c []Candidate, w []Warning) string {
+
+func staleStateLine(candidates []Candidate, warnings []Warning) string {
 	switch {
-	case len(c) > 0 && len(w) > 0:
-		return fmt.Sprintf("found %d recovery %s; inspection incomplete", len(c), candidateNoun(len(c)))
-	case len(c) > 0:
-		return fmt.Sprintf("found %d recovery %s", len(c), candidateNoun(len(c)))
-	case len(w) > 0:
+	case len(candidates) > 0 && len(warnings) > 0:
+		return fmt.Sprintf("found %d recovery %s; inspection incomplete", len(candidates), candidateNoun(len(candidates)))
+	case len(candidates) > 0:
+		return fmt.Sprintf("found %d recovery %s", len(candidates), candidateNoun(len(candidates)))
+	case len(warnings) > 0:
 		return "unknown (inspection incomplete)"
 	default:
 		return "none"
 	}
 }
+
 func candidateNoun(count int) string {
 	if count == 1 {
 		return "candidate"
 	}
 	return "candidates"
 }
+
 func warningsFromStrings(target string, warnings []string) []Warning {
 	out := make([]Warning, 0, len(warnings))
-	for _, w := range warnings {
-		out = append(out, Warning{Target: target, Message: w})
+	for _, warning := range warnings {
+		out = append(out, Warning{Target: target, Message: warning})
 	}
 	return out
 }
+
 func transactionsFromAPI(in []api.TransactionStatus) []txstate.TransactionSummary {
 	out := make([]txstate.TransactionSummary, 0, len(in))
 	for _, tx := range in {
-		out = append(out, txstate.TransactionSummary{ID: tx.ID, State: txstate.TransactionState(tx.State), Path: tx.Path, RollbackAvailable: tx.RollbackAvailable, RequiresCleanup: tx.RequiresCleanup})
+		out = append(out, txstate.TransactionSummary{
+			ID:                tx.ID,
+			State:             txstate.TransactionState(tx.State),
+			Path:              tx.Path,
+			RollbackAvailable: tx.RollbackAvailable,
+			RequiresCleanup:   tx.RequiresCleanup,
+		})
 	}
 	return out
 }
