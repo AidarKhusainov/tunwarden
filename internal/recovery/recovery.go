@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	txstate "github.com/AidarKhusainov/tunwarden/internal/state"
 )
 
 const (
@@ -183,6 +185,7 @@ func (s OSScanner) Scan(ctx context.Context) ScanResult {
 	var result ScanResult
 	result.scanManagedInterface(ctx, runner)
 	result.scanManagedNFTTable(ctx, runner)
+	result.scanTransactionState(runtimeDir)
 	result.scanGeneratedRuntimeConfigs(filepath.Join(runtimeDir, generatedDirName))
 	result.scanRuntimeDir(runtimeDir)
 	return result
@@ -244,6 +247,23 @@ func (r *ScanResult) scanCommandCandidate(ctx context.Context, runner CommandRun
 			Target:  scan.warningTarget,
 			Message: commandFailureMessage(cmdResult, err),
 		})
+	}
+}
+
+func (r *ScanResult) scanTransactionState(runtimeDir string) {
+	summaries, warnings := txstate.ScanTransactions(runtimeDir)
+	for _, summary := range summaries {
+		if !summary.RequiresCleanup {
+			continue
+		}
+		r.Candidates = append(r.Candidates, Candidate{
+			Kind:        "transaction-state",
+			Description: "transaction rollback state",
+			Target:      summary.Path,
+		})
+	}
+	for _, warning := range warnings {
+		r.Warnings = append(r.Warnings, Warning{Target: "transaction state", Message: warning})
 	}
 }
 
