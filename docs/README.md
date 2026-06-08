@@ -15,6 +15,7 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 - Implemented manual and share-URI `tunwarden profile` behavior is owned by [Profile management](./profile-management.md).
 - Implemented Base64 URI-list `tunwarden subscription` behavior is owned by [Subscription management](./subscription-management.md).
 - Implemented `tunwarden plan --mode proxy-only` behavior is owned by [Proxy-only plan](./proxy-only-plan.md).
+- Implemented `tunwarden plan --mode tun` snapshot-only behavior is owned by [System snapshot model](./system-snapshot.md).
 - Implemented `tunwarden connect --mode proxy-only` and `tunwarden disconnect` behavior is owned by [Proxy-only lifecycle](./proxy-only-lifecycle.md).
 - The implemented v0.1 daemon transport is owned by [Daemon local API](./daemon-api.md).
 - `tunwarden status`'s implemented daemon-backed and local fallback behavior is owned by [Status command](./status.md).
@@ -35,6 +36,7 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 | [Profile management](./profile-management.md) | Implemented v0.1 manual profile add, share URI profile import, list, show, delete, validation, storage, JSON output, and safety boundary. |
 | [Subscription management](./subscription-management.md) | Implemented v0.1 Base64 URI-list subscription add, list, show, update, share URI import, JSON output, redaction, and safety boundary. |
 | [Proxy-only plan](./proxy-only-plan.md) | Implemented v0.1 read-only proxy-only planning, generated Xray config validation, local proxy listeners, JSON output, and safety boundary. |
+| [System snapshot model](./system-snapshot.md) | Implemented read-only TUN planning snapshot model, hostname server-route resolution, fake snapshots, status vocabulary, and safety boundary. |
 | [Proxy-only lifecycle](./proxy-only-lifecycle.md) | Implemented v0.1 daemon-managed Xray process lifecycle for `connect --mode proxy-only`, `disconnect`, generated runtime config cleanup, and safety boundary. |
 | [Daemon local API](./daemon-api.md) | Implemented v0.1 Unix socket daemon API transport, status and doctor endpoints, lifecycle, and safety boundary. |
 | [Status command](./status.md) | Implemented v0.1 read-only `tunwarden status` daemon-backed behavior, local fallback behavior, output shape, and safety boundary. |
@@ -44,7 +46,7 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 | [v0.1 acceptance checklist](./v0.1-acceptance.md) | Manual release-gate checklist for validating the proxy-only technical preview on a Tier 1 Linux host without host networking mutation. |
 | [Architecture](./architecture.md) | CLI/daemon split, privilege boundary, state model, transaction model, engine abstraction, backend interfaces. |
 | [State and security requirements](./state-and-security.md) | User/daemon/system state separation, XDG/systemd paths, JSON compatibility, redaction, confirmations, service hardening, and core process safety. |
-| [Package boundaries](./package-boundaries.md) | Dependency direction between CLI, daemon, API, domain, planner, executor, and adapter packages. |
+| [Package boundaries](./package-boundaries.md) | Dependency direction between CLI, daemon, API, domain, planner, snapshot, executor, and adapter packages. |
 | [Networking and reliability requirements](./networking-reliability.md) | TUN, routing, DNS, firewall, NetworkManager, sleep/resume, health checks, recovery, and reliability test requirements. |
 | [Subscriptions and profiles](./subscriptions-and-profiles.md) | Subscription inputs, format adapters, normalized profile model, validation, update behavior, storage. |
 | [Roadmap](./roadmap.md) | Ordered implementation phases and milestone boundaries. |
@@ -124,6 +126,7 @@ tunwarden logs
 
 # safety and recovery
 tunwarden plan --mode proxy-only <profile-id>
+tunwarden plan --mode tun <profile-id>
 tunwarden recover
 ```
 
