@@ -11,6 +11,8 @@ The early architecture has two execution modes:
 1. **Proxy-only mode:** starts and supervises Xray without changing system routes, DNS, firewall, or TUN state.
 2. **TUN full-tunnel mode:** applies Linux networking changes only through the transaction model.
 
+The current foundation TUN work implements only the read-only snapshot layer used by `plan --mode tun`; it does not yet apply TUN/full-tunnel networking changes.
+
 ## 2. High-level components
 
 ```text
@@ -54,6 +56,7 @@ Responsibilities:
 - manage user-owned configuration and user state through documented paths,
 - submit selected user intent to daemon,
 - print plans and errors,
+- collect and render local read-only snapshots where explicitly allowed by the foundation build,
 - never directly mutate routes, DNS, nftables, or TUN state.
 
 ### 3.2 Daemon
@@ -104,6 +107,7 @@ internal/engine            core engine lifecycle coordination
 internal/logs              read-only journald/system-log integration
 internal/network           transaction and network planning model
 internal/network/planner   pure network planning logic
+internal/network/snapshot  read-only host networking snapshot model and collectors
 internal/network/executor  narrow platform adapters
 internal/profile           normalized VPN profile model and user-owned profile storage
 internal/recovery          recovery plan and future cleanup behavior
@@ -113,9 +117,9 @@ internal/state             runtime and durable state ownership helpers
 internal/sub               subscription source model
 ```
 
-This layout is expected to evolve, but the CLI/daemon boundary and planner/executor split should remain stable architectural constraints.
+This layout is expected to evolve, but the CLI/daemon boundary and planner/snapshot/executor split should remain stable architectural constraints.
 
-In the foundation build, `internal/app/cli` may call user-owned profile storage, local read-only proxy-only planning, local read-only diagnostics, read-only system-log inspection, and dry-run recovery planning directly. Privileged or daemon-owned behavior must move behind the daemon client/API boundary once it is implemented.
+In the foundation build, `internal/app/cli` may call user-owned profile storage, local read-only proxy-only planning, local read-only TUN snapshot planning, local read-only diagnostics, read-only system-log inspection, and dry-run recovery planning directly. Privileged or daemon-owned behavior must move behind the daemon client/API boundary once it is implemented.
 
 Package dependency direction is owned by [Package boundaries](./package-boundaries.md).
 
@@ -181,7 +185,17 @@ tunwarden logs --network
 
 Logs must follow the redaction policy in [State and security requirements](./state-and-security.md).
 
-## 6. Transaction model
+## 6. Snapshot model
+
+System snapshots are read-only inputs to planners. The snapshot package may inspect default routes, server route, DNS backend visibility, NetworkManager advisory state, nftables availability, known TunWarden TUN device names, and stale TunWarden-owned resources.
+
+Snapshot collection must not create TUN devices, mutate routes, mutate DNS, mutate nftables/firewall state, start or stop processes, or write runtime files.
+
+The currently implemented `plan --mode tun` command consumes this snapshot layer and renders a snapshot-only preview. It is not the same thing as the future full TUN desired plan. The final TUN desired plan must still be produced by planner code and executed only by daemon-owned executor/transaction code.
+
+The canonical snapshot contract is owned by [System snapshot model](./system-snapshot.md).
+
+## 7. Transaction model
 
 All full-tunnel network changes must happen through a transaction object.
 
@@ -231,9 +245,27 @@ On daemon startup:
 4. Never assume previous daemon shutdown was clean
 ```
 
-## 7. Planner/executor split
+## 8. Planner/executor split
 
-Network logic must be split into planners and executors.
+Network logic must be split into snapshots, planners, and executors.
+
+### Snapshot
+
+Read-only code. Does not require root and must degrade gracefully when optional host tools are missing.
+
+Inputs:
+
+- host OS/platform,
+- profile server hostname or IP,
+- optional test runner/resolver fakes.
+
+Output:
+
+- current default route/interface observations,
+- route to the VPN server candidate,
+- DNS/NetworkManager/nftables observations,
+- known TunWarden-owned resources,
+- visibility warnings.
 
 ### Planner
 
@@ -253,6 +285,8 @@ Output:
 - ordered rollback steps,
 - warnings.
 
+The current TUN snapshot preview is not yet the final desired network plan. Future TUN planner work must consume the snapshot and produce intended TUN, route, DNS, nftables, rollback, and health-check behavior.
+
 Planner output must be inspectable through `tunwarden plan`.
 
 ### Executor
@@ -270,7 +304,7 @@ Executors:
 
 Executor implementations must be narrow and auditable. They should not contain hidden planning decisions.
 
-## 8. Engine abstraction
+## 9. Engine abstraction
 
 TunWarden starts as Xray-first but should not make networking depend on Xray internals.
 
@@ -292,7 +326,7 @@ Future engines:
 - `AmneziaWgEngine`,
 - `SingBoxEngine` if needed for compatibility/testing.
 
-## 9. Network backends
+## 10. Network backends
 
 TunWarden must support backend interfaces rather than hard-coding one environment.
 
@@ -315,7 +349,7 @@ NetworkEventBackend
   systemd sleep hook implementation
 ```
 
-## 10. Configuration generation
+## 11. Configuration generation
 
 Generated core config must be treated as runtime output, not as the source of truth.
 
@@ -336,7 +370,7 @@ Generated files may live under:
 
 Generated config permissions, atomic writes, and logging rules are owned by [State and security requirements](./state-and-security.md).
 
-## 11. Error handling principles
+## 12. Error handling principles
 
 - Prefer explicit failure over silent partial success.
 - Every failed apply step must include the command/operation, stderr, and rollback impact.
@@ -345,23 +379,24 @@ Generated config permissions, atomic writes, and logging rules are owned by [Sta
 - NetworkManager limited connectivity must not automatically be treated as connection failure.
 - Proxy-only failure must not trigger full network cleanup unless stale TunWarden-owned network state is detected separately.
 
-## 12. systemd service hardening
+## 13. systemd service hardening
 
 The daemon service must start from least privilege. The canonical hardening requirements are defined in [State and security requirements](./state-and-security.md).
 
 A privileged daemon release is blocked until the unit file documents the final hardening choices and justifies any relaxation from the documented baseline.
 
-## 13. Testing architecture
+## 14. Testing architecture
 
 Required test layers:
 
 1. Unit tests for profile parsing and normalization.
 2. Unit tests for route/DNS/firewall planners.
-3. Unit tests for engine config generation.
-4. Integration tests in Linux network namespaces.
-5. VM tests for Ubuntu/Debian/Fedora.
-6. Suspend/resume simulation where possible.
-7. Failure injection tests:
+3. Unit tests for read-only snapshot collection and fake snapshots.
+4. Unit tests for engine config generation.
+5. Integration tests in Linux network namespaces.
+6. VM tests for Ubuntu/Debian/Fedora.
+7. Suspend/resume simulation where possible.
+8. Failure injection tests:
    - core crash,
    - daemon crash,
    - DNS apply failure,
@@ -369,7 +404,7 @@ Required test layers:
    - nft apply failure,
    - Wi-Fi/default route change.
 
-## 14. Future GUI rule
+## 15. Future GUI rule
 
 A future GUI must be a client of the daemon API.
 
