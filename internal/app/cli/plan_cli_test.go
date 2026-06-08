@@ -66,8 +66,11 @@ func TestRunCLIPlanProxyOnlyJSONShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected JSON plan object, got %#v", got["plan"])
 	}
-	if plan["runtime_config_path"] != "/run/tunwarden/generated/xray.json" || plan["starts_xray"] != false || plan["writes_config"] != false || plan["modifies_system_networking"] != false {
+	if plan["runtime_config_path"] != "/run/tunwarden/generated/xray.json" || plan["starts_xray"] != false || plan["writes_config"] != false || plan["modifies_system_networking"] != false || plan["system_networking"] == nil {
 		t.Fatalf("unexpected plan JSON: %#v", plan)
+	}
+	if _, ok := plan["profile"].(map[string]any); !ok {
+		t.Fatalf("expected proxy-only JSON profile to be preserved, got %#v", plan["profile"])
 	}
 	listeners, ok := plan["listeners"].([]any)
 	if !ok || len(listeners) != 2 {
@@ -79,7 +82,7 @@ func TestRunCLIPlanProxyOnlyJSONShape(t *testing.T) {
 	}
 }
 
-func TestRunCLIPlanTunRendersReadOnlySnapshot(t *testing.T) {
+func TestRunCLIPlanTunRendersFullTunnelDryRun(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "profiles.json")
 	opts := options{
 		profileStorePath: storePath,
@@ -99,17 +102,17 @@ func TestRunCLIPlanTunRendersReadOnlySnapshot(t *testing.T) {
 
 	got := out.String()
 	for _, want := range []string{
-		"TUN planning snapshot",
-		"Mode: tun",
-		"Read-only: will not create TUN devices",
+		"TunWarden TUN plan",
+		"Mode: full-tunnel",
+		"TUN: create tunwarden0",
+		"Default traffic: route through tunwarden table",
+		"VPN server bypass: add main 203.0.113.10/32 via 192.0.2.1 dev wlp0s20f3",
+		"Policy rules:",
+		"Routes:",
+		"Rollback steps:",
+		"No changes were applied.",
 		"Default IPv4 route: detected, dev wlp0s20f3",
-		"Default interface: wlp0s20f3",
 		"DNS mode: systemd-resolved",
-		"NetworkManager: detected",
-		"nftables: detected",
-		"TunWarden nftables table: missing",
-		"IPv4 assumption: detected",
-		"IPv6 assumption: missing",
 		"Stale TunWarden-owned resources: none detected",
 	} {
 		if !strings.Contains(got, want) {
@@ -160,12 +163,22 @@ func TestRunCLIPlanTunJSONShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected JSON plan object, got %#v", got["plan"])
 	}
-	if plan["starts_xray"] != false || plan["writes_config"] != false || plan["modifies_system_networking"] != false {
+	if plan["starts_xray"] != false || plan["writes_config"] != false || plan["modifies_system_networking"] != false || plan["tunnel_mode"] != "full-tunnel" {
 		t.Fatalf("unexpected TUN plan safety flags: %#v", plan)
+	}
+	for _, key := range []string{"tun", "routes", "policy_rules", "server_bypass"} {
+		if plan[key] == nil {
+			t.Fatalf("expected TUN plan JSON key %q, got %#v", key, plan)
+		}
 	}
 	snapshot, ok := plan["snapshot"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected TUN snapshot object, got %#v", plan["snapshot"])
+	}
+	for _, key := range []string{"os", "default_ipv4_route", "default_ipv6_route", "server_route", "dns", "network_manager", "nftables", "tun_devices", "ipv4", "ipv6", "stale_resources"} {
+		if snapshot[key] == nil {
+			t.Fatalf("expected full snapshot key %q, got %#v", key, snapshot)
+		}
 	}
 	stale, ok := snapshot["stale_resources"].([]any)
 	if !ok || len(stale) != 2 {

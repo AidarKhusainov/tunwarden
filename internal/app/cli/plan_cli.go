@@ -17,12 +17,10 @@ func runPlanCommand(ctx context.Context, args []string, stdout io.Writer, opts o
 		printPlanHelp(stdout)
 		return nil
 	}
-
 	parsed, err := parsePlanArgs(args)
 	if err != nil {
 		return err
 	}
-
 	store, err := profile.NewStore(opts.profileStorePath)
 	if err != nil {
 		return err
@@ -31,32 +29,29 @@ func runPlanCommand(ctx context.Context, args []string, stdout io.Writer, opts o
 	if err != nil {
 		return profileCommandError(err)
 	}
-
-	switch parsed.mode {
-	case planner.ModeProxyOnly:
-		proxyPlan, err := planner.PlanProxyOnly(p)
+	if parsed.mode == planner.ModeProxyOnly {
+		plan, err := planner.PlanProxyOnly(p)
 		if err != nil {
 			return usageError("%s", err.Error())
 		}
 		if parsed.jsonOutput {
-			return writeJSON(stdout, proxyOnlyPlanJSON(proxyPlan))
+			return writeJSON(stdout, proxyOnlyPlanJSON(plan))
 		}
-		renderProxyOnlyPlan(stdout, proxyPlan)
-	case planner.ModeTun:
-		collect := opts.systemSnapshot
-		if collect == nil {
-			collect = netsnapshot.Collect
-		}
-		hostSnapshot := collect(ctx, netsnapshot.Options{Server: p.Server, TunNames: []string{netsnapshot.DefaultTunName}})
-		tunPlan, err := planner.PlanTun(p, hostSnapshot)
-		if err != nil {
-			return usageError("%s", err.Error())
-		}
-		if parsed.jsonOutput {
-			return writeJSON(stdout, tunPlanJSON(tunPlan))
-		}
-		renderTunPlan(stdout, tunPlan)
+		renderProxyOnlyPlan(stdout, plan)
+		return nil
 	}
+	collect := opts.systemSnapshot
+	if collect == nil {
+		collect = netsnapshot.Collect
+	}
+	plan, err := planner.PlanTun(p, collect(ctx, netsnapshot.Options{Server: p.Server, TunNames: []string{netsnapshot.DefaultTunName}}))
+	if err != nil {
+		return usageError("%s", err.Error())
+	}
+	if parsed.jsonOutput {
+		return writeJSON(stdout, tunPlanJSON(plan))
+	}
+	renderTunPlan(stdout, plan)
 	return nil
 }
 
@@ -91,7 +86,6 @@ func parsePlanArgs(args []string) (planArgs, error) {
 			parsed.profileID = arg
 		}
 	}
-
 	if parsed.mode == "" {
 		return parsed, usageError("plan requires --mode proxy-only or tun")
 	}
@@ -104,225 +98,184 @@ func parsePlanArgs(args []string) (planArgs, error) {
 	return parsed, nil
 }
 
-func renderProxyOnlyPlan(stdout io.Writer, proxyPlan planner.ProxyOnlyPlan) {
-	fmt.Fprintln(stdout, "Proxy-only plan")
-	fmt.Fprintf(stdout, "Profile: %s\n", render.Redact(proxyPlan.ProfileName))
-	fmt.Fprintf(stdout, "Profile ID: %s\n", render.Redact(proxyPlan.ProfileID))
-	fmt.Fprintf(stdout, "Mode: %s\n", proxyPlan.Mode)
-	fmt.Fprintf(stdout, "Will generate runtime Xray config: %s\n", proxyPlan.RuntimeConfigPath)
-	for _, listener := range proxyPlan.Listeners {
-		fmt.Fprintf(stdout, "Will listen on %s: %s\n", listener.Protocol, listener.Endpoint())
+func renderProxyOnlyPlan(w io.Writer, p planner.ProxyOnlyPlan) {
+	fmt.Fprintln(w, "Proxy-only plan")
+	fmt.Fprintf(w, "Profile: %s\nProfile ID: %s\nMode: %s\n", render.Redact(p.ProfileName), render.Redact(p.ProfileID), p.Mode)
+	fmt.Fprintf(w, "Will generate runtime Xray config: %s\n", p.RuntimeConfigPath)
+	for _, l := range p.Listeners {
+		fmt.Fprintf(w, "Will listen on %s: %s\n", l.Protocol, l.Endpoint())
 	}
-	fmt.Fprintln(stdout, planner.NoSystemNetworkingPlan)
-	fmt.Fprintln(stdout, "Will not start Xray or write the generated config in this dry-run.")
-	if len(proxyPlan.Warnings) > 0 {
-		fmt.Fprintf(stdout, "Warnings: %d\n", len(proxyPlan.Warnings))
-		for _, warning := range proxyPlan.Warnings {
-			fmt.Fprintf(stdout, "- %s\n", render.Redact(warning))
-		}
-	}
+	fmt.Fprintln(w, planner.NoSystemNetworkingPlan)
+	fmt.Fprintln(w, "Will not start Xray or write the generated config in this dry-run.")
+	printWarnings(w, p.Warnings)
 }
 
-func renderTunPlan(stdout io.Writer, tunPlan planner.TunPlan) {
-	s := tunPlan.Snapshot
-	fmt.Fprintln(stdout, "TUN planning snapshot")
-	fmt.Fprintf(stdout, "Profile: %s\n", render.Redact(tunPlan.ProfileName))
-	fmt.Fprintf(stdout, "Profile ID: %s\n", render.Redact(tunPlan.ProfileID))
-	fmt.Fprintf(stdout, "Mode: %s\n", tunPlan.Mode)
-	fmt.Fprintln(stdout, "Read-only: will not create TUN devices, change routes, change DNS, change nftables, start Xray, or write runtime config.")
-	fmt.Fprintf(stdout, "Default IPv4 route: %s\n", renderRoute(s.DefaultIPv4))
-	fmt.Fprintf(stdout, "Default interface: %s\n", renderDefaultInterface(s.DefaultIPv4))
-	fmt.Fprintf(stdout, "Default IPv6 route: %s\n", renderRoute(s.DefaultIPv6))
-	fmt.Fprintf(stdout, "Route to VPN server candidate: %s\n", renderRoute(s.ServerRoute))
-	fmt.Fprintf(stdout, "DNS mode: %s (%s)\n", render.Redact(s.DNS.Mode), renderFinding(s.DNS.Resolved))
-	fmt.Fprintf(stdout, "NetworkManager: %s\n", renderNetworkManager(s.NetworkManager))
-	fmt.Fprintf(stdout, "nftables: %s\n", renderFinding(s.Nftables.Availability))
-	fmt.Fprintf(stdout, "TunWarden nftables table: %s\n", renderFinding(s.Nftables.TunWardenTable))
-	fmt.Fprintf(stdout, "IPv4 assumption: %s\n", renderFinding(s.IPv4))
-	fmt.Fprintf(stdout, "IPv6 assumption: %s\n", renderFinding(s.IPv6))
-	fmt.Fprintln(stdout, "TunWarden TUN devices:")
-	for _, device := range s.TunDevices {
-		fmt.Fprintf(stdout, "- %s: %s\n", render.Redact(device.Name), renderStatusDetail(device.Status, device.Detail, device.Raw))
+func renderTunPlan(w io.Writer, p planner.TunPlan) {
+	s := p.Snapshot
+	fmt.Fprintln(w, "TunWarden TUN plan")
+	fmt.Fprintln(w, "TUN planning snapshot")
+	fmt.Fprintf(w, "Profile: %s\nProfile ID: %s\nMode: %s\n", render.Redact(p.ProfileName), render.Redact(p.ProfileID), p.TunnelMode)
+	fmt.Fprintln(w, "Read-only: will not create TUN devices, change routes, change policy rules, change DNS, change nftables, start Xray, or write runtime config.")
+	fmt.Fprintf(w, "TUN: %s %s (MTU %d)\n", render.Redact(p.TunDevice.Action), render.Redact(p.TunDevice.Name), p.TunDevice.MTU)
+	fmt.Fprintf(w, "Routing table: %s (%d)\n", planner.TunRoutingTable, planner.TunRoutingTableID)
+	fmt.Fprintln(w, "Default traffic: route through tunwarden table")
+	fmt.Fprintf(w, "VPN server bypass: %s\n", routePlanLine(p.ServerBypass))
+	fmt.Fprintln(w, "Policy rules:")
+	for _, r := range p.PolicyRules {
+		fmt.Fprintf(w, "- %s\n", ruleLine(r))
+	}
+	fmt.Fprintln(w, "Routes:")
+	for _, r := range p.Routes {
+		fmt.Fprintf(w, "- %s\n", routePlanLine(r))
+	}
+	fmt.Fprintf(w, "Default IPv4 route: %s\n", renderRoute(s.DefaultIPv4))
+	fmt.Fprintf(w, "Default interface: %s\n", renderDefaultInterface(s.DefaultIPv4))
+	fmt.Fprintf(w, "Default IPv6 route: %s\n", renderRoute(s.DefaultIPv6))
+	fmt.Fprintf(w, "Route to VPN server candidate: %s\n", renderRoute(s.ServerRoute))
+	fmt.Fprintf(w, "DNS mode: %s (%s)\n", render.Redact(s.DNS.Mode), renderFinding(s.DNS.Resolved))
+	fmt.Fprintf(w, "NetworkManager: %s\n", renderNetworkManager(s.NetworkManager))
+	fmt.Fprintf(w, "nftables: %s\n", renderFinding(s.Nftables.Availability))
+	fmt.Fprintf(w, "TunWarden nftables table: %s\n", renderFinding(s.Nftables.TunWardenTable))
+	fmt.Fprintf(w, "IPv4 assumption: %s\nIPv6 assumption: %s\n", renderFinding(s.IPv4), renderFinding(s.IPv6))
+	fmt.Fprintln(w, "TunWarden TUN devices:")
+	for _, d := range s.TunDevices {
+		fmt.Fprintf(w, "- %s: %s\n", render.Redact(d.Name), renderStatusDetail(d.Status, d.Detail, d.Raw))
 	}
 	if len(s.StaleResources) == 0 {
-		fmt.Fprintln(stdout, "Stale TunWarden-owned resources: none detected")
+		fmt.Fprintln(w, "Stale TunWarden-owned resources: none detected")
 	} else {
-		fmt.Fprintf(stdout, "Stale TunWarden-owned resources: %d detected\n", len(s.StaleResources))
-		for _, stale := range s.StaleResources {
-			fmt.Fprintf(stdout, "- %s %s: %s\n", render.Redact(stale.Kind), render.Redact(stale.Name), renderStatusDetail(stale.Status, stale.Detail, ""))
+		fmt.Fprintf(w, "Stale TunWarden-owned resources: %d detected\n", len(s.StaleResources))
+		for _, r := range s.StaleResources {
+			fmt.Fprintf(w, "- %s %s: %s\n", render.Redact(r.Kind), render.Redact(r.Name), renderStatusDetail(r.Status, r.Detail, ""))
 		}
 	}
-	if len(tunPlan.Warnings) > 0 {
-		fmt.Fprintf(stdout, "Warnings: %d\n", len(tunPlan.Warnings))
-		for _, warning := range tunPlan.Warnings {
-			fmt.Fprintf(stdout, "- %s\n", render.Redact(warning))
+	if len(p.LoopRisks) > 0 {
+		fmt.Fprintf(w, "Route-loop risks: %d\n", len(p.LoopRisks))
+		for _, r := range p.LoopRisks {
+			fmt.Fprintf(w, "- %s\n", render.Redact(r))
 		}
+	}
+	printWarnings(w, p.Warnings)
+	fmt.Fprintln(w, "Rollback steps:")
+	for _, step := range p.RollbackSteps {
+		fmt.Fprintf(w, "- %s\n", render.Redact(step))
+	}
+	fmt.Fprintln(w, "No changes were applied.")
+}
+
+func printWarnings(w io.Writer, warnings []string) {
+	if len(warnings) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "Warnings: %d\n", len(warnings))
+	for _, warning := range warnings {
+		fmt.Fprintf(w, "- %s\n", render.Redact(warning))
 	}
 }
 
-func proxyOnlyPlanJSON(proxyPlan planner.ProxyOnlyPlan) map[string]any {
-	warnings := redactedStrings(proxyPlan.Warnings)
-	status := "ok"
+func proxyOnlyPlanJSON(p planner.ProxyOnlyPlan) map[string]any {
+	warnings := redactedStrings(p.Warnings)
+	return map[string]any{"schema_version": "v1", "status": jsonStatus(warnings), "warnings": warnings, "errors": []string{}, "mode": p.Mode, "plan": map[string]any{"profile": map[string]any{"id": render.Redact(p.ProfileID), "name": render.Redact(p.ProfileName)}, "runtime_config_path": p.RuntimeConfigPath, "listeners": listenersForJSON(p.Listeners), "writes_config": false, "starts_xray": false, "modifies_system_networking": false, "system_networking": "will not modify TUN, routes, DNS, nftables, or firewall"}, "steps": redactedStrings(p.Steps), "rollback_steps": redactedStrings(p.RollbackSteps)}
+}
+
+func tunPlanJSON(p planner.TunPlan) map[string]any {
+	warnings := redactedStrings(p.Warnings)
+	return map[string]any{"schema_version": "v1", "status": jsonStatus(warnings), "warnings": warnings, "errors": []string{}, "mode": p.Mode, "loop_risks": redactedStrings(p.LoopRisks), "plan": map[string]any{"profile": map[string]any{"id": render.Redact(p.ProfileID), "name": render.Redact(p.ProfileName)}, "tunnel_mode": p.TunnelMode, "writes_config": false, "starts_xray": false, "modifies_system_networking": false, "tun": tunDeviceJSON(p.TunDevice), "routes": routesJSON(p.Routes), "policy_rules": rulesJSON(p.PolicyRules), "server_bypass": routePlanJSON(p.ServerBypass), "snapshot": snapshotForJSON(p.Snapshot)}, "steps": redactedStrings(p.Steps), "rollback_steps": redactedStrings(p.RollbackSteps)}
+}
+
+func jsonStatus(warnings []string) string {
 	if len(warnings) > 0 {
-		status = "warn"
+		return "warn"
 	}
-	return map[string]any{
-		"schema_version": "v1",
-		"status":         status,
-		"warnings":       warnings,
-		"errors":         []string{},
-		"mode":           proxyPlan.Mode,
-		"plan": map[string]any{
-			"profile": map[string]any{
-				"id":   render.Redact(proxyPlan.ProfileID),
-				"name": render.Redact(proxyPlan.ProfileName),
-			},
-			"runtime_config_path":        proxyPlan.RuntimeConfigPath,
-			"listeners":                  listenersForJSON(proxyPlan.Listeners),
-			"writes_config":              false,
-			"starts_xray":                false,
-			"modifies_system_networking": false,
-			"system_networking":          "will not modify TUN, routes, DNS, nftables, or firewall",
-		},
-		"steps":          redactedStrings(proxyPlan.Steps),
-		"rollback_steps": redactedStrings(proxyPlan.RollbackSteps),
-	}
+	return "ok"
 }
-
-func tunPlanJSON(tunPlan planner.TunPlan) map[string]any {
-	warnings := redactedStrings(tunPlan.Warnings)
-	status := "ok"
-	if len(warnings) > 0 {
-		status = "warn"
+func listenersForJSON(v []planner.Listener) []map[string]any {
+	out := make([]map[string]any, len(v))
+	for i, l := range v {
+		out[i] = map[string]any{"protocol": strings.ToLower(l.Protocol), "address": l.Address, "port": l.Port}
 	}
-	return map[string]any{
-		"schema_version": "v1",
-		"status":         status,
-		"warnings":       warnings,
-		"errors":         []string{},
-		"mode":           tunPlan.Mode,
-		"plan": map[string]any{
-			"profile": map[string]any{
-				"id":   render.Redact(tunPlan.ProfileID),
-				"name": render.Redact(tunPlan.ProfileName),
-			},
-			"writes_config":              false,
-			"starts_xray":                false,
-			"modifies_system_networking": false,
-			"snapshot":                   snapshotForJSON(tunPlan.Snapshot),
-		},
-		"steps":          redactedStrings(tunPlan.Steps),
-		"rollback_steps": redactedStrings(tunPlan.RollbackSteps),
-	}
+	return out
 }
-
-func listenersForJSON(listeners []planner.Listener) []map[string]any {
-	out := make([]map[string]any, len(listeners))
-	for i, listener := range listeners {
-		out[i] = map[string]any{
-			"protocol": strings.ToLower(listener.Protocol),
-			"address":  listener.Address,
-			"port":     listener.Port,
-		}
+func tunDeviceJSON(d planner.TunDevicePlan) map[string]any {
+	return map[string]any{"name": render.Redact(d.Name), "mtu": d.MTU, "action": render.Redact(d.Action), "reason": render.Redact(d.Reason)}
+}
+func routesJSON(v []planner.TunRoutePlan) []map[string]any {
+	out := make([]map[string]any, len(v))
+	for i, r := range v {
+		out[i] = routePlanJSON(r)
+	}
+	return out
+}
+func routePlanJSON(r planner.TunRoutePlan) map[string]any {
+	return map[string]any{"family": render.Redact(r.Family), "destination": render.Redact(r.Destination), "table": render.Redact(r.Table), "interface": render.Redact(r.Interface), "gateway": render.Redact(r.Gateway), "action": render.Redact(r.Action), "reason": render.Redact(r.Reason)}
+}
+func rulesJSON(v []planner.TunPolicyRulePlan) []map[string]any {
+	out := make([]map[string]any, len(v))
+	for i, r := range v {
+		out[i] = map[string]any{"family": render.Redact(r.Family), "priority": r.Priority, "selector": render.Redact(r.Selector), "table": render.Redact(r.Table), "action": render.Redact(r.Action), "reason": render.Redact(r.Reason)}
 	}
 	return out
 }
 
 func snapshotForJSON(s netsnapshot.Snapshot) map[string]any {
-	return map[string]any{
-		"os":                 render.Redact(s.OS),
-		"default_ipv4_route": routeForJSON(s.DefaultIPv4),
-		"default_ipv6_route": routeForJSON(s.DefaultIPv6),
-		"server_route":       routeForJSON(s.ServerRoute),
-		"dns": map[string]any{
-			"mode":             render.Redact(s.DNS.Mode),
-			"systemd_resolved": findingForJSON(s.DNS.Resolved),
-		},
-		"network_manager": map[string]any{
-			"finding": findingForJSON(s.NetworkManager.Finding),
-			"state":   render.Redact(s.NetworkManager.State),
-		},
-		"nftables": map[string]any{
-			"availability":    findingForJSON(s.Nftables.Availability),
-			"tunwarden_table": findingForJSON(s.Nftables.TunWardenTable),
-		},
-		"tun_devices":     tunDevicesForJSON(s.TunDevices),
-		"ipv4":            findingForJSON(s.IPv4),
-		"ipv6":            findingForJSON(s.IPv6),
-		"stale_resources": staleResourcesForJSON(s.StaleResources),
-	}
+	return map[string]any{"os": render.Redact(s.OS), "default_ipv4_route": routeForJSON(s.DefaultIPv4), "default_ipv6_route": routeForJSON(s.DefaultIPv6), "server_route": routeForJSON(s.ServerRoute), "dns": map[string]any{"mode": render.Redact(s.DNS.Mode), "systemd_resolved": findingForJSON(s.DNS.Resolved)}, "network_manager": map[string]any{"finding": findingForJSON(s.NetworkManager.Finding), "state": render.Redact(s.NetworkManager.State)}, "nftables": map[string]any{"availability": findingForJSON(s.Nftables.Availability), "tunwarden_table": findingForJSON(s.Nftables.TunWardenTable)}, "tun_devices": tunDevicesForJSON(s.TunDevices), "ipv4": findingForJSON(s.IPv4), "ipv6": findingForJSON(s.IPv6), "stale_resources": staleResourcesForJSON(s.StaleResources)}
 }
-
-func routeForJSON(route netsnapshot.Route) map[string]any {
-	return map[string]any{
-		"status":      string(route.Status),
-		"family":      render.Redact(route.Family),
-		"destination": render.Redact(route.Destination),
-		"interface":   render.Redact(route.Interface),
-		"gateway":     render.Redact(route.Gateway),
-		"raw":         render.Redact(route.Raw),
-		"detail":      render.Redact(route.Detail),
-	}
+func routeForJSON(r netsnapshot.Route) map[string]any {
+	return map[string]any{"status": string(r.Status), "family": render.Redact(r.Family), "destination": render.Redact(r.Destination), "interface": render.Redact(r.Interface), "gateway": render.Redact(r.Gateway), "raw": render.Redact(r.Raw), "detail": render.Redact(r.Detail)}
 }
-
 func findingForJSON(f netsnapshot.Finding) map[string]any {
-	return map[string]any{
-		"status":  string(f.Status),
-		"summary": render.Redact(f.Summary),
-		"detail":  render.Redact(f.Detail),
-	}
+	return map[string]any{"status": string(f.Status), "summary": render.Redact(f.Summary), "detail": render.Redact(f.Detail)}
 }
-
-func tunDevicesForJSON(devices []netsnapshot.TunDevice) []map[string]any {
-	out := make([]map[string]any, len(devices))
-	for i, device := range devices {
-		out[i] = map[string]any{
-			"name":   render.Redact(device.Name),
-			"status": string(device.Status),
-			"detail": render.Redact(device.Detail),
-			"raw":    render.Redact(device.Raw),
-		}
+func tunDevicesForJSON(v []netsnapshot.TunDevice) []map[string]any {
+	out := make([]map[string]any, len(v))
+	for i, d := range v {
+		out[i] = map[string]any{"name": render.Redact(d.Name), "status": string(d.Status), "detail": render.Redact(d.Detail), "raw": render.Redact(d.Raw)}
+	}
+	return out
+}
+func staleResourcesForJSON(v []netsnapshot.StaleResource) []map[string]any {
+	out := make([]map[string]any, len(v))
+	for i, r := range v {
+		out[i] = map[string]any{"kind": render.Redact(r.Kind), "name": render.Redact(r.Name), "status": string(r.Status), "detail": render.Redact(r.Detail)}
 	}
 	return out
 }
 
-func staleResourcesForJSON(resources []netsnapshot.StaleResource) []map[string]any {
-	out := make([]map[string]any, len(resources))
-	for i, resource := range resources {
-		out[i] = map[string]any{
-			"kind":   render.Redact(resource.Kind),
-			"name":   render.Redact(resource.Name),
-			"status": string(resource.Status),
-			"detail": render.Redact(resource.Detail),
-		}
+func routePlanLine(r planner.TunRoutePlan) string {
+	parts := []string{r.Action, r.Table, r.Destination}
+	if r.Gateway != "" {
+		parts = append(parts, "via", r.Gateway)
 	}
-	return out
+	if r.Interface != "" {
+		parts = append(parts, "dev", r.Interface)
+	}
+	return render.Redact(strings.Join(parts, " "))
 }
-
-func renderRoute(route netsnapshot.Route) string {
-	if route.Status == netsnapshot.StatusDetected {
-		parts := []string{string(route.Status)}
-		if route.Interface != "" {
-			parts = append(parts, "dev "+route.Interface)
+func ruleLine(r planner.TunPolicyRulePlan) string {
+	return render.Redact(fmt.Sprintf("%s priority %d %s lookup %s", r.Action, r.Priority, r.Selector, r.Table))
+}
+func renderRoute(r netsnapshot.Route) string {
+	if r.Status == netsnapshot.StatusDetected {
+		parts := []string{string(r.Status)}
+		if r.Interface != "" {
+			parts = append(parts, "dev "+r.Interface)
 		}
-		if route.Gateway != "" {
-			parts = append(parts, "via "+route.Gateway)
+		if r.Gateway != "" {
+			parts = append(parts, "via "+r.Gateway)
 		}
-		if route.Raw != "" {
-			parts = append(parts, "raw: "+route.Raw)
+		if r.Raw != "" {
+			parts = append(parts, "raw: "+r.Raw)
 		}
 		return render.Redact(strings.Join(parts, ", "))
 	}
-	return renderStatusDetail(route.Status, route.Detail, route.Raw)
+	return renderStatusDetail(r.Status, r.Detail, r.Raw)
 }
-
-func renderDefaultInterface(route netsnapshot.Route) string {
-	if route.Status == netsnapshot.StatusDetected && route.Interface != "" {
-		return render.Redact(route.Interface)
+func renderDefaultInterface(r netsnapshot.Route) string {
+	if r.Status == netsnapshot.StatusDetected && r.Interface != "" {
+		return render.Redact(r.Interface)
 	}
-	return renderStatusDetail(route.Status, route.Detail, route.Raw)
+	return renderStatusDetail(r.Status, r.Detail, r.Raw)
 }
-
 func renderNetworkManager(nm netsnapshot.NetworkManager) string {
 	line := renderFinding(nm.Finding)
 	if nm.State != "" {
@@ -330,26 +283,23 @@ func renderNetworkManager(nm netsnapshot.NetworkManager) string {
 	}
 	return render.Redact(line)
 }
-
 func renderFinding(f netsnapshot.Finding) string {
 	return renderStatusDetail(f.Status, f.Summary, f.Detail)
 }
-
-func renderStatusDetail(status netsnapshot.Status, primary, secondary string) string {
+func renderStatusDetail(status netsnapshot.Status, a, b string) string {
 	parts := []string{string(status)}
-	if primary != "" {
-		parts = append(parts, primary)
+	if a != "" {
+		parts = append(parts, a)
 	}
-	if secondary != "" {
-		parts = append(parts, secondary)
+	if b != "" {
+		parts = append(parts, b)
 	}
 	return render.Redact(strings.Join(parts, ": "))
 }
-
 func redactedStrings(values []string) []string {
 	out := make([]string, len(values))
-	for i, value := range values {
-		out[i] = render.Redact(value)
+	for i, v := range values {
+		out[i] = render.Redact(v)
 	}
 	return out
 }
@@ -359,22 +309,6 @@ func printPlanHelp(w io.Writer) {
   tunwarden plan --mode proxy-only <profile-id> [--json]
   tunwarden plan --mode tun <profile-id> [--json]
 
-Print a read-only connection plan for a stored profile. Proxy-only mode builds an
-inspectable generated Xray config in memory. TUN mode collects a read-only system
-snapshot for full-tunnel planning and explains the current default route, default
-interface, DNS backend, NetworkManager state, nftables state, IPv4/IPv6
-assumptions, and stale TunWarden-owned resources.
-
-Implemented:
-  proxy-only plans for supported stored VLESS profiles, human output, JSON
-  output, deterministic generated Xray config fixtures, and explicit no TUN,
-  route, DNS, nftables, or firewall mutation.
-
-  TUN planning snapshots with no TUN creation, route mutation, DNS mutation,
-  nftables mutation, Xray process start, or runtime config write.
-
-Not implemented yet:
-  writing generated config files, Xray binary discovery/version checks, Xray
-  process start, full-tunnel execution
+Print a read-only connection plan. TUN planning snapshots feed a full-tunnel TUN/route dry-run plan with server bypass, route-loop risk, warnings, and rollback steps.
 `)
 }

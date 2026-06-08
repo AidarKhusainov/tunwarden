@@ -15,7 +15,8 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 - Implemented manual and share-URI `tunwarden profile` behavior is owned by [Profile management](./profile-management.md).
 - Implemented Base64 URI-list `tunwarden subscription` behavior is owned by [Subscription management](./subscription-management.md).
 - Implemented `tunwarden plan --mode proxy-only` behavior is owned by [Proxy-only plan](./proxy-only-plan.md).
-- Implemented `tunwarden plan --mode tun` snapshot-only behavior is owned by [System snapshot model](./system-snapshot.md).
+- Implemented `tunwarden plan --mode tun` snapshot input behavior is owned by [System snapshot model](./system-snapshot.md).
+- Implemented `tunwarden plan --mode tun` full-tunnel route/TUN dry-run behavior is owned by [TUN full-tunnel dry-run plan](./tun-full-tunnel-plan.md).
 - Implemented `tunwarden connect --mode proxy-only` and `tunwarden disconnect` behavior is owned by [Proxy-only lifecycle](./proxy-only-lifecycle.md).
 - The implemented v0.1 daemon transport is owned by [Daemon local API](./daemon-api.md).
 - `tunwarden status`'s implemented daemon-backed and local fallback behavior is owned by [Status command](./status.md).
@@ -37,6 +38,7 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 | [Subscription management](./subscription-management.md) | Implemented v0.1 Base64 URI-list subscription add, list, show, update, share URI import, JSON output, redaction, and safety boundary. |
 | [Proxy-only plan](./proxy-only-plan.md) | Implemented v0.1 read-only proxy-only planning, generated Xray config validation, local proxy listeners, JSON output, and safety boundary. |
 | [System snapshot model](./system-snapshot.md) | Implemented read-only TUN planning snapshot model, hostname server-route resolution, fake snapshots, status vocabulary, and safety boundary. |
+| [TUN full-tunnel dry-run plan](./tun-full-tunnel-plan.md) | Implemented read-only full-tunnel TUN/route planner, policy rules, VPN server bypass, loop-risk warnings, rollback steps, JSON output, and safety boundary. |
 | [Proxy-only lifecycle](./proxy-only-lifecycle.md) | Implemented v0.1 daemon-managed Xray process lifecycle for `connect --mode proxy-only`, `disconnect`, generated runtime config cleanup, and safety boundary. |
 | [Daemon local API](./daemon-api.md) | Implemented v0.1 Unix socket daemon API transport, status and doctor endpoints, lifecycle, and safety boundary. |
 | [Status command](./status.md) | Implemented v0.1 read-only `tunwarden status` daemon-backed behavior, local fallback behavior, output shape, and safety boundary. |
