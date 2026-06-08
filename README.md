@@ -14,7 +14,9 @@ What exists now:
 - `tunwarden` CLI skeleton.
 - `tunwardend` daemon skeleton with local Unix socket status, doctor, connect, and disconnect APIs.
 - `packaging/systemd/tunwardend.service` for manual systemd service startup with journald logging.
+- Top-level `tunwarden import` for VLESS share URIs and Base64 URI-list subscriptions.
 - Manual `profile add`, VLESS `profile import`, `profile list`, `profile show`, and `profile delete --yes` commands backed by local user state.
+- Base64 URI-list `subscription add`, `subscription list`, `subscription show`, and `subscription update` commands backed by local user state.
 - Read-only `plan --mode proxy-only` dry-run for stored VLESS profiles with deterministic generated Xray config validation.
 - Daemon-managed `connect --mode proxy-only` and `disconnect` for starting and stopping Xray without changing system networking.
 - `status` command with daemon-backed active/inactive proxy-only status and local runtime fallback.
@@ -22,7 +24,7 @@ What exists now:
 - Read-only `logs` command for recent `tunwardend` journald logs.
 - Read-only `recover` dry-run scan for clearly TunWarden-owned recovery candidates.
 - Initial internal models for transactions, profiles, and subscriptions.
-- Product, CLI, architecture, state/security, networking, subscription, roadmap, and development documentation.
+- Product, CLI, architecture, state/security, networking, subscription, roadmap, development, and v0.1 acceptance documentation.
 
 What does not exist yet:
 
@@ -45,11 +47,17 @@ What does not exist yet:
 
 - `go test ./...`
 - `go run ./cmd/tunwarden version`
+- `go run ./cmd/tunwarden import '<vless-share-uri>'`
+- `go run ./cmd/tunwarden import file:///tmp/sub.txt`
 - `go run ./cmd/tunwarden profile add --name test --server example.com --port 443 --protocol vless`
 - `go run ./cmd/tunwarden profile import '<vless-share-uri>'`
 - `go run ./cmd/tunwarden profile list`
 - `go run ./cmd/tunwarden profile show test`
 - `go run ./cmd/tunwarden profile delete test --yes`
+- `go run ./cmd/tunwarden subscription add --name personal --url file:///tmp/sub.txt`
+- `go run ./cmd/tunwarden subscription list`
+- `go run ./cmd/tunwarden subscription show personal`
+- `go run ./cmd/tunwarden subscription update personal`
 - `go run ./cmd/tunwarden plan --mode proxy-only <profile-id>`
 - `go run ./cmd/tunwarden connect --mode proxy-only <profile-id>`
 - `go run ./cmd/tunwarden status`
@@ -61,7 +69,7 @@ What does not exist yet:
 - `go run ./cmd/tunwardend`
 - `sudo systemctl start tunwardend` after manually installing `packaging/systemd/tunwardend.service` and the daemon binary.
 
-Canonical command names are defined in [CLI contract](docs/cli.md). The implemented manual and VLESS-import profile behavior is defined in [Profile management](docs/profile-management.md). The implemented v0.1 proxy-only plan behavior is defined in [Proxy-only plan](docs/proxy-only-plan.md). The implemented v0.1 daemon transport and lifecycle API are defined in [Daemon local API](docs/daemon-api.md). The implemented v0.1 `status` behavior is defined in [Status command](docs/status.md). The implemented v0.1 `doctor` checks are defined in [Doctor diagnostics](docs/doctor-diagnostics.md). The implemented v0.1 `logs` behavior is defined in [Logs command](docs/logs.md). The implemented v0.1 `recover` scan is defined in [Recovery dry-run](docs/recovery-dry-run.md).
+Canonical command names are defined in [CLI contract](docs/cli.md). The implemented top-level import behavior is covered by the CLI contract and [v0.1 acceptance checklist](docs/v0.1-acceptance.md). The implemented manual and VLESS-import profile behavior is defined in [Profile management](docs/profile-management.md). The implemented subscription behavior is defined in [Subscription management](docs/subscription-management.md). The implemented v0.1 proxy-only plan behavior is defined in [Proxy-only plan](docs/proxy-only-plan.md). The implemented v0.1 daemon transport and lifecycle API are defined in [Daemon local API](docs/daemon-api.md). The implemented v0.1 `status` behavior is defined in [Status command](docs/status.md). The implemented v0.1 `doctor` checks are defined in [Doctor diagnostics](docs/doctor-diagnostics.md). The implemented v0.1 `logs` behavior is defined in [Logs command](docs/logs.md). The implemented v0.1 `recover` scan is defined in [Recovery dry-run](docs/recovery-dry-run.md).
 
 ## Intended lifecycle model
 
@@ -82,12 +90,15 @@ Primary documents:
 - [Product requirements](docs/product-requirements.md)
 - [CLI contract](docs/cli.md)
 - [Profile management](docs/profile-management.md)
+- [Subscription management](docs/subscription-management.md)
 - [Proxy-only plan](docs/proxy-only-plan.md)
+- [Proxy-only lifecycle](docs/proxy-only-lifecycle.md)
 - [Daemon local API](docs/daemon-api.md)
 - [Status command](docs/status.md)
 - [Doctor diagnostics](docs/doctor-diagnostics.md)
 - [Logs command](docs/logs.md)
 - [Recovery dry-run](docs/recovery-dry-run.md)
+- [v0.1 acceptance checklist](docs/v0.1-acceptance.md)
 - [Architecture](docs/architecture.md)
 - [State and security requirements](docs/state-and-security.md)
 - [Package boundaries](docs/package-boundaries.md)

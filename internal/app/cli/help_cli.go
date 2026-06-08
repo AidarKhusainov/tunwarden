@@ -10,6 +10,7 @@ func printUsage(w io.Writer) {
 
 Usage:
   tunwarden version
+  tunwarden import <uri-or-file-or-url>
   tunwarden profile <add|import|list|show|delete>
   tunwarden subscription <add|list|show|update>
   tunwarden plan --mode proxy-only <profile-id>
@@ -22,11 +23,11 @@ Usage:
   tunwarden help [command]
 
 Current status:
-  This is an early foundation build. Commands manage local profiles and Base64
-  subscriptions, print proxy-only plans, start and stop daemon-managed proxy-only
-  Xray, report daemon-backed or local status, diagnostics, daemon/core logs, and
-  recovery plans; they do not mutate TUN, routes, DNS, nftables, or firewall
-  state.
+  This is an early foundation build. Commands import VLESS profiles and Base64
+  subscriptions, manage local profiles and subscriptions, print proxy-only plans,
+  start and stop daemon-managed proxy-only Xray, report daemon-backed or local
+  status, diagnostics, daemon/core logs, and recovery plans; they do not mutate
+  TUN, routes, DNS, nftables, or firewall state.
 `)
 }
 
