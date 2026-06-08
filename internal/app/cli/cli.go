@@ -10,6 +10,7 @@ import (
 
 	"github.com/AidarKhusainov/tunwarden/internal/doctor"
 	"github.com/AidarKhusainov/tunwarden/internal/logs"
+	netsnapshot "github.com/AidarKhusainov/tunwarden/internal/network/snapshot"
 	"github.com/AidarKhusainov/tunwarden/internal/recovery"
 	"github.com/AidarKhusainov/tunwarden/internal/status"
 )
@@ -54,6 +55,7 @@ type options struct {
 	recover               func(context.Context) recovery.PlanResult
 	status                func(context.Context) status.Report
 	daemonStatus          func(context.Context) (status.Report, error)
+	systemSnapshot        func(context.Context, netsnapshot.Options) netsnapshot.Snapshot
 }
 
 // Run executes the user-facing TunWarden command line interface.
