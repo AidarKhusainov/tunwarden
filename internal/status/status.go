@@ -73,7 +73,7 @@ func InspectWithOptions(ctx context.Context, opts Options) Report {
 	}
 
 	report := Report{
-		Daemon: "not running",
+		Daemon:  "not running",
 		Service: "none",
 		RuntimeDirectory: RuntimeDirectory{
 			Path: runtimeDir,
