@@ -74,18 +74,122 @@ func TestCollectWithRunnerBuildsReadOnlySnapshot(t *testing.T) {
 	}
 }
 
+func TestCollectWithRunnerResolvesHostnameBeforeServerRouteLookup(t *testing.T) {
+	runner := fakeRunner{
+		paths: map[string]string{"ip": "/usr/sbin/ip"},
+		commands: map[string]CommandResult{
+			"/usr/sbin/ip -4 route show default":    {Stdout: "default via 192.0.2.1 dev eth0"},
+			"/usr/sbin/ip -6 route show default":    {ExitCode: 1, Stderr: "RTNETLINK answers: Network is unreachable"},
+			"/usr/sbin/ip route get 203.0.113.10":   {Stdout: "203.0.113.10 via 192.0.2.1 dev eth0"},
+			"/usr/sbin/ip link show dev tunwarden0": {ExitCode: 1, Stderr: "Device \"tunwarden0\" does not exist."},
+		},
+	}
+	resolved := false
+	resolver := func(ctx context.Context, host string) ([]string, error) {
+		resolved = true
+		if host != "example.com" {
+			t.Fatalf("unexpected host: %q", host)
+		}
+		return []string{"2001:db8::10", "203.0.113.10"}, nil
+	}
+
+	s := CollectWithRunner(context.Background(), runner, Options{Server: "example.com", OS: "linux", ResolveHost: resolver})
+
+	if !resolved {
+		t.Fatal("expected hostname resolver to be called")
+	}
+	if s.ServerRoute.Status != StatusDetected || s.ServerRoute.Interface != "eth0" {
+		t.Fatalf("unexpected server route: %#v", s.ServerRoute)
+	}
+	if !strings.Contains(s.ServerRoute.Detail, "example.com resolved to 203.0.113.10") {
+		t.Fatalf("expected resolved hostname detail, got %#v", s.ServerRoute)
+	}
+}
+
+func TestCollectWithRunnerDoesNotResolveIPLiteralServer(t *testing.T) {
+	runner := fakeRunner{
+		paths: map[string]string{"ip": "/usr/sbin/ip"},
+		commands: map[string]CommandResult{
+			"/usr/sbin/ip -4 route show default":    {Stdout: "default via 192.0.2.1 dev eth0"},
+			"/usr/sbin/ip -6 route show default":    {ExitCode: 1, Stderr: "RTNETLINK answers: Network is unreachable"},
+			"/usr/sbin/ip route get 203.0.113.10":   {Stdout: "203.0.113.10 via 192.0.2.1 dev eth0"},
+			"/usr/sbin/ip link show dev tunwarden0": {ExitCode: 1, Stderr: "Device \"tunwarden0\" does not exist."},
+		},
+	}
+	resolver := func(ctx context.Context, host string) ([]string, error) {
+		t.Fatalf("resolver should not be called for IP literal %q", host)
+		return nil, nil
+	}
+
+	s := CollectWithRunner(context.Background(), runner, Options{Server: "203.0.113.10", OS: "linux", ResolveHost: resolver})
+
+	if s.ServerRoute.Status != StatusDetected {
+		t.Fatalf("expected detected server route, got %#v", s.ServerRoute)
+	}
+}
+
+func TestCollectWithRunnerReportsHostnameResolutionFailure(t *testing.T) {
+	runner := fakeRunner{
+		paths: map[string]string{"ip": "/usr/sbin/ip"},
+		commands: map[string]CommandResult{
+			"/usr/sbin/ip -4 route show default":    {Stdout: "default via 192.0.2.1 dev eth0"},
+			"/usr/sbin/ip -6 route show default":    {ExitCode: 1, Stderr: "RTNETLINK answers: Network is unreachable"},
+			"/usr/sbin/ip link show dev tunwarden0": {ExitCode: 1, Stderr: "Device \"tunwarden0\" does not exist."},
+		},
+	}
+	resolver := func(ctx context.Context, host string) ([]string, error) {
+		return nil, errors.New("dns timeout")
+	}
+
+	s := CollectWithRunner(context.Background(), runner, Options{Server: "example.com", OS: "linux", ResolveHost: resolver})
+
+	if s.ServerRoute.Status != StatusUnknown {
+		t.Fatalf("expected unknown server route on DNS failure, got %#v", s.ServerRoute)
+	}
+	if !strings.Contains(s.ServerRoute.Detail, "resolve server hostname") || !strings.Contains(s.ServerRoute.Detail, "dns timeout") {
+		t.Fatalf("expected DNS failure detail, got %#v", s.ServerRoute)
+	}
+}
+
+func TestCollectWithRunnerReportsHostnameResolutionTimeout(t *testing.T) {
+	runner := fakeRunner{
+		paths: map[string]string{"ip": "/usr/sbin/ip"},
+		commands: map[string]CommandResult{
+			"/usr/sbin/ip -4 route show default":    {Stdout: "default via 192.0.2.1 dev eth0"},
+			"/usr/sbin/ip -6 route show default":    {ExitCode: 1, Stderr: "RTNETLINK answers: Network is unreachable"},
+			"/usr/sbin/ip link show dev tunwarden0": {ExitCode: 1, Stderr: "Device \"tunwarden0\" does not exist."},
+		},
+	}
+	resolver := func(ctx context.Context, host string) ([]string, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+
+	s := CollectWithRunner(context.Background(), runner, Options{Server: "example.com", OS: "linux", ResolveHost: resolver})
+
+	if s.ServerRoute.Status != StatusUnknown {
+		t.Fatalf("expected unknown server route on DNS timeout, got %#v", s.ServerRoute)
+	}
+	if !strings.Contains(s.ServerRoute.Detail, "context deadline exceeded") {
+		t.Fatalf("expected timeout detail, got %#v", s.ServerRoute)
+	}
+}
+
 func TestCollectWithRunnerDegradesWhenOptionalToolsAreMissing(t *testing.T) {
 	runner := fakeRunner{
 		paths: map[string]string{"ip": "/usr/sbin/ip"},
 		commands: map[string]CommandResult{
 			"/usr/sbin/ip -4 route show default":    {Stdout: "default via 192.0.2.1 dev eth0"},
 			"/usr/sbin/ip -6 route show default":    {},
-			"/usr/sbin/ip route get example.com":    {Stdout: "203.0.113.10 via 192.0.2.1 dev eth0"},
+			"/usr/sbin/ip route get 203.0.113.10":   {Stdout: "203.0.113.10 via 192.0.2.1 dev eth0"},
 			"/usr/sbin/ip link show dev tunwarden0": {ExitCode: 1, Stderr: "Device \"tunwarden0\" does not exist."},
 		},
 	}
+	resolver := func(ctx context.Context, host string) ([]string, error) {
+		return []string{"203.0.113.10"}, nil
+	}
 
-	s := CollectWithRunner(context.Background(), runner, Options{Server: "example.com", OS: "linux"})
+	s := CollectWithRunner(context.Background(), runner, Options{Server: "example.com", OS: "linux", ResolveHost: resolver})
 
 	if s.DNS.Resolved.Status != StatusMissing || s.NetworkManager.Finding.Status != StatusMissing || s.Nftables.Availability.Status != StatusMissing {
 		t.Fatalf("expected missing optional tool states, got DNS=%#v NM=%#v nft=%#v", s.DNS, s.NetworkManager, s.Nftables)
