@@ -18,19 +18,19 @@ What exists now:
 - Manual `profile add`, VLESS `profile import`, `profile list`, `profile show`, and `profile delete --yes` commands backed by local user state.
 - Base64 URI-list `subscription add`, `subscription list`, `subscription show`, and `subscription update` commands backed by local user state.
 - Read-only `plan --mode proxy-only` dry-run for stored VLESS profiles with deterministic generated Xray config validation.
-- Read-only `plan --mode tun` full-tunnel TUN/route dry-run for stored profiles without route, policy-rule, DNS, nftables, TUN, Xray, or runtime config mutation.
+- Read-only `plan --mode tun` full-tunnel TUN/route/DNS/nftables kill-switch dry-run for stored profiles without route, policy-rule, DNS, nftables, TUN, Xray, or runtime config mutation.
 - Daemon-managed `connect --mode proxy-only` and `disconnect` for starting and stopping Xray without changing system networking.
 - `status` command with daemon-backed active/inactive proxy-only status and local runtime fallback.
 - Read-only `doctor` command with daemon-backed diagnostics, local Linux host fallback, and explicit `doctor --core --xray <path>` local Xray binary validation.
 - Read-only `logs` command for recent `tunwardend` journald logs.
 - Read-only `recover` dry-run scan for clearly TunWarden-owned recovery candidates.
-- Initial internal models for transactions, profiles, subscriptions, read-only system snapshots, and full-tunnel TUN/route planning.
+- Initial internal models for transactions, profiles, subscriptions, read-only system snapshots, and full-tunnel TUN/route/DNS/nftables kill-switch planning.
 - Product, CLI, architecture, state/security, networking, subscription, roadmap, development, and v0.1 acceptance documentation.
 
 What does not exist yet:
 
 - No TUN/full-tunnel VPN mode is established yet.
-- No DNS, nftables/firewall, kill-switch, or health-check apply plan is produced yet.
+- No health-check apply plan is produced yet.
 - No route, policy-rule, DNS, nftables, or firewall mutation is applied yet.
 - No automatic Xray download/update is implemented yet.
 - No GUI is planned for the early product.
@@ -78,7 +78,7 @@ Canonical command names are defined in [CLI contract](docs/cli.md). The implemen
 
 `plan -> snapshot -> apply -> verify -> commit`, with rollback on failure.
 
-`plan --mode tun` currently performs the read-only snapshot and full-tunnel TUN/route dry-run portions of that lifecycle. It produces intended TUN device, route, policy-rule, server-bypass, route-loop, warning, and rollback output, but it does not mutate the host and does not yet plan DNS, nftables/firewall, kill-switch, or health-check apply behavior.
+`plan --mode tun` currently performs the read-only snapshot and full-tunnel dry-run portions of that lifecycle. It produces intended TUN device, route, policy-rule, DNS, nftables/firewall, kill-switch, server-bypass, route-loop, warning, and rollback output, but it does not mutate the host and does not yet plan health-check apply behavior.
 
 `connect --mode proxy-only` currently applies only daemon-owned Xray process lifecycle and generated runtime config state. It must not mutate TUN, routes, DNS, nftables, or firewall state.
 
