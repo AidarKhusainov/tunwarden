@@ -249,7 +249,13 @@ func transactionStatuses(runtimeDir string) ([]api.TransactionStatus, []string) 
 	summaries, warnings := txstate.ScanTransactions(runtimeDir)
 	statuses := make([]api.TransactionStatus, 0, len(summaries))
 	for _, summary := range summaries {
-		statuses = append(statuses, api.TransactionStatus{ID: summary.ID, State: string(summary.State), RollbackAvailable: summary.RollbackAvailable, RequiresCleanup: summary.RequiresCleanup, Path: summary.Path})
+		statuses = append(statuses, api.TransactionStatus{
+			ID:                summary.ID,
+			State:             string(summary.State),
+			RollbackAvailable: summary.RollbackAvailable,
+			RequiresCleanup:   summary.RequiresCleanup,
+			Path:              summary.Path,
+		})
 	}
 	return statuses, warnings
 }
@@ -283,15 +289,54 @@ func (m *XrayManager) resolveXrayPath() (string, error) {
 }
 
 func inactiveXrayState() xrayState {
-	return xrayState{Connection: "inactive", Proxy: "inactive", TUN: "disabled", Routes: "not modified", DNS: "not modified", Firewall: "not modified"}
+	return xrayState{
+		Connection: "inactive",
+		Proxy:      "inactive",
+		TUN:        "disabled",
+		Routes:     "not modified",
+		DNS:        "not modified",
+		Firewall:   "not modified",
+	}
 }
 
 func lifecycleResponse(state xrayState) api.LifecycleResponse {
-	return api.LifecycleResponse{Connection: state.Connection, Mode: state.Mode, Proxy: state.Proxy, TUN: state.TUN, Routes: state.Routes, DNS: state.DNS, Firewall: state.Firewall, RuntimeConfigPath: state.RuntimeConfigPath, Warnings: append([]string(nil), state.Warnings...)}
+	return api.LifecycleResponse{
+		Connection:        state.Connection,
+		Mode:              state.Mode,
+		Proxy:             state.Proxy,
+		TUN:               state.TUN,
+		Routes:            state.Routes,
+		DNS:               state.DNS,
+		Firewall:          state.Firewall,
+		RuntimeConfigPath: state.RuntimeConfigPath,
+		Warnings:          append([]string(nil), state.Warnings...),
+	}
 }
 
 func profileFromSnapshot(p api.ProfileSnapshot) profile.Profile {
-	return profile.Profile{ID: p.ID, Name: p.Name, Source: profile.SourceType(p.Source), Engine: profile.Engine(p.Engine), Server: p.Server, Port: p.Port, Protocol: p.Protocol, UserIdentity: p.UserIdentity, Transport: p.Transport, Security: p.Security, Encryption: p.Encryption, Flow: p.Flow, ServerName: p.ServerName, ALPN: p.ALPN, Fingerprint: p.Fingerprint, Path: p.Path, HostHeader: p.HostHeader, ServiceName: p.ServiceName, RealityPublicKey: p.RealityPublicKey, RealityShortID: p.RealityShortID, RealitySpiderX: p.RealitySpiderX}
+	return profile.Profile{
+		ID:               p.ID,
+		Name:             p.Name,
+		Source:           profile.SourceType(p.Source),
+		Engine:           profile.Engine(p.Engine),
+		Server:           p.Server,
+		Port:             p.Port,
+		Protocol:         p.Protocol,
+		UserIdentity:     p.UserIdentity,
+		Transport:        p.Transport,
+		Security:         p.Security,
+		Encryption:       p.Encryption,
+		Flow:             p.Flow,
+		ServerName:       p.ServerName,
+		ALPN:             p.ALPN,
+		Fingerprint:      p.Fingerprint,
+		Path:             p.Path,
+		HostHeader:       p.HostHeader,
+		ServiceName:      p.ServiceName,
+		RealityPublicKey: p.RealityPublicKey,
+		RealityShortID:   p.RealityShortID,
+		RealitySpiderX:   p.RealitySpiderX,
+	}
 }
 
 func proxyListenersLine(listeners []planner.Listener) string {
