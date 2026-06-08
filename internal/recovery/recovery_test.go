@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	txstate "github.com/AidarKhusainov/tunwarden/internal/state"
 )
 
 type fakeScanner struct {
@@ -76,6 +79,41 @@ func TestPlanWithFakeScannerRendersRecoveryCandidates(t *testing.T) {
 	}
 	if strings.Contains(got, "command:") {
 		t.Fatalf("dry-run output must not render executable cleanup commands, got %q", got)
+	}
+}
+
+func TestPlanWithFakeScannerRendersTransactionCandidate(t *testing.T) {
+	plan := PlanWithOptions(context.Background(), Options{Scanner: fakeScanner{result: ScanResult{
+		Candidates: []Candidate{{
+			Kind:        "transaction-state",
+			Description: "transaction rollback state",
+			Target:      "/run/tunwarden/transactions/tx-apply.json",
+			Transaction: &TransactionCandidate{
+				ID:                "tx-apply",
+				State:             "applying",
+				Status:            "pending apply",
+				RollbackAvailable: true,
+				RequiresCleanup:   true,
+				Path:              "/run/tunwarden/transactions/tx-apply.json",
+			},
+		}},
+	}}})
+
+	got := plan.String()
+	want := []string{
+		"TunWarden recovery dry-run",
+		"Transaction: pending apply",
+		"Rollback available: yes",
+		"State path: /run/tunwarden/transactions/tx-apply.json",
+		"No changes were applied.",
+	}
+	for _, text := range want {
+		if !strings.Contains(got, text) {
+			t.Fatalf("expected output to contain %q, got %q", text, got)
+		}
+	}
+	if strings.Contains(got, "Would recover transaction rollback state") {
+		t.Fatalf("transaction candidates must render structured details, got %q", got)
 	}
 }
 
@@ -152,27 +190,48 @@ func TestOSScannerDetectsOwnedResources(t *testing.T) {
 	}
 }
 
+func TestOSScannerExplainsPendingTransactionState(t *testing.T) {
+	runtimeDir := t.TempDir()
+	store := txstate.TransactionStore{RuntimeDir: runtimeDir}
+	tx := txstate.NewTransaction("tx-apply", "profile-1", "tun", time.Now().UTC())
+	tx.State = txstate.TransactionApplying
+	tx.Rollback = txstate.RollbackMetadata{
+		TUN: []txstate.TUNRollback{{
+			InterfaceName: "tunwarden0",
+			Owner:         txstate.TransactionOwner,
+		}},
+	}
+	if _, err := store.Save(tx); err != nil {
+		t.Fatalf("save transaction: %v", err)
+	}
+
+	plan := PlanWithOptions(context.Background(), Options{
+		RuntimeDir: runtimeDir,
+		Runner:     fakeMissingResourcesRunner(),
+	})
+
+	transaction := assertTransactionCandidate(t, plan, "tx-apply")
+	if transaction.State != "applying" || transaction.Status != "pending apply" || !transaction.RollbackAvailable || !transaction.RequiresCleanup {
+		t.Fatalf("unexpected transaction candidate: %#v", transaction)
+	}
+	got := plan.String()
+	want := []string{
+		"Transaction: pending apply",
+		"Rollback available: yes",
+		"State path: " + filepath.Join(runtimeDir, txstate.TransactionDirName, "tx-apply.json"),
+		"No changes were applied.",
+	}
+	for _, text := range want {
+		if !strings.Contains(got, text) {
+			t.Fatalf("expected output to contain %q, got %q", text, got)
+		}
+	}
+}
+
 func TestOSScannerRendersCleanHostFromMissingOwnedResources(t *testing.T) {
 	plan := PlanWithOptions(context.Background(), Options{
 		RuntimeDir: filepath.Join(t.TempDir(), "tunwarden"),
-		Runner: fakeRunner{
-			paths: map[string]string{
-				"ip":  "/usr/sbin/ip",
-				"nft": "/usr/sbin/nft",
-			},
-			commands: map[string]fakeCommand{
-				"ip link show dev tunwarden0": {
-					stderr:   "Device \"tunwarden0\" does not exist.",
-					exitCode: 1,
-					err:      errors.New("exit status 1"),
-				},
-				"nft list table inet tunwarden": {
-					stderr:   "Error: No such file or directory",
-					exitCode: 1,
-					err:      errors.New("exit status 1"),
-				},
-			},
-		},
+		Runner:     fakeMissingResourcesRunner(),
 	})
 
 	if len(plan.Candidates) != 0 {
@@ -219,6 +278,27 @@ func TestOSScannerPreservesInspectionWarnings(t *testing.T) {
 	}
 }
 
+func fakeMissingResourcesRunner() fakeRunner {
+	return fakeRunner{
+		paths: map[string]string{
+			"ip":  "/usr/sbin/ip",
+			"nft": "/usr/sbin/nft",
+		},
+		commands: map[string]fakeCommand{
+			"ip link show dev tunwarden0": {
+				stderr:   "Device \"tunwarden0\" does not exist.",
+				exitCode: 1,
+				err:      errors.New("exit status 1"),
+			},
+			"nft list table inet tunwarden": {
+				stderr:   "Error: No such file or directory",
+				exitCode: 1,
+				err:      errors.New("exit status 1"),
+			},
+		},
+	}
+}
+
 func assertCandidate(t *testing.T, plan PlanResult, kind string, target string) {
 	t.Helper()
 	for _, candidate := range plan.Candidates {
@@ -227,4 +307,15 @@ func assertCandidate(t *testing.T, plan PlanResult, kind string, target string) 
 		}
 	}
 	t.Fatalf("candidate kind=%q target=%q not found in %#v", kind, target, plan.Candidates)
+}
+
+func assertTransactionCandidate(t *testing.T, plan PlanResult, id string) *TransactionCandidate {
+	t.Helper()
+	for _, candidate := range plan.Candidates {
+		if candidate.Transaction != nil && candidate.Transaction.ID == id {
+			return candidate.Transaction
+		}
+	}
+	t.Fatalf("transaction candidate id=%q not found in %#v", id, plan.Candidates)
+	return nil
 }

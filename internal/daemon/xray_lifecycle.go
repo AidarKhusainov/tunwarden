@@ -18,6 +18,7 @@ import (
 	"github.com/AidarKhusainov/tunwarden/internal/network/planner"
 	"github.com/AidarKhusainov/tunwarden/internal/profile"
 	"github.com/AidarKhusainov/tunwarden/internal/render"
+	txstate "github.com/AidarKhusainov/tunwarden/internal/state"
 )
 
 const (
@@ -184,6 +185,9 @@ func (m *XrayManager) Status(context.Context) api.StatusResponse {
 	if state.Connection == "" {
 		state = inactiveXrayState()
 	}
+	transactions, transactionWarnings := transactionStatuses(m.runtimeDir())
+	warnings := append([]string(nil), state.Warnings...)
+	warnings = append(warnings, transactionWarnings...)
 	return api.StatusResponse{
 		Daemon:            "running",
 		Service:           api.ServiceFromEnv(),
@@ -196,7 +200,8 @@ func (m *XrayManager) Status(context.Context) api.StatusResponse {
 		Routes:            state.Routes,
 		DNS:               state.DNS,
 		Firewall:          state.Firewall,
-		Warnings:          append([]string(nil), state.Warnings...),
+		Transactions:      transactions,
+		Warnings:          warnings,
 	}
 }
 
@@ -238,6 +243,21 @@ func (m *XrayManager) runtimeDir() string {
 		return m.RuntimeDir
 	}
 	return api.RuntimeDirFromEnv()
+}
+
+func transactionStatuses(runtimeDir string) ([]api.TransactionStatus, []string) {
+	summaries, warnings := txstate.ScanTransactions(runtimeDir)
+	statuses := make([]api.TransactionStatus, 0, len(summaries))
+	for _, summary := range summaries {
+		statuses = append(statuses, api.TransactionStatus{
+			ID:                summary.ID,
+			State:             string(summary.State),
+			RollbackAvailable: summary.RollbackAvailable,
+			RequiresCleanup:   summary.RequiresCleanup,
+			Path:              summary.Path,
+		})
+	}
+	return statuses, warnings
 }
 
 func (m *XrayManager) resolveXrayPath() (string, error) {
@@ -361,7 +381,6 @@ func (w *coreLogWriter) setPID(pid int) {
 func (w *coreLogWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-
 	written := len(p)
 	w.pending = append(w.pending, p...)
 	if w.pidKnown {
@@ -422,14 +441,12 @@ func writeRuntimeConfig(path string, content []byte) error {
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return fmt.Errorf("secure generated runtime config directory: %w", err)
 	}
-
 	tmp, err := os.CreateTemp(dir, ".xray-*.tmp")
 	if err != nil {
 		return fmt.Errorf("create temporary generated Xray config: %w", err)
 	}
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
-
 	if err := tmp.Chmod(0o600); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("secure temporary generated Xray config: %w", err)

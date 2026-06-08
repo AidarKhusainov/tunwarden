@@ -32,6 +32,25 @@ func TestValidateStatusResponseRequiresSupportedService(t *testing.T) {
 	}
 }
 
+func TestValidateTransactionStatusRequiresKnownState(t *testing.T) {
+	valid := TransactionStatus{
+		ID:                "tx-1",
+		State:             "applying",
+		RollbackAvailable: true,
+		RequiresCleanup:   true,
+		Path:              "/run/tunwarden/transactions/tx-1.json",
+	}
+	if err := ValidateTransactionStatus(valid); err != nil {
+		t.Fatalf("valid transaction status failed validation: %v", err)
+	}
+
+	invalid := valid
+	invalid.State = "banana"
+	if err := ValidateTransactionStatus(invalid); err == nil || !strings.Contains(err.Error(), "invalid transaction state") {
+		t.Fatalf("expected invalid transaction state error, got %v", err)
+	}
+}
+
 func TestServiceFromEnv(t *testing.T) {
 	t.Setenv(ServiceEnv, ServiceSystemd)
 	if got := ServiceFromEnv(); got != ServiceSystemd {

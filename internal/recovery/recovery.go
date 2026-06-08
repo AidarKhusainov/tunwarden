@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	txstate "github.com/AidarKhusainov/tunwarden/internal/state"
 )
 
 const (
@@ -28,6 +30,19 @@ type Candidate struct {
 	Kind        string
 	Description string
 	Target      string
+
+	Transaction *TransactionCandidate
+}
+
+// TransactionCandidate describes pending or stale transaction state in the
+// recovery model without exposing full rollback metadata or secrets.
+type TransactionCandidate struct {
+	ID                string
+	State             string
+	Status            string
+	RollbackAvailable bool
+	RequiresCleanup   bool
+	Path              string
 }
 
 // Warning describes a read-only recovery scan that could not complete.
@@ -150,6 +165,10 @@ func (p PlanResult) String() string {
 	switch {
 	case len(p.Candidates) > 0:
 		for _, candidate := range p.Candidates {
+			if candidate.Transaction != nil {
+				writeTransactionCandidate(&b, candidate.Transaction)
+				continue
+			}
 			fmt.Fprintf(&b, "Would recover %s: %s\n", candidate.Description, candidate.Target)
 		}
 	case len(p.Warnings) == 0:
@@ -160,6 +179,19 @@ func (p PlanResult) String() string {
 	}
 	b.WriteString("No changes were applied.\n")
 	return b.String()
+}
+
+func writeTransactionCandidate(b *strings.Builder, tx *TransactionCandidate) {
+	fmt.Fprintf(b, "Transaction: %s\n", tx.Status)
+	fmt.Fprintf(b, "Rollback available: %s\n", yesNo(tx.RollbackAvailable))
+	fmt.Fprintf(b, "State path: %s\n", tx.Path)
+}
+
+func yesNo(v bool) string {
+	if v {
+		return "yes"
+	}
+	return "no"
 }
 
 // OSScanner inspects the local host for clearly TunWarden-owned resources.
@@ -183,6 +215,7 @@ func (s OSScanner) Scan(ctx context.Context) ScanResult {
 	var result ScanResult
 	result.scanManagedInterface(ctx, runner)
 	result.scanManagedNFTTable(ctx, runner)
+	result.scanTransactionState(runtimeDir)
 	result.scanGeneratedRuntimeConfigs(filepath.Join(runtimeDir, generatedDirName))
 	result.scanRuntimeDir(runtimeDir)
 	return result
@@ -244,6 +277,31 @@ func (r *ScanResult) scanCommandCandidate(ctx context.Context, runner CommandRun
 			Target:  scan.warningTarget,
 			Message: commandFailureMessage(cmdResult, err),
 		})
+	}
+}
+
+func (r *ScanResult) scanTransactionState(runtimeDir string) {
+	summaries, warnings := txstate.ScanTransactions(runtimeDir)
+	for _, summary := range summaries {
+		if !summary.RequiresCleanup {
+			continue
+		}
+		r.Candidates = append(r.Candidates, Candidate{
+			Kind:        "transaction-state",
+			Description: "transaction rollback state",
+			Target:      summary.Path,
+			Transaction: &TransactionCandidate{
+				ID:                summary.ID,
+				State:             string(summary.State),
+				Status:            summary.StatusLine(),
+				RollbackAvailable: summary.RollbackAvailable,
+				RequiresCleanup:   summary.RequiresCleanup,
+				Path:              summary.Path,
+			},
+		})
+	}
+	for _, warning := range warnings {
+		r.Warnings = append(r.Warnings, Warning{Target: "transaction state", Message: warning})
 	}
 }
 

@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/AidarKhusainov/tunwarden/internal/api"
+	txstate "github.com/AidarKhusainov/tunwarden/internal/state"
 )
 
 type fakeRunner struct {
@@ -165,33 +167,36 @@ func TestRunWithOptionsPreservesStaleResourceWarnings(t *testing.T) {
 	assertCheck(t, report, "stale-resources", SeverityWarning, "Operation not permitted")
 }
 
+func TestRunWithOptionsReportsTransactionStateInStaleResources(t *testing.T) {
+	runtimeDir := t.TempDir()
+	store := txstate.TransactionStore{RuntimeDir: runtimeDir}
+	tx := txstate.NewTransaction("tx-apply", "profile-1", "tun", time.Now().UTC())
+	tx.State = txstate.TransactionApplying
+	tx.Rollback = txstate.RollbackMetadata{
+		TUN: []txstate.TUNRollback{{
+			InterfaceName: "tunwarden0",
+			Owner:         txstate.TransactionOwner,
+		}},
+	}
+	path, err := store.Save(tx)
+	if err != nil {
+		t.Fatalf("save transaction: %v", err)
+	}
+
+	report := RunWithOptions(context.Background(), Options{
+		Runner:     missingResourcesRunner(),
+		RuntimeDir: runtimeDir,
+	})
+
+	assertCheck(t, report, "stale-resources", SeverityWarning, "transaction tx-apply pending apply")
+	assertCheck(t, report, "stale-resources", SeverityWarning, "rollback available: yes")
+	assertCheck(t, report, "stale-resources", SeverityWarning, "state path: "+path)
+}
+
 func TestRunWithOptionsDoesNotTreatLiveDaemonRuntimeDirAsStale(t *testing.T) {
 	runtimeDir := t.TempDir()
 	report := RunWithOptions(context.Background(), Options{
-		Runner: fakeRunner{
-			paths: map[string]string{
-				"ip":         "/usr/sbin/ip",
-				"nmcli":      "/usr/bin/nmcli",
-				"systemctl":  "/usr/bin/systemctl",
-				"resolvectl": "/usr/bin/resolvectl",
-				"nft":        "/usr/sbin/nft",
-			},
-			commands: map[string]fakeCommand{
-				"ip route show default": {
-					stdout: "default via 192.0.2.1 dev wlp0s20f3",
-				},
-				"ip link show dev tunwarden0": {
-					stderr:   "Device \"tunwarden0\" does not exist.",
-					exitCode: 1,
-					err:      errors.New("exit status 1"),
-				},
-				"nft list table inet tunwarden": {
-					stderr:   "Error: No such file or directory",
-					exitCode: 1,
-					err:      errors.New("exit status 1"),
-				},
-			},
-		},
+		Runner:                  missingResourcesRunner(),
 		RuntimeDir:              runtimeDir,
 		RuntimeDirOwnedByDaemon: true,
 	})
@@ -274,6 +279,33 @@ func successfulReport(t *testing.T) Report {
 		},
 		RuntimeDir: filepath.Join(t.TempDir(), "tunwarden"),
 	})
+}
+
+func missingResourcesRunner() fakeRunner {
+	return fakeRunner{
+		paths: map[string]string{
+			"ip":         "/usr/sbin/ip",
+			"nft":        "/usr/sbin/nft",
+			"nmcli":      "/usr/bin/nmcli",
+			"systemctl":  "/usr/bin/systemctl",
+			"resolvectl": "/usr/bin/resolvectl",
+		},
+		commands: map[string]fakeCommand{
+			"ip route show default": {
+				stdout: "default via 192.0.2.1 dev wlp0s20f3 proto dhcp src 192.0.2.10 metric 600",
+			},
+			"ip link show dev tunwarden0": {
+				stderr:   "Device \"tunwarden0\" does not exist.",
+				exitCode: 1,
+				err:      errors.New("exit status 1"),
+			},
+			"nft list table inet tunwarden": {
+				stderr:   "Error: No such file or directory",
+				exitCode: 1,
+				err:      errors.New("exit status 1"),
+			},
+		},
+	}
 }
 
 func assertCheckOrder(t *testing.T, report Report, want []string) {

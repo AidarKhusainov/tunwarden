@@ -20,18 +20,29 @@ const (
 )
 
 type StatusResponse struct {
-	Daemon            string   `json:"daemon"`
-	Service           string   `json:"service"`
-	Connection        string   `json:"connection"`
-	Mode              string   `json:"mode,omitempty"`
-	RuntimeDirectory  string   `json:"runtime_directory"`
-	RuntimeConfigPath string   `json:"runtime_config_path,omitempty"`
-	Proxy             string   `json:"proxy"`
-	TUN               string   `json:"tun"`
-	Routes            string   `json:"routes,omitempty"`
-	DNS               string   `json:"dns,omitempty"`
-	Firewall          string   `json:"firewall,omitempty"`
-	Warnings          []string `json:"warnings,omitempty"`
+	Daemon            string              `json:"daemon"`
+	Service           string              `json:"service"`
+	Connection        string              `json:"connection"`
+	Mode              string              `json:"mode,omitempty"`
+	RuntimeDirectory  string              `json:"runtime_directory"`
+	RuntimeConfigPath string              `json:"runtime_config_path,omitempty"`
+	Proxy             string              `json:"proxy"`
+	TUN               string              `json:"tun"`
+	Routes            string              `json:"routes,omitempty"`
+	DNS               string              `json:"dns,omitempty"`
+	Firewall          string              `json:"firewall,omitempty"`
+	Transactions      []TransactionStatus `json:"transactions,omitempty"`
+	Warnings          []string            `json:"warnings,omitempty"`
+}
+
+// TransactionStatus is the daemon API's redacted transaction summary. It
+// exposes facts only; human-readable status text is rendered by clients.
+type TransactionStatus struct {
+	ID                string `json:"id"`
+	State             string `json:"state"`
+	RollbackAvailable bool   `json:"rollback_available"`
+	RequiresCleanup   bool   `json:"requires_cleanup"`
+	Path              string `json:"path"`
 }
 
 func ValidateStatusResponse(s StatusResponse) error {
@@ -50,8 +61,36 @@ func ValidateStatusResponse(s StatusResponse) error {
 		return errors.New("missing proxy field")
 	case s.TUN == "":
 		return errors.New("missing tun field")
+	}
+	for _, tx := range s.Transactions {
+		if err := ValidateTransactionStatus(tx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ValidateTransactionStatus(tx TransactionStatus) error {
+	switch {
+	case tx.ID == "":
+		return errors.New("missing transaction id")
+	case tx.State == "":
+		return errors.New("missing transaction state")
+	case !validTransactionState(tx.State):
+		return fmt.Errorf("invalid transaction state %q", tx.State)
+	case tx.Path == "":
+		return errors.New("missing transaction path")
 	default:
 		return nil
+	}
+}
+
+func validTransactionState(state string) bool {
+	switch state {
+	case "planned", "applying", "applied", "verifying", "committed", "rolling_back", "rolled_back", "failed":
+		return true
+	default:
+		return false
 	}
 }
 
