@@ -12,10 +12,8 @@ import (
 	"time"
 )
 
-const (
-	defaultCommandTimeout    = 3 * time.Second
-	defaultResolveHostTimeout = 3 * time.Second
-)
+const defaultCommandTimeout = 3 * time.Second
+const defaultResolveHostTimeout = 3 * time.Second
 
 // CommandResult contains a completed read-only command's observable output.
 type CommandResult struct {
