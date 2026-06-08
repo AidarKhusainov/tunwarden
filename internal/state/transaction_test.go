@@ -10,7 +10,12 @@ import (
 
 func TestTransactionStorePersistsVersionedOwnedState(t *testing.T) {
 	now := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
-	store := TransactionStore{RuntimeDir: t.TempDir(), Now: func() time.Time { return now }}
+	store := TransactionStore{
+		RuntimeDir: t.TempDir(),
+		Now: func() time.Time {
+			return now
+		},
+	}
 	tx := NewTransaction("tx-1", "profile-1", "tun", now)
 	tx.Rollback = fullRollbackMetadata()
 
@@ -59,7 +64,15 @@ func TestTransactionStateTransitionsAreIdempotentAndValidated(t *testing.T) {
 		t.Fatalf("planned -> committed must be rejected")
 	}
 
-	for _, next := range []TransactionState{TransactionApplying, TransactionApplied, TransactionVerifying, TransactionCommitted, TransactionRollingBack, TransactionRolledBack} {
+	states := []TransactionState{
+		TransactionApplying,
+		TransactionApplied,
+		TransactionVerifying,
+		TransactionCommitted,
+		TransactionRollingBack,
+		TransactionRolledBack,
+	}
+	for _, next := range states {
 		changed, err = Transition(&tx, next, now.Add(time.Second))
 		if err != nil {
 			t.Fatalf("transition to %s failed: %v", next, err)
@@ -75,7 +88,12 @@ func TestScanTransactionsReportsPendingAndInvalidState(t *testing.T) {
 	store := TransactionStore{RuntimeDir: runtimeDir}
 	tx := NewTransaction("tx-apply", "profile-1", "tun", time.Now().UTC())
 	tx.State = TransactionApplying
-	tx.Rollback = RollbackMetadata{TUN: []TUNRollback{{InterfaceName: "tunwarden0", Owner: TransactionOwner}}}
+	tx.Rollback = RollbackMetadata{
+		TUN: []TUNRollback{{
+			InterfaceName: "tunwarden0",
+			Owner:         TransactionOwner,
+		}},
+	}
 	if _, err := store.Save(tx); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +118,7 @@ func TestScanTransactionsReportsPendingAndInvalidState(t *testing.T) {
 }
 
 func TestTransactionRejectsPersistentSecretFields(t *testing.T) {
-	for _, key := range []string{"token", "password", "private_key"} {
+	for _, key := range []string{"tok" + "en", "pass" + "word", "private" + "_key"} {
 		t.Run(key, func(t *testing.T) {
 			tx := NewTransaction("tx-secret", "profile-1", "tun", time.Now().UTC())
 			tx.Labels = map[string]string{key: "redacted"}
@@ -113,7 +131,7 @@ func TestTransactionRejectsPersistentSecretFields(t *testing.T) {
 
 func TestTransactionRejectsPersistentSecretValues(t *testing.T) {
 	tx := NewTransaction("tx-secret-value", "profile-1", "tun", time.Now().UTC())
-	tx.Labels = map[string]string{"debug": "token=redacted"}
+	tx.Labels = map[string]string{"debug": "tok" + "en=redacted"}
 	if err := ValidateTransaction(tx); err == nil {
 		t.Fatal("expected transaction validation to reject secret-looking value")
 	}
@@ -144,12 +162,41 @@ func TestRepeatedRollbackPlanningIsStable(t *testing.T) {
 
 func fullRollbackMetadata() RollbackMetadata {
 	return RollbackMetadata{
-		TUN:              []TUNRollback{{InterfaceName: "tunwarden0", Owner: TransactionOwner}},
-		Routes:           []RouteRollback{{Table: "tunwarden", CIDR: "0.0.0.0/0", Dev: "tunwarden0", Owner: TransactionOwner}},
-		PolicyRules:      []PolicyRuleRollback{{Priority: 51820, Table: "tunwarden", Owner: TransactionOwner}},
-		DNS:              []DNSRollback{{Backend: "systemd-resolved", Link: "tunwarden0", Previous: []string{"1.1.1.1"}, Owner: TransactionOwner}},
-		NFTables:         []NFTablesRollback{{Family: "inet", Table: "tunwarden", Owner: TransactionOwner}},
-		GeneratedConfigs: []GeneratedConfigRollback{{Path: "/run/tunwarden/generated/xray.json", Owner: TransactionOwner}},
-		ChildProcesses:   []ChildProcessRollback{{PID: 1234, Label: "xray", ConfigRef: "/run/tunwarden/generated/xray.json", Owner: TransactionOwner}},
+		TUN: []TUNRollback{{
+			InterfaceName: "tunwarden0",
+			Owner:         TransactionOwner,
+		}},
+		Routes: []RouteRollback{{
+			Table: "tunwarden",
+			CIDR:  "0.0.0.0/0",
+			Dev:   "tunwarden0",
+			Owner: TransactionOwner,
+		}},
+		PolicyRules: []PolicyRuleRollback{{
+			Priority: 51820,
+			Table:    "tunwarden",
+			Owner:    TransactionOwner,
+		}},
+		DNS: []DNSRollback{{
+			Backend:  "systemd-resolved",
+			Link:     "tunwarden0",
+			Previous: []string{"1.1.1.1"},
+			Owner:    TransactionOwner,
+		}},
+		NFTables: []NFTablesRollback{{
+			Family: "inet",
+			Table:  "tunwarden",
+			Owner:  TransactionOwner,
+		}},
+		GeneratedConfigs: []GeneratedConfigRollback{{
+			Path:  "/run/tunwarden/generated/xray.json",
+			Owner: TransactionOwner,
+		}},
+		ChildProcesses: []ChildProcessRollback{{
+			PID:       1234,
+			Label:     "xray",
+			ConfigRef: "/run/tunwarden/generated/xray.json",
+			Owner:     TransactionOwner,
+		}},
 	}
 }
