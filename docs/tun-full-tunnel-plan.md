@@ -1,6 +1,6 @@
 # TUN Full-Tunnel Dry-Run Plan
 
-`tunwarden plan --mode tun <profile-id>` builds a read-only full-tunnel plan. It is a planner output, not an executor transaction, and it must not mutate host networking.
+`tunwarden plan --mode tun <profile-id>` builds a read-only full-tunnel plan. It is planner output, not an executor transaction, and it must not mutate host networking.
 
 ## User-visible contract
 
@@ -12,13 +12,15 @@ The human output starts with `TunWarden TUN plan` and includes:
 - a default IPv4 traffic route through the TunWarden table;
 - a policy rule that keeps the VPN server bypass on the main uplink path;
 - a policy rule that sends default IPv4 traffic to the TunWarden table;
-- an explicit VPN server bypass route through the current default gateway/interface;
+- an explicit VPN server bypass route through the current default gateway/interface when the server route resolves to a concrete IP address;
+- a DNS plan for systemd-resolved per-link DNS on `tunwarden0`, including rollback to the previous per-link DNS state where possible;
+- a firewall plan for a TunWarden-owned `inet tunwarden` nftables table, VPN server bypass, kill-switch policy behavior, recovery warning, and rollback by removing the owned table;
 - current snapshot inputs for default route, server route, DNS, NetworkManager, nftables, IPv4/IPv6, TUN devices, and stale TunWarden-owned resources;
-- route-loop risks and warnings;
-- rollback steps corresponding to the planned TUN, route, and policy-rule changes;
+- route-loop risks, unsupported backend warnings, kill-switch limitations, and stale-resource warnings;
+- rollback steps corresponding to the planned nftables, DNS, policy-rule, route, and TUN desired state;
 - `No changes were applied.`
 
-JSON output keeps the common `schema_version`, `status`, `warnings`, and `errors` fields. The command-specific `plan` object includes `tunnel_mode`, `tun`, `routes`, `policy_rules`, `server_bypass`, and the current `snapshot`. Top-level `rollback_steps` correspond to the planned changes.
+JSON output keeps the common `schema_version`, `status`, `warnings`, and `errors` fields. The command-specific `plan` object includes `tunnel_mode`, `tun`, `routes`, `policy_rules`, `server_bypass`, `dns`, `firewall`, and the current `snapshot`. Top-level `rollback_steps` correspond to the planned dry-run changes. `plan.claims_leak_protection` is `false` until apply, verify, rollback, and recover execution are implemented.
 
 ## Safety boundary
 
@@ -33,7 +35,41 @@ The planned system state is TunWarden-owned and must remain identifiable before 
 - TUN interface: `tunwarden0`;
 - routing table: `tunwarden` / `51820`;
 - policy rule priorities: `51819` for VPN server bypass and `51820` for default TunWarden traffic;
-- nftables remains deferred in this dry-run and is not planned as an apply step here.
+- DNS backend: systemd-resolved per-link DNS on `tunwarden0`;
+- nftables table: `table inet tunwarden`.
+
+## DNS plan
+
+The current dry-run DNS desired state is:
+
+```text
+DNS plan:
+- backend: systemd-resolved per-link DNS
+- target link: tunwarden0
+- rollback: restore previous per-link DNS state where possible
+```
+
+If systemd-resolved cannot be inspected, the DNS desired state is blocked and the plan emits an actionable warning. The planner still remains read-only and does not add fallback DNS mutation.
+
+Direct writes to `/etc/resolv.conf` remain forbidden.
+
+## Firewall and kill-switch plan
+
+The current dry-run firewall desired state is:
+
+```text
+Firewall plan:
+- backend: nftables
+- create nftables table inet tunwarden
+- allow VPN server bypass outside TUN
+- kill-switch policy: soft
+- block non-TUN traffic according to selected kill-switch policy
+- rollback: remove inet tunwarden
+```
+
+If nftables cannot be inspected, the firewall desired state is blocked and the plan emits an actionable warning. If a TunWarden-owned nftables table already exists, future apply must validate ownership or recover it before replacing rules.
+
+The initial selected kill-switch policy is `soft` until user configuration exists. Strict kill-switch planning is supported internally and must warn that direct connectivity may remain blocked after VPN failure until TunWarden recovery removes owned nftables rules. No dry-run output may claim leak protection until apply, verify, rollback, and recover execution exist.
 
 ## IPv4 and IPv6 assumptions
 
@@ -47,8 +83,10 @@ The planner must warn when the current route to the VPN server candidate points 
 
 Rollback steps are generated in reverse apply order:
 
-1. remove planned policy rules if they were created by the transaction;
-2. remove planned routes if they were created by the transaction;
-3. delete `tunwarden0` only if the transaction created it and ownership matches TunWarden.
+1. remove the TunWarden-owned nftables table if it was created by the transaction;
+2. restore previous systemd-resolved per-link DNS state where possible;
+3. remove planned policy rules if they were created by the transaction;
+4. remove planned routes if they were created by the transaction;
+5. delete `tunwarden0` only if the transaction created it and ownership matches TunWarden.
 
 These rollback steps are descriptive only in the dry-run. Future execution work must turn them into daemon-owned, audited, idempotent rollback operations.
