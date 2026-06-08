@@ -216,7 +216,21 @@ type TransactionStore struct {
 var (
 	transactionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 	secretValuePattern   = regexp.MustCompile(`(?i)(vless|vmess|trojan|ss)://|https?://[^\s?]+\?[^\s]+|\bbearer\s+[A-Za-z0-9._~+/-]+|\b(token|password|passwd|secret|api[_-]?key|authorization|private[_-]?key)=`)
-	secretKeys           = map[string]struct{}{"token": {}, "access_token": {}, "refresh_token": {}, "password": {}, "passwd": {}, "secret": {}, "client_secret": {}, "api_key": {}, "apikey": {}, "authorization": {}, "private_key": {}, "privatekey": {}, "reality_private_key": {}}
+	secretKeys           = map[string]struct{}{
+		"token":               {},
+		"access_token":        {},
+		"refresh_token":       {},
+		"password":            {},
+		"passwd":              {},
+		"secret":              {},
+		"client_secret":       {},
+		"api_key":             {},
+		"apikey":              {},
+		"authorization":       {},
+		"private_key":         {},
+		"privatekey":          {},
+		"reality_private_key": {},
+	}
 	errEmptyTransactionID = errors.New("empty transaction id")
 )
 
@@ -225,7 +239,16 @@ func NewTransaction(id, profileID, mode string, now time.Time) Transaction {
 		now = time.Now().UTC()
 	}
 	now = now.UTC()
-	return Transaction{SchemaVersion: TransactionSchemaVersion, Owner: TransactionOwner, ID: id, ProfileID: profileID, Mode: mode, State: TransactionPlanned, CreatedAt: now, UpdatedAt: now}
+	return Transaction{
+		SchemaVersion: TransactionSchemaVersion,
+		Owner:         TransactionOwner,
+		ID:            id,
+		ProfileID:     profileID,
+		Mode:          mode,
+		State:         TransactionPlanned,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
 }
 
 func (s TransactionStore) Path(id string) (string, error) {
@@ -454,7 +477,13 @@ func MarkFailure(tx *Transaction, reason string, now time.Time) (bool, error) {
 }
 
 func (tx Transaction) Summary(path string) TransactionSummary {
-	return TransactionSummary{ID: tx.ID, State: tx.State, Path: path, RollbackAvailable: tx.Rollback.Available(), RequiresCleanup: tx.RequiresCleanup()}
+	return TransactionSummary{
+		ID:                tx.ID,
+		State:             tx.State,
+		Path:              path,
+		RollbackAvailable: tx.Rollback.Available(),
+		RequiresCleanup:   tx.RequiresCleanup(),
+	}
 }
 
 func (tx Transaction) RequiresCleanup() bool {
