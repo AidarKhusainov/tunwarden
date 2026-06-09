@@ -123,7 +123,7 @@ func (m *XrayManager) connectProxyOnly(ctx context.Context, req api.ConnectReque
 	}
 
 	m.state = active
-	m.mu.Unlock()	
+	m.mu.Unlock()
 	return lifecycleResponse(active), nil
 }
 
