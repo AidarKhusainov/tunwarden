@@ -218,7 +218,7 @@ The current dry-run planner must surface this as route-loop risk in human and JS
 
 Initial DNS integration should use systemd-resolved when available.
 
-The current dry-run plan shows the intended systemd-resolved per-link backend before applying anything and warns clearly when `resolvectl` or systemd-resolved state cannot be inspected.
+The current dry-run plan shows the intended systemd-resolved per-link backend, planned DNS servers, route-only domain, and default-route state before applying anything and warns clearly when `resolvectl` or systemd-resolved state cannot be inspected.
 
 The daemon-owned TUN transaction executor applies the resolved DNS slice only when the plan action is `configure`; blocked DNS plans fail before mutation.
 
@@ -232,9 +232,10 @@ Fallback handling may be added later, but must be explicit and documented.
 
 For full-tunnel mode, TunWarden uses per-link DNS on `tunwarden0` where possible.
 
-Current executor behavior:
+Current executor behavior applies the DNS servers already present in `TunDNSPlan.Servers`; the current planner default is `1.1.1.1` until user DNS configuration exists.
 
 ```bash
+resolvectl dns tunwarden0 <planned-dns-server> [...]
 resolvectl domain tunwarden0 '~.'
 resolvectl default-route tunwarden0 yes
 ```
@@ -251,7 +252,7 @@ The executor verifies the link with:
 resolvectl status tunwarden0 --no-pager
 ```
 
-It requires the route-only domain `~.` to be visible after apply.
+It requires every planned DNS server and the route-only domain `~.` to be visible after apply.
 
 ### DNS-004: Bootstrap DNS must avoid loops
 
@@ -430,3 +431,40 @@ NetworkManager connectivity state should be shown in diagnostics but must not be
 - bootstrap server route does not loop,
 - control channel can connect,
 - at least one external endpoint can be reached through the intended path.
+- TCP probe,
+- optional UDP probe,
+- optional HTTP probe,
+- NetworkManager connectivity state shown separately.
+
+### Transaction-state checks
+
+`status`, `doctor`, and `recover` must explain pending or stale transaction state without applying cleanup. At minimum they must show whether the transaction is pending, committed, failed, rolling back, or requires cleanup; whether rollback metadata is available; and the redacted transaction state path.
+
+## 12. Recovery requirements
+
+`recover` must be designed as an emergency recovery command. Plain `tunwarden recover` must remain a read-only recovery plan. `tunwarden recover --execute --yes` is the explicit cleanup path and must remove only TunWarden-owned runtime/process/networking state, including reversible DNS state, while reporting anything it could not change.
+
+The read-only plan must include pending or stale transaction files under `/run/tunwarden/transactions/` as transaction-state recovery candidates when their state requires cleanup. Invalid or unreadable transaction files must be reported as inspection warnings, not ignored.
+
+It must be safe to run recovery when TunWarden is disconnected.
+
+## 13. Reliability tests
+
+Required tests before declaring TUN mode stable:
+
+1. Connect/disconnect 100 times without stale state.
+2. Stop the core process during active connection.
+3. Stop the daemon during connection apply.
+4. Fail DNS apply step and verify rollback.
+5. Fail route apply step and verify rollback.
+6. Suspend/resume while connected.
+7. Change Wi-Fi network while connected.
+8. Renew DHCP while connected.
+9. Enable/disable IPv6 while connected.
+10. Run `recover --execute --yes` after simulated crash.
+
+## 14. Design warning
+
+A VPN client that can connect but cannot reliably disconnect is not acceptable.
+
+Disconnect, rollback, and recovery are core features, not maintenance tasks.
