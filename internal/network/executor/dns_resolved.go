@@ -10,9 +10,8 @@ import (
 )
 
 const (
-	OwnerDNS                 = "tunwarden:dns-link"
-	DefaultResolvedDNSServer = "1.1.1.1"
-	resolvedRouteOnlyDomain  = "~."
+	OwnerDNS                = "tunwarden:dns-link"
+	resolvedRouteOnlyDomain = "~."
 )
 
 // DNSExecutor owns systemd-resolved per-link DNS apply, verification, and cleanup.
@@ -105,13 +104,14 @@ type ResolvedDNSExecutor struct {
 	Runner CommandRunner
 }
 
-// Apply configures the DNS server, route-only default DNS domain, and per-link DNS default route.
+// Apply configures the DNS servers, route-only default DNS domain, and per-link DNS default route.
 func (e ResolvedDNSExecutor) Apply(ctx context.Context, plan planner.TunDNSPlan) (Step, error) {
 	if err := validateDNSPlan(plan); err != nil {
 		return Step{}, err
 	}
 	link := strings.TrimSpace(plan.TargetLink)
-	if err := runCommand(ctx, e.Runner, "resolvectl", "dns", link, DefaultResolvedDNSServer); err != nil {
+	args := append([]string{"dns", link}, plan.Servers...)
+	if err := runCommand(ctx, e.Runner, "resolvectl", args...); err != nil {
 		return Step{}, fmt.Errorf("configure systemd-resolved DNS server for %s: %w", link, err)
 	}
 	if err := runCommand(ctx, e.Runner, "resolvectl", "domain", link, resolvedRouteOnlyDomain); err != nil {
@@ -123,7 +123,7 @@ func (e ResolvedDNSExecutor) Apply(ctx context.Context, plan planner.TunDNSPlan)
 	return Step{Kind: "dns", Target: link, Description: plan.Reason, Owner: OwnerDNS}, nil
 }
 
-// Verify checks that the target link exposes the DNS server and route-only domain after apply.
+// Verify checks that the target link exposes planned DNS servers and route-only domain after apply.
 func (e ResolvedDNSExecutor) Verify(ctx context.Context, plan planner.TunDNSPlan) error {
 	if err := validateDNSPlan(plan); err != nil {
 		return err
@@ -133,8 +133,10 @@ func (e ResolvedDNSExecutor) Verify(ctx context.Context, plan planner.TunDNSPlan
 	if err != nil {
 		return fmt.Errorf("verify systemd-resolved DNS for %s: %w", link, err)
 	}
-	if !strings.Contains(result.Stdout, DefaultResolvedDNSServer) {
-		return fmt.Errorf("verify systemd-resolved DNS for %s: DNS server %s not found", link, DefaultResolvedDNSServer)
+	for _, server := range plan.Servers {
+		if !strings.Contains(result.Stdout, server) {
+			return fmt.Errorf("verify systemd-resolved DNS for %s: DNS server %s not found", link, server)
+		}
 	}
 	if !strings.Contains(result.Stdout, resolvedRouteOnlyDomain) {
 		return fmt.Errorf("verify systemd-resolved DNS for %s: route-only domain %s not found", link, resolvedRouteOnlyDomain)
@@ -163,6 +165,9 @@ func validateDNSPlan(plan planner.TunDNSPlan) error {
 	}
 	if strings.TrimSpace(plan.TargetLink) == "" {
 		return errors.New("missing DNS target link")
+	}
+	if len(plan.Servers) == 0 {
+		return errors.New("missing DNS servers")
 	}
 	if plan.Backend != "" && plan.Backend != planner.DNSBackendSystemdResolved {
 		return fmt.Errorf("unsupported DNS backend %q", plan.Backend)
