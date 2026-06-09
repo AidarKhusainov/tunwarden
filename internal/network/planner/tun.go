@@ -26,6 +26,7 @@ const (
 	DNSActionConfigure        = "configure"
 	DNSActionBlocked          = "blocked"
 	DNSRollbackRestore        = "restore previous per-link DNS state where possible"
+	DefaultTunDNSServer       = "1.1.1.1"
 
 	FirewallBackendNftables    = "nftables"
 	FirewallTableAction        = "create"
@@ -56,6 +57,7 @@ const (
 
 type TunOptions struct {
 	KillSwitchPolicy string
+	DNSServers       []string
 }
 
 type TunDevicePlan struct {
@@ -87,6 +89,7 @@ type TunPolicyRulePlan struct {
 type TunDNSPlan struct {
 	Backend       string
 	TargetLink    string
+	Servers       []string
 	Action        string
 	Reason        string
 	Rollback      string
@@ -192,7 +195,7 @@ func PlanTunWithOptions(p profile.Profile, s snapshot.Snapshot, opts TunOptions)
 		}}, policyRules...)
 	}
 
-	dnsPlan := dnsPlan(s, device)
+	dnsPlan := dnsPlan(s, device, normalizeDNSServers(opts.DNSServers))
 	firewallPlan := firewallPlan(s, normalizeKillSwitchPolicy(opts.KillSwitchPolicy), device, serverIP)
 
 	loopRisks := tunRouteLoopRisks(s)
@@ -213,7 +216,7 @@ func PlanTunWithOptions(p profile.Profile, s snapshot.Snapshot, opts TunOptions)
 	}
 	steps = append(steps,
 		fmt.Sprintf("Plan policy rule priority %d for default IPv4 traffic via %s", TunRulePriority, TunRoutingTable),
-		fmt.Sprintf("Plan DNS backend %s on link %s", dnsPlan.Backend, dnsPlan.TargetLink),
+		fmt.Sprintf("Plan DNS backend %s on link %s with server(s) %s", dnsPlan.Backend, dnsPlan.TargetLink, strings.Join(dnsPlan.Servers, ", ")),
 		fmt.Sprintf("Plan nftables table %s %s with %d chain(s), %d rule(s), and %s kill-switch policy", firewallPlan.Family, firewallPlan.Table, len(firewallPlan.Chains), len(firewallPlan.Rules), firewallPlan.KillSwitch.Policy),
 		"Leave TUN devices, routes, policy rules, DNS, nftables, firewall, and Xray process state unchanged in this dry-run",
 	)
@@ -244,16 +247,17 @@ func serverBypassRoute(s snapshot.Snapshot, serverIP string) TunRoutePlan {
 	return TunRoutePlan{Family: "ipv4", Destination: serverIP + "/32", Table: MainRoutingTable, Interface: s.DefaultIPv4.Interface, Gateway: s.DefaultIPv4.Gateway, Action: "add", Reason: "pin VPN server traffic to the current default uplink outside the TUN path"}
 }
 
-func dnsPlan(s snapshot.Snapshot, device TunDevicePlan) TunDNSPlan {
+func dnsPlan(s snapshot.Snapshot, device TunDevicePlan, servers []string) TunDNSPlan {
 	plan := TunDNSPlan{
 		Backend:    DNSBackendSystemdResolved,
 		TargetLink: device.Name,
+		Servers:    append([]string{}, servers...),
 		Action:     DNSActionConfigure,
 		Reason:     "use systemd-resolved per-link DNS for full-tunnel DNS routing without writing /etc/resolv.conf",
 		Rollback:   DNSRollbackRestore,
 		RollbackSteps: []string{
 			fmt.Sprintf("Restore previous systemd-resolved per-link DNS state for %s where possible", device.Name),
-			fmt.Sprintf("Flush TunWarden-owned DNS default-route/domain settings from %s if created by this transaction", device.Name),
+			fmt.Sprintf("Flush TunWarden-owned DNS server/default-route/domain settings from %s if created by this transaction", device.Name),
 		},
 	}
 	if s.DNS.Resolved.Status != snapshot.StatusDetected {
@@ -408,6 +412,23 @@ func normalizeKillSwitchPolicy(policy string) string {
 	default:
 		return KillSwitchPolicySoft
 	}
+}
+
+func normalizeDNSServers(servers []string) []string {
+	out := make([]string, 0, len(servers))
+	seen := map[string]bool{}
+	for _, server := range servers {
+		server = strings.TrimSpace(server)
+		if server == "" || seen[server] {
+			continue
+		}
+		seen[server] = true
+		out = append(out, server)
+	}
+	if len(out) == 0 {
+		return []string{DefaultTunDNSServer}
+	}
+	return out
 }
 
 func tunSnapshotWarnings(s snapshot.Snapshot) []string {
