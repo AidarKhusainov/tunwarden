@@ -15,8 +15,6 @@ import (
 	txstate "github.com/AidarKhusainov/tunwarden/internal/state"
 )
 
-const dnsRouteOnlyDomain = "~."
-
 type tunPlanExecutor interface {
 	Apply(context.Context, planner.TunPlan) ([]netexecutor.Step, error)
 	Verify(context.Context, planner.TunPlan) error
@@ -95,7 +93,11 @@ func saveCoreRollbackMetadata(store txstate.TransactionStore, transactionID, run
 	if err != nil {
 		return fmt.Errorf("load TUN transaction %s: %w", transactionID, err)
 	}
-	tx.DesiredPlan.Core = txstate.CorePlan{RuntimeConfigPath: runtimeConfigPath, ProcessLabel: "xray", Owner: txstate.TransactionOwner}
+	tx.DesiredPlan.Core = txstate.CorePlan{
+		RuntimeConfigPath: runtimeConfigPath,
+		ProcessLabel:      "xray",
+		Owner:             txstate.TransactionOwner,
+	}
 	tx.Rollback.GeneratedConfigs = []txstate.GeneratedConfigRollback{{Path: runtimeConfigPath, Owner: txstate.TransactionOwner}}
 	if pid > 0 {
 		tx.Rollback.ChildProcesses = []txstate.ChildProcessRollback{{PID: pid, Label: "xray", ConfigRef: runtimeConfigPath, Owner: txstate.TransactionOwner}}
@@ -209,7 +211,15 @@ func desiredPlanFromTunPlan(plan planner.TunPlan) txstate.DesiredPlan {
 		if route.Action != "add" {
 			continue
 		}
-		routes = append(routes, txstate.RoutePlan{Kind: "route", Table: route.Table, CIDR: route.Destination, Via: route.Gateway, Dev: route.Interface, Owner: netexecutor.OwnerRoute, Operation: route.Action})
+		routes = append(routes, txstate.RoutePlan{
+			Kind:      "route",
+			Table:     route.Table,
+			CIDR:      route.Destination,
+			Via:       route.Gateway,
+			Dev:       route.Interface,
+			Owner:     netexecutor.OwnerRoute,
+			Operation: route.Action,
+		})
 	}
 	for _, step := range plan.Steps {
 		steps = append(steps, txstate.PlannedStep{Kind: "plan", Target: planner.ModeTun, Description: step, Owner: txstate.TransactionOwner})
@@ -223,7 +233,29 @@ func desiredPlanFromTunPlan(plan planner.TunPlan) txstate.DesiredPlan {
 	if plan.Firewall.TableAction == planner.FirewallTableAction && plan.Firewall.Table != "" {
 		steps = append(steps, txstate.PlannedStep{Kind: "nftables", Target: firewallTarget(plan.Firewall), Description: plan.Firewall.Reason, Owner: netexecutor.OwnerFirewall})
 	}
-	return txstate.DesiredPlan{PlanID: plan.ProfileID + ":" + planner.ModeTun, TUN: txstate.TUNDesiredState{InterfaceName: plan.TunDevice.Name, MTU: plan.TunDevice.MTU, Owner: netexecutor.OwnerTunDevice}, Routes: routes, DNS: txstate.DNSPlan{Backend: plan.DNS.Backend, Link: plan.DNS.TargetLink, Servers: append([]string{}, plan.DNS.Servers...), SearchDomains: dnsSearchDomains(plan.DNS), Owner: txstate.TransactionOwner}, NFT: txstate.NFTPlan{Family: plan.Firewall.Family, Table: plan.Firewall.Table, Chains: nftChains(plan.Firewall), Owner: netexecutor.OwnerFirewall}, Steps: steps}
+	return txstate.DesiredPlan{
+		PlanID: plan.ProfileID + ":" + planner.ModeTun,
+		TUN: txstate.TUNDesiredState{
+			InterfaceName: plan.TunDevice.Name,
+			MTU:           plan.TunDevice.MTU,
+			Owner:         netexecutor.OwnerTunDevice,
+		},
+		Routes: routes,
+		DNS: txstate.DNSPlan{
+			Backend:       plan.DNS.Backend,
+			Link:          plan.DNS.TargetLink,
+			Servers:       append([]string{}, plan.DNS.Servers...),
+			SearchDomains: dnsSearchDomains(plan.DNS),
+			Owner:         txstate.TransactionOwner,
+		},
+		NFT: txstate.NFTPlan{
+			Family: plan.Firewall.Family,
+			Table:  plan.Firewall.Table,
+			Chains: nftChains(plan.Firewall),
+			Owner:  netexecutor.OwnerFirewall,
+		},
+		Steps: steps,
+	}
 }
 
 func rollbackMetadataFromTunPlan(plan planner.TunPlan) txstate.RollbackMetadata {
