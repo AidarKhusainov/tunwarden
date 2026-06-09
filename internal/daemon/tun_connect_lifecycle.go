@@ -125,7 +125,9 @@ func (m *XrayManager) disconnectTun(ctx context.Context, transactionID string) (
 	if err := rollbackTunTransaction(ctx, store, &tx, plan, m.tunPlanExecutor()); err != nil {
 		return api.LifecycleResponse{}, err
 	}
-	_ = removeTransactionFile(store, transactionID)
+	if err := removeTransactionFile(store, transactionID); err != nil {
+		return api.LifecycleResponse{}, fmt.Errorf("remove rolled-back TUN transaction %s: %w", transactionID, err)
+	}
 	m.mu.Lock()
 	m.state = inactiveXrayState()
 	m.mu.Unlock()
