@@ -97,7 +97,7 @@ func runTunTransaction(ctx context.Context, runtimeDir string, p profile.Profile
 		now = time.Now
 	}
 	store := txstate.TransactionStore{RuntimeDir: runtimeDir, Now: now}
-	tx := txstate.NewTransaction(newTunTransactionID(now()), p.ID, planner.ModeTun, now())
+	tx := txstate.NewTransaction(newTunTransactionID(now), p.ID, planner.ModeTun, now())
 	tx.BeforeSnapshot = snapshotMetadata(plan.Snapshot, now())
 	tx.DesiredPlan = desiredPlanFromTunPlan(plan)
 	tx.Rollback = rollbackMetadataFromTunPlan(plan)
