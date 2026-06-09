@@ -26,7 +26,7 @@ type NftablesExecutor struct {
 }
 
 // Apply creates a fresh TunWarden-owned nftables table and installs planned chains/rules.
-func (e NftablesExecutor) Apply(ctx context.Context, plan planner.TunFirewallPlan) (Step, error) {
+func (e NftablesExecutor) Apply(ctx context.Context, plan planner.TunFirewallPlan) (step Step, err error) {
 	if err := validateFirewallPlan(plan); err != nil {
 		return Step{}, err
 	}
@@ -34,6 +34,16 @@ func (e NftablesExecutor) Apply(ctx context.Context, plan planner.TunFirewallPla
 	if err := runCommand(ctx, e.Runner, "nft", "add", "table", family, table); err != nil {
 		return Step{}, fmt.Errorf("create nftables table %s %s: %w", family, table, err)
 	}
+	createdTable := true
+	defer func() {
+		if err == nil || !createdTable {
+			return
+		}
+		if rollbackErr := e.Rollback(ctx, plan); rollbackErr != nil {
+			err = errors.Join(err, fmt.Errorf("rollback nftables table after failed apply: %w", rollbackErr))
+		}
+	}()
+
 	for _, chain := range plan.Chains {
 		if chain.Action != planner.FirewallTableAction && chain.Action != planner.FirewallActionAdd {
 			continue
