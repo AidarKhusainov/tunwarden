@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -41,12 +42,62 @@ func TestTunTransactionWaitsForExplicitCommitAfterApplyAndVerify(t *testing.T) {
 	}
 }
 
+func TestTunTransactionRollsBackOnlyAppliedStepsAfterPartialApplyFailure(t *testing.T) {
+	runtimeDir := t.TempDir()
+	executor := &recordingTunExecutor{applyErr: errors.New("route apply failed")}
+	_, err := runTunTransaction(context.Background(), runtimeDir, profile.Profile{ID: "test-profile"}, transactionPlanForTest(), executor, fixedClock())
+	if err == nil || !strings.Contains(err.Error(), "rolled back applied") {
+		t.Fatalf("expected rolled back apply failure, got %v", err)
+	}
+	summaries, warnings := txstate.ScanTransactions(runtimeDir)
+	if len(warnings) > 0 || len(summaries) != 1 {
+		t.Fatalf("unexpected transaction scan: summaries=%#v warnings=%#v", summaries, warnings)
+	}
+	if summaries[0].State != txstate.TransactionRolledBack || summaries[0].RequiresCleanup {
+		t.Fatalf("expected clean rolled-back transaction, got %#v", summaries[0])
+	}
+	tx, _, err := (txstate.TransactionStore{RuntimeDir: runtimeDir}).Load(summaries[0].ID)
+	if err != nil {
+		t.Fatalf("load transaction: %v", err)
+	}
+	if len(tx.Rollback.Routes) != 0 || len(tx.Rollback.PolicyRules) != 0 || len(tx.Rollback.TUN) != 1 {
+		t.Fatalf("expected rollback metadata to contain only applied TUN state, got %#v", tx.Rollback)
+	}
+	if strings.Join(executor.calls, ",") != "apply,rollback" {
+		t.Fatalf("unexpected executor calls: %#v", executor.calls)
+	}
+}
+
+func TestTunTransactionRollsBackVerifyFailure(t *testing.T) {
+	runtimeDir := t.TempDir()
+	executor := &recordingTunExecutor{verifyErr: errors.New("route missing")}
+	_, err := runTunTransaction(context.Background(), runtimeDir, profile.Profile{ID: "test-profile"}, transactionPlanForTest(), executor, fixedClock())
+	if err == nil {
+		t.Fatal("expected verify failure")
+	}
+	summaries, warnings := txstate.ScanTransactions(runtimeDir)
+	if len(warnings) > 0 || len(summaries) != 1 {
+		t.Fatalf("unexpected transaction scan: summaries=%#v warnings=%#v", summaries, warnings)
+	}
+	if summaries[0].State != txstate.TransactionRolledBack || summaries[0].RequiresCleanup {
+		t.Fatalf("expected clean rolled-back transaction, got %#v", summaries[0])
+	}
+	if strings.Join(executor.calls, ",") != "apply,verify,rollback" {
+		t.Fatalf("unexpected executor calls: %#v", executor.calls)
+	}
+}
+
 type recordingTunExecutor struct {
-	calls []string
+	applyErr  error
+	verifyErr error
+	calls     []string
 }
 
 func (e *recordingTunExecutor) Apply(context.Context, planner.TunPlan) ([]netexecutor.Step, error) {
 	e.calls = append(e.calls, "apply")
+	if e.applyErr != nil {
+		return []netexecutor.Step{{Kind: "tun-device", Target: "tunwarden0", Owner: netexecutor.OwnerTunDevice}}, e.applyErr
+	}
 	return []netexecutor.Step{
 		{Kind: "tun-device", Target: "tunwarden0", Owner: netexecutor.OwnerTunDevice},
 		{Kind: "route", Target: "tunwarden default", Owner: netexecutor.OwnerRoute},
@@ -56,7 +107,7 @@ func (e *recordingTunExecutor) Apply(context.Context, planner.TunPlan) ([]netexe
 
 func (e *recordingTunExecutor) Verify(context.Context, planner.TunPlan) error {
 	e.calls = append(e.calls, "verify")
-	return nil
+	return e.verifyErr
 }
 
 func (e *recordingTunExecutor) Rollback(context.Context, planner.TunPlan) error {
