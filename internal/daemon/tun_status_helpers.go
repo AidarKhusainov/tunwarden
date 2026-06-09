@@ -16,7 +16,14 @@ func tunPlanFromTransaction(tx txstate.Transaction) planner.TunPlan {
 		plan.TunDevice = planner.TunDevicePlan{Name: tx.Rollback.TUN[0].InterfaceName, MTU: tx.DesiredPlan.TUN.MTU, Action: "add"}
 	}
 	for _, route := range tx.Rollback.Routes {
-		plan.Routes = append(plan.Routes, planner.TunRoutePlan{Family: "ipv4", Destination: route.CIDR, Table: route.Table, Gateway: route.Via, Interface: route.Dev, Action: "add"})
+		plan.Routes = append(plan.Routes, planner.TunRoutePlan{
+			Family:      "ipv4",
+			Destination: route.CIDR,
+			Table:       route.Table,
+			Gateway:     route.Via,
+			Interface:   route.Dev,
+			Action:      "add",
+		})
 	}
 	for _, rule := range tx.Rollback.PolicyRules {
 		selector := strings.TrimSpace(rule.From)
@@ -25,19 +32,45 @@ func tunPlanFromTransaction(tx txstate.Transaction) planner.TunPlan {
 		} else if selector != "" && !strings.HasPrefix(selector, "from ") {
 			selector = "from " + selector
 		}
-		plan.PolicyRules = append(plan.PolicyRules, planner.TunPolicyRulePlan{Family: "ipv4", Priority: rule.Priority, Selector: selector, Table: rule.Table, Action: "add"})
+		plan.PolicyRules = append(plan.PolicyRules, planner.TunPolicyRulePlan{
+			Family:   "ipv4",
+			Priority: rule.Priority,
+			Selector: selector,
+			Table:    rule.Table,
+			Action:   "add",
+		})
 	}
 	if len(tx.Rollback.DNS) > 0 {
 		dns := tx.Rollback.DNS[0]
-		plan.DNS = planner.TunDNSPlan{Backend: dns.Backend, TargetLink: dns.Link, Servers: append([]string{}, tx.DesiredPlan.DNS.Servers...), Action: planner.DNSActionConfigure}
+		plan.DNS = planner.TunDNSPlan{
+			Backend:    dns.Backend,
+			TargetLink: dns.Link,
+			Servers:    append([]string{}, tx.DesiredPlan.DNS.Servers...),
+			Action:     planner.DNSActionConfigure,
+		}
 	} else if tx.DesiredPlan.DNS.Link != "" {
-		plan.DNS = planner.TunDNSPlan{Backend: tx.DesiredPlan.DNS.Backend, TargetLink: tx.DesiredPlan.DNS.Link, Servers: append([]string{}, tx.DesiredPlan.DNS.Servers...), Action: planner.DNSActionConfigure}
+		plan.DNS = planner.TunDNSPlan{
+			Backend:    tx.DesiredPlan.DNS.Backend,
+			TargetLink: tx.DesiredPlan.DNS.Link,
+			Servers:    append([]string{}, tx.DesiredPlan.DNS.Servers...),
+			Action:     planner.DNSActionConfigure,
+		}
 	}
 	if len(tx.Rollback.NFTables) > 0 {
 		nft := tx.Rollback.NFTables[0]
-		plan.Firewall = planner.TunFirewallPlan{Backend: planner.FirewallBackendNftables, Family: nft.Family, Table: nft.Table, TableAction: planner.FirewallTableAction}
+		plan.Firewall = planner.TunFirewallPlan{
+			Backend:     planner.FirewallBackendNftables,
+			Family:      nft.Family,
+			Table:       nft.Table,
+			TableAction: planner.FirewallTableAction,
+		}
 	} else if tx.DesiredPlan.NFT.Table != "" {
-		plan.Firewall = planner.TunFirewallPlan{Backend: planner.FirewallBackendNftables, Family: tx.DesiredPlan.NFT.Family, Table: tx.DesiredPlan.NFT.Table, TableAction: planner.FirewallTableAction}
+		plan.Firewall = planner.TunFirewallPlan{
+			Backend:     planner.FirewallBackendNftables,
+			Family:      tx.DesiredPlan.NFT.Family,
+			Table:       tx.DesiredPlan.NFT.Table,
+			TableAction: planner.FirewallTableAction,
+		}
 	}
 	return plan
 }
@@ -97,7 +130,15 @@ func nftChains(plan planner.TunFirewallPlan) []txstate.NFTChainPlan {
 	chains := make([]txstate.NFTChainPlan, 0, len(plan.Chains))
 	rules := firewallRuleStrings(plan.Rules)
 	for _, chain := range plan.Chains {
-		chains = append(chains, txstate.NFTChainPlan{Name: chain.Name, Hook: chain.Hook, Type: chain.Type, Priority: chain.Priority, Policy: chain.Policy, Rules: append([]string{}, rules...), Owner: netexecutor.OwnerFirewall})
+		chains = append(chains, txstate.NFTChainPlan{
+			Name:     chain.Name,
+			Hook:     chain.Hook,
+			Type:     chain.Type,
+			Priority: chain.Priority,
+			Policy:   chain.Policy,
+			Rules:    append([]string{}, rules...),
+			Owner:    netexecutor.OwnerFirewall,
+		})
 	}
 	return chains
 }
