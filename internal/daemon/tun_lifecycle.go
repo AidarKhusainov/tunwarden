@@ -264,6 +264,7 @@ func desiredPlanFromTunPlan(plan planner.TunPlan) txstate.DesiredPlan {
 		DNS: txstate.DNSPlan{
 			Backend:       plan.DNS.Backend,
 			Link:          plan.DNS.TargetLink,
+			Servers:       append([]string{}, plan.DNS.Servers...),
 			SearchDomains: dnsSearchDomains(plan.DNS),
 			Owner:         txstate.TransactionOwner,
 		},
@@ -342,9 +343,9 @@ func tunPlanFromTransaction(tx txstate.Transaction) planner.TunPlan {
 	}
 	if len(tx.Rollback.DNS) > 0 {
 		dns := tx.Rollback.DNS[0]
-		plan.DNS = planner.TunDNSPlan{Backend: dns.Backend, TargetLink: dns.Link, Action: planner.DNSActionConfigure}
+		plan.DNS = planner.TunDNSPlan{Backend: dns.Backend, TargetLink: dns.Link, Servers: append([]string{}, tx.DesiredPlan.DNS.Servers...), Action: planner.DNSActionConfigure}
 	} else if tx.DesiredPlan.DNS.Link != "" {
-		plan.DNS = planner.TunDNSPlan{Backend: tx.DesiredPlan.DNS.Backend, TargetLink: tx.DesiredPlan.DNS.Link, Action: planner.DNSActionConfigure}
+		plan.DNS = planner.TunDNSPlan{Backend: tx.DesiredPlan.DNS.Backend, TargetLink: tx.DesiredPlan.DNS.Link, Servers: append([]string{}, tx.DesiredPlan.DNS.Servers...), Action: planner.DNSActionConfigure}
 	}
 	return plan
 }
@@ -379,7 +380,7 @@ func appliedPolicyRules(plan planner.TunPlan) []planner.TunPolicyRulePlan {
 
 func dnsStatusLine(plan planner.TunDNSPlan) string {
 	if plan.Action == planner.DNSActionConfigure && plan.TargetLink != "" {
-		return fmt.Sprintf("%s; Link: %s; Rollback: available", plan.Backend, plan.TargetLink)
+		return fmt.Sprintf("%s; Link: %s; Servers: %s; Rollback: available", plan.Backend, plan.TargetLink, strings.Join(plan.Servers, ", "))
 	}
 	if plan.Action == planner.DNSActionBlocked {
 		return "blocked: " + plan.Reason
