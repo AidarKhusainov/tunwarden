@@ -41,11 +41,17 @@ func TestTunTransactionWaitsForExplicitCommitAfterApplyAndVerify(t *testing.T) {
 	}
 }
 
-type recordingTunExecutor struct{ calls []string }
+type recordingTunExecutor struct {
+	calls []string
+}
 
 func (e *recordingTunExecutor) Apply(context.Context, planner.TunPlan) ([]netexecutor.Step, error) {
 	e.calls = append(e.calls, "apply")
-	return []netexecutor.Step{{Kind: "tun-device", Target: "tunwarden0", Owner: netexecutor.OwnerTunDevice}, {Kind: "route", Target: "tunwarden default", Owner: netexecutor.OwnerRoute}, {Kind: "policy-rule", Target: "priority 51820 from all lookup tunwarden", Owner: netexecutor.OwnerPolicyRule}}, nil
+	return []netexecutor.Step{
+		{Kind: "tun-device", Target: "tunwarden0", Owner: netexecutor.OwnerTunDevice},
+		{Kind: "route", Target: "tunwarden default", Owner: netexecutor.OwnerRoute},
+		{Kind: "policy-rule", Target: "priority 51820 from all lookup tunwarden", Owner: netexecutor.OwnerPolicyRule},
+	}, nil
 }
 
 func (e *recordingTunExecutor) Verify(context.Context, planner.TunPlan) error {
@@ -59,10 +65,32 @@ func (e *recordingTunExecutor) Rollback(context.Context, planner.TunPlan) error 
 }
 
 func transactionPlanForTest() planner.TunPlan {
-	return planner.TunPlan{ProfileID: "test-profile", Mode: planner.ModeTun, TunDevice: planner.TunDevicePlan{Name: "tunwarden0", MTU: 1500, Action: "create"}, Routes: []planner.TunRoutePlan{{Family: "ipv4", Destination: "default", Table: planner.TunRoutingTable, Interface: "tunwarden0", Action: "add"}}, PolicyRules: []planner.TunPolicyRulePlan{{Family: "ipv4", Priority: planner.TunRulePriority, Selector: planner.IPv4DefaultSelector, Table: planner.TunRoutingTable, Action: "add"}}, Steps: []string{"Plan TUN interface tunwarden0"}}
+	return planner.TunPlan{
+		ProfileID: "test-profile",
+		Mode:      planner.ModeTun,
+		TunDevice: planner.TunDevicePlan{Name: "tunwarden0", MTU: 1500, Action: "create"},
+		Routes: []planner.TunRoutePlan{{
+			Family:      "ipv4",
+			Destination: "default",
+			Table:       planner.TunRoutingTable,
+			Interface:   "tunwarden0",
+			Action:      "add",
+		}},
+		PolicyRules: []planner.TunPolicyRulePlan{{
+			Family:   "ipv4",
+			Priority: planner.TunRulePriority,
+			Selector: planner.IPv4DefaultSelector,
+			Table:    planner.TunRoutingTable,
+			Action:   "add",
+		}},
+		Steps: []string{"Plan TUN interface tunwarden0"},
+	}
 }
 
 func fixedClock() func() time.Time {
 	current := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
-	return func() time.Time { current = current.Add(time.Millisecond); return current }
+	return func() time.Time {
+		current = current.Add(time.Millisecond)
+		return current
+	}
 }
