@@ -3,6 +3,7 @@ package doctor
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
