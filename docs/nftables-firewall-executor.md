@@ -14,6 +14,15 @@ table inet tunwarden
 
 TunWarden must not mutate user-owned nftables tables, chains, or rules outside `inet tunwarden`.
 
+The executor enforces this boundary itself. It rejects every apply, verify, or rollback target except:
+
+```text
+family = inet
+table  = tunwarden
+```
+
+This check is intentionally duplicated in the privileged executor instead of trusting planner output or transaction rollback metadata. Corrupt or stale metadata must fail closed and must not cause deletion of arbitrary user firewall state.
+
 The initial executor owns one output chain inside that table:
 
 ```text
@@ -77,9 +86,9 @@ nft list table inet tunwarden
 Verification requires:
 
 - the planned chain to be visible;
-- every planned rule expression to be visible;
-- every planned verdict to be visible;
-- every TunWarden ownership comment to be visible.
+- every planned rule to appear on one nft output line with the expected expression, `counter comment`, TunWarden owner marker, and verdict in order.
+
+This avoids accepting output where the expression, owner marker, and verdict appear on different rules.
 
 A failed verification triggers transaction rollback.
 
@@ -92,6 +101,8 @@ nft delete table inet tunwarden
 ```
 
 This is intentionally idempotent. Missing-table errors are treated as already-clean state.
+
+Rollback rejects non-owned targets instead of silently no-oping. This keeps corrupted transaction metadata visible and prevents accidental deletion of arbitrary nftables state.
 
 Disconnect uses transaction rollback metadata to remove `inet tunwarden` before DNS, route, policy-rule, and TUN cleanup. Recovery commands that execute cleanup must use the same ownership boundary: remove TunWarden-owned nftables state, not arbitrary firewall state.
 
