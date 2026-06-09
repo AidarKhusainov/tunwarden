@@ -59,6 +59,15 @@ func TestResolvedDNSExecutorVerifyRequiresRouteOnlyDomain(t *testing.T) {
 	}
 }
 
+func TestResolvedDNSExecutorRequiresPlannedServers(t *testing.T) {
+	plan := dnsPlanForTest()
+	plan.Servers = nil
+	_, err := (ResolvedDNSExecutor{Runner: &recordingRunner{}}).Apply(context.Background(), plan)
+	if err == nil {
+		t.Fatal("expected missing DNS servers failure")
+	}
+}
+
 func TestDNSAwareTunExecutorAppliesVerifiesAndRollsBackDNSInSafeOrder(t *testing.T) {
 	recorder := &callRecorder{}
 	exec := DNSAwareTunExecutor{
@@ -132,6 +141,7 @@ func dnsPlanForTest() planner.TunDNSPlan {
 	return planner.TunDNSPlan{
 		Backend:    planner.DNSBackendSystemdResolved,
 		TargetLink: "tunwarden0",
+		Servers:    []string{planner.DefaultTunDNSServer},
 		Action:     planner.DNSActionConfigure,
 		Reason:     "use systemd-resolved per-link DNS",
 	}
