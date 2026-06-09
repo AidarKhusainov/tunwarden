@@ -9,9 +9,11 @@ import (
 	"github.com/AidarKhusainov/tunwarden/internal/network/planner"
 )
 
-const OwnerDNS = "tunwarden:dns-link"
-
-const resolvedRouteOnlyDomain = "~."
+const (
+	OwnerDNS                 = "tunwarden:dns-link"
+	DefaultResolvedDNSServer = "1.1.1.1"
+	resolvedRouteOnlyDomain  = "~."
+)
 
 // DNSExecutor owns systemd-resolved per-link DNS apply, verification, and cleanup.
 type DNSExecutor interface {
@@ -103,12 +105,15 @@ type ResolvedDNSExecutor struct {
 	Runner CommandRunner
 }
 
-// Apply configures the route-only default DNS domain and per-link DNS default route.
+// Apply configures the DNS server, route-only default DNS domain, and per-link DNS default route.
 func (e ResolvedDNSExecutor) Apply(ctx context.Context, plan planner.TunDNSPlan) (Step, error) {
 	if err := validateDNSPlan(plan); err != nil {
 		return Step{}, err
 	}
 	link := strings.TrimSpace(plan.TargetLink)
+	if err := runCommand(ctx, e.Runner, "resolvectl", "dns", link, DefaultResolvedDNSServer); err != nil {
+		return Step{}, fmt.Errorf("configure systemd-resolved DNS server for %s: %w", link, err)
+	}
 	if err := runCommand(ctx, e.Runner, "resolvectl", "domain", link, resolvedRouteOnlyDomain); err != nil {
 		return Step{}, fmt.Errorf("configure systemd-resolved route-only DNS domain for %s: %w", link, err)
 	}
@@ -118,7 +123,7 @@ func (e ResolvedDNSExecutor) Apply(ctx context.Context, plan planner.TunDNSPlan)
 	return Step{Kind: "dns", Target: link, Description: plan.Reason, Owner: OwnerDNS}, nil
 }
 
-// Verify checks that the target link exposes the route-only domain after apply.
+// Verify checks that the target link exposes the DNS server and route-only domain after apply.
 func (e ResolvedDNSExecutor) Verify(ctx context.Context, plan planner.TunDNSPlan) error {
 	if err := validateDNSPlan(plan); err != nil {
 		return err
@@ -127,6 +132,9 @@ func (e ResolvedDNSExecutor) Verify(ctx context.Context, plan planner.TunDNSPlan
 	result, err := observeCommand(ctx, e.Runner, "resolvectl", "status", link, "--no-pager")
 	if err != nil {
 		return fmt.Errorf("verify systemd-resolved DNS for %s: %w", link, err)
+	}
+	if !strings.Contains(result.Stdout, DefaultResolvedDNSServer) {
+		return fmt.Errorf("verify systemd-resolved DNS for %s: DNS server %s not found", link, DefaultResolvedDNSServer)
 	}
 	if !strings.Contains(result.Stdout, resolvedRouteOnlyDomain) {
 		return fmt.Errorf("verify systemd-resolved DNS for %s: route-only domain %s not found", link, resolvedRouteOnlyDomain)
