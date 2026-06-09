@@ -95,7 +95,17 @@ func (m *XrayManager) connectTun(ctx context.Context, req api.ConnectRequest) (a
 		}
 		return api.LifecycleResponse{}, fmt.Errorf("%w; rolled back applied TunWarden-owned networking state", err)
 	}
+	adapterDone, adapterCancel, err := startTunAdapter(ctx, tunAdapterRuntimePlan{TunDevice: plan.TunDevice.Name, SOCKSEndpoint: corePlan.SOCKSEndpoint})
+	if err != nil {
+		_ = m.stopStartedCore(cmd, done, corePlan.RuntimeConfigPath)
+		if rollbackErr := m.rollbackVerifiedTun(ctx, result.TransactionID, plan, executor); rollbackErr != nil {
+			return api.LifecycleResponse{}, errors.Join(err, fmt.Errorf("rollback TUN transaction after TUN adapter startup failure: %w", rollbackErr))
+		}
+		return api.LifecycleResponse{}, err
+	}
+	registerTunAdapter(m, adapterCancel, adapterDone)
 	if err := verifyTunConnectivity(ctx, plan, corePlan); err != nil {
+		_ = stopRegisteredTunAdapter(m)
 		_ = m.stopStartedCore(cmd, done, corePlan.RuntimeConfigPath)
 		if rollbackErr := m.rollbackVerifiedTun(ctx, result.TransactionID, plan, executor); rollbackErr != nil {
 			return api.LifecycleResponse{}, errors.Join(err, fmt.Errorf("rollback TUN transaction after connectivity verification failure: %w", rollbackErr))
@@ -120,6 +130,7 @@ func (m *XrayManager) connectTun(ctx context.Context, req api.ConnectRequest) (a
 	m.mu.Lock()
 	if m.cmd != cmd || m.done != done {
 		m.mu.Unlock()
+		_ = stopRegisteredTunAdapter(m)
 		if rollbackErr := m.rollbackVerifiedTun(ctx, result.TransactionID, plan, executor); rollbackErr != nil {
 			return api.LifecycleResponse{}, errors.Join(errors.New("Xray exited before TUN transaction commit"), rollbackErr)
 		}
@@ -127,6 +138,7 @@ func (m *XrayManager) connectTun(ctx context.Context, req api.ConnectRequest) (a
 	}
 	if err := commitTunTransaction(result.Store, result.TransactionID); err != nil {
 		m.mu.Unlock()
+		_ = stopRegisteredTunAdapter(m)
 		_ = m.stopStartedCore(cmd, done, corePlan.RuntimeConfigPath)
 		if rollbackErr := m.rollbackVerifiedTun(ctx, result.TransactionID, plan, executor); rollbackErr != nil {
 			return api.LifecycleResponse{}, errors.Join(err, fmt.Errorf("rollback TUN transaction after commit failure: %w", rollbackErr))
@@ -158,6 +170,9 @@ func planTunCoreRuntime(p profile.Profile, runtimeConfigPath string) (tunCoreRun
 }
 
 func (m *XrayManager) disconnectTun(ctx context.Context, transactionID string) (api.LifecycleResponse, error) {
+	if err := stopRegisteredTunAdapter(m); err != nil {
+		return api.LifecycleResponse{}, err
+	}
 	store := txstate.TransactionStore{RuntimeDir: m.runtimeDir()}
 	tx, _, err := store.Load(transactionID)
 	if err != nil {
