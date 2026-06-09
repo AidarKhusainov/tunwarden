@@ -9,9 +9,9 @@ The architecture must make high-impact operations explicit, observable, reversib
 The early architecture has two execution modes:
 
 1. **Proxy-only mode:** starts and supervises Xray without changing system routes, DNS, firewall, or TUN state.
-2. **TUN full-tunnel mode:** applies Linux networking changes only through the transaction model.
+2. **TUN full-tunnel mode:** applies Linux networking changes only through the daemon-owned transaction model.
 
-The current foundation TUN work implements read-only planning plus transaction-state persistence. It does not yet apply TUN/full-tunnel networking changes.
+The current foundation TUN work implements read-only planning, transaction-state persistence, and a daemon-owned executor slice for TUN interface, route, policy-rule, and systemd-resolved DNS mutation. TUN-mode Xray lifecycle integration and nftables/firewall execution remain future work.
 
 ## 2. High-level components
 
@@ -51,12 +51,12 @@ The CLI must be unprivileged.
 
 Responsibilities:
 
-- parse user commands,
-- render status and diagnostics,
-- manage user-owned configuration and user state through documented paths,
-- submit selected user intent to daemon,
-- print plans and errors,
-- collect and render local read-only snapshots where explicitly allowed by the foundation build,
+- parse user commands;
+- render status and diagnostics;
+- manage user-owned configuration and state;
+- submit selected user intent to the daemon;
+- print plans and errors;
+- collect and render local read-only snapshots where explicitly allowed;
 - never directly mutate routes, DNS, nftables, or TUN state.
 
 ### 3.2 Daemon
@@ -65,12 +65,11 @@ The daemon must run under systemd and own privileged runtime behavior.
 
 Responsibilities:
 
-- validate user requests,
-- manage privileged operations,
-- own active connection state,
-- manage core process lifecycle,
-- perform network transactions,
-- handle recovery,
+- validate user requests;
+- own active connection state;
+- manage core process lifecycle;
+- perform network transactions;
+- handle recovery;
 - expose a restricted local API.
 
 The daemon should be the only long-lived owner of privileged mutable state.
@@ -78,13 +77,6 @@ The daemon should be the only long-lived owner of privileged mutable state.
 ### 3.3 Core process
 
 Xray should be treated as a child engine process, not as the application supervisor.
-
-Responsibilities:
-
-- execute proxy protocols,
-- apply generated runtime config,
-- expose logs/stats if configured,
-- terminate cleanly on daemon request.
 
 The core must not be the only holder of network state. TunWarden must know what system-level changes were applied.
 
@@ -118,8 +110,6 @@ internal/sub               subscription source model
 ```
 
 This layout is expected to evolve, but the CLI/daemon boundary and planner/snapshot/executor split should remain stable architectural constraints.
-
-In the foundation build, `internal/app/cli` may call user-owned profile storage, local read-only proxy-only planning, local read-only TUN snapshot planning, local read-only diagnostics, read-only system-log inspection, and dry-run recovery planning directly. Privileged or daemon-owned behavior must move behind the daemon client/API boundary once it is implemented.
 
 Package dependency direction is owned by [Package boundaries](./package-boundaries.md).
 
@@ -174,15 +164,6 @@ Important constraints:
 
 Use journald as the primary logging destination.
 
-The CLI may provide:
-
-```bash
-tunwarden logs
-tunwarden logs --follow
-tunwarden logs --core
-tunwarden logs --network
-```
-
 Logs must follow the redaction policy in [State and security requirements](./state-and-security.md).
 
 ## 6. Snapshot model
@@ -191,7 +172,7 @@ System snapshots are read-only inputs to planners. The snapshot package may insp
 
 Snapshot collection must not create TUN devices, mutate routes, mutate DNS, mutate nftables/firewall state, start or stop processes, or write runtime files.
 
-The currently implemented `plan --mode tun` command consumes this snapshot layer and renders a read-only full-tunnel TUN/route dry-run. It is not the same thing as future execution. Actual TUN mutation must still be performed only by daemon-owned executor/transaction code.
+The implemented `plan --mode tun` command consumes this snapshot layer and remains read-only. Actual TUN interface, route, policy-rule, and systemd-resolved DNS mutation is performed only by daemon-owned executor/transaction code during `connect --mode tun`; the CLI never mutates host networking directly.
 
 The canonical snapshot contract is owned by [System snapshot model](./system-snapshot.md).
 
@@ -262,7 +243,7 @@ On daemon startup:
 5. Never assume previous daemon shutdown was clean
 ```
 
-The current implementation adds transaction persistence, transition helpers, startup scan primitives, daemon status summaries, and local `status`/`doctor`/`recover` visibility. It does not yet apply route, DNS, nftables, TUN, or firewall mutations.
+The current implementation adds transaction persistence, transition helpers, startup scan primitives, daemon status summaries, local `status`/`doctor`/`recover` visibility, and daemon-owned apply/verify/rollback for TUN devices, routes, policy rules, and systemd-resolved DNS. It does not yet apply nftables/firewall mutations or start Xray in TUN mode.
 
 ## 8. Planner/executor split
 
@@ -274,16 +255,16 @@ Read-only code. Does not require root and must degrade gracefully when optional 
 
 Inputs:
 
-- host OS/platform,
-- profile server hostname or IP,
+- host OS/platform;
+- profile server hostname or IP;
 - optional test runner/resolver fakes.
 
 Output:
 
-- current default route/interface observations,
-- route to the VPN server candidate,
-- DNS/NetworkManager/nftables observations,
-- known TunWarden-owned resources,
+- current default route/interface observations;
+- route to the VPN server candidate;
+- DNS/NetworkManager/nftables observations;
+- known TunWarden-owned resources;
 - visibility warnings.
 
 ### Planner
@@ -292,21 +273,21 @@ Pure or mostly pure code. Does not require root.
 
 Inputs:
 
-- current system snapshot,
-- profile,
-- daemon settings,
+- current system snapshot;
+- profile;
+- daemon settings;
 - platform capabilities.
 
 Output:
 
-- desired network plan,
-- ordered apply steps,
-- ordered rollback steps,
+- desired network plan;
+- ordered apply steps;
+- ordered rollback steps;
 - warnings.
 
-The current TUN dry-run is not yet the final executable network plan. Future TUN planner work must consume the snapshot and produce intended DNS, nftables, kill-switch, and health-check behavior in addition to the already visible TUN/route desired state.
+The current TUN planner produces inspectable desired state for TUN, routes, policy rules, systemd-resolved DNS, nftables/firewall, and kill-switch behavior. `TunDNSPlan.Servers` is planner-owned desired state; executors must not choose DNS servers themselves.
 
-Planner output must be inspectable through `tunwarden plan`.
+Planner output must be inspectable through `tunwarden plan` before mutation.
 
 ### Executor
 
@@ -321,7 +302,7 @@ Executors:
 - `CoreExecutor`,
 - `NetworkManagerExecutor`.
 
-Executor implementations must be narrow and auditable. They should not contain hidden planning decisions.
+Executor implementations must be narrow and auditable. They should not contain hidden planning decisions. The current executor slice applies TUN, routes, policy rules, and systemd-resolved DNS only.
 
 ## 9. Engine abstraction
 

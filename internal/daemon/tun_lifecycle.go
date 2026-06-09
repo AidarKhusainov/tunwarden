@@ -15,6 +15,8 @@ import (
 	txstate "github.com/AidarKhusainov/tunwarden/internal/state"
 )
 
+const dnsRouteOnlyDomain = "~."
+
 type tunPlanExecutor interface {
 	Apply(context.Context, planner.TunPlan) ([]netexecutor.Step, error)
 	Verify(context.Context, planner.TunPlan) error
@@ -47,7 +49,7 @@ func (m *XrayManager) connectTun(ctx context.Context, req api.ConnectRequest) (a
 		return api.LifecycleResponse{}, err
 	}
 
-	result, err := runTunTransaction(ctx, runtimeDir, p, plan, netexecutor.NewOSExecutor(), time.Now)
+	result, err := runTunTransaction(ctx, runtimeDir, p, plan, netexecutor.NewOSDNSExecutor(), time.Now)
 	if err != nil {
 		return api.LifecycleResponse{}, err
 	}
@@ -60,11 +62,11 @@ func (m *XrayManager) connectTun(ctx context.Context, req api.ConnectRequest) (a
 		Proxy:         "not started in this executor slice",
 		TUN:           fmt.Sprintf("enabled (%s)", plan.TunDevice.Name),
 		Routes:        fmt.Sprintf("applied %d route(s) and %d policy rule(s)", len(appliedRoutes(plan)), len(appliedPolicyRules(plan))),
-		DNS:           "not modified",
+		DNS:           dnsStatusLine(plan.DNS),
 		Firewall:      "not modified",
 		TransactionID: result.TransactionID,
 		Warnings: append([]string{
-			"TUN executor slice requires daemon CAP_NET_ADMIN privileges and does not mutate DNS or nftables/firewall state yet",
+			"TUN executor slice requires daemon CAP_NET_ADMIN privileges; nftables/firewall state is still not modified in this slice",
 		}, plan.Warnings...),
 	}
 	m.mu.Lock()
@@ -80,7 +82,7 @@ func (m *XrayManager) disconnectTun(ctx context.Context, transactionID string) (
 		return api.LifecycleResponse{}, fmt.Errorf("load TUN transaction %s: %w", transactionID, err)
 	}
 	plan := tunPlanFromTransaction(tx)
-	if err := rollbackTunTransaction(ctx, store, &tx, plan, netexecutor.NewOSExecutor()); err != nil {
+	if err := rollbackTunTransaction(ctx, store, &tx, plan, netexecutor.NewOSDNSExecutor()); err != nil {
 		return api.LifecycleResponse{}, err
 	}
 	m.mu.Lock()
@@ -155,7 +157,7 @@ func rollbackTunFailure(ctx context.Context, store txstate.TransactionStore, tx 
 		_, _ = store.Save(*tx)
 		return errors.Join(cause, fmt.Errorf("rollback TUN plan: %w", err))
 	}
-	return fmt.Errorf("%w; rolled back applied TunWarden-owned TUN, route, and policy-rule state", cause)
+	return fmt.Errorf("%w; rolled back applied TunWarden-owned TUN, route, policy-rule, and DNS state", cause)
 }
 
 func rollbackTunTransaction(ctx context.Context, store txstate.TransactionStore, tx *txstate.Transaction, plan planner.TunPlan, executor tunPlanExecutor) error {
@@ -203,6 +205,10 @@ func rollbackPlanFromAppliedSteps(plan planner.TunPlan, steps []netexecutor.Step
 					rollback.PolicyRules = append(rollback.PolicyRules, rule)
 				}
 			}
+		case "dns":
+			if step.Target == plan.DNS.TargetLink {
+				rollback.DNS = plan.DNS
+			}
 		}
 	}
 	return rollback
@@ -223,7 +229,7 @@ func snapshotMetadata(s netsnapshot.Snapshot, now time.Time) txstate.SnapshotMet
 
 func desiredPlanFromTunPlan(plan planner.TunPlan) txstate.DesiredPlan {
 	routes := make([]txstate.RoutePlan, 0, len(plan.Routes))
-	steps := make([]txstate.PlannedStep, 0, len(plan.Steps)+len(plan.PolicyRules))
+	steps := make([]txstate.PlannedStep, 0, len(plan.Steps)+len(plan.PolicyRules)+1)
 	for _, route := range plan.Routes {
 		if route.Action != "add" {
 			continue
@@ -244,6 +250,9 @@ func desiredPlanFromTunPlan(plan planner.TunPlan) txstate.DesiredPlan {
 	for _, rule := range plan.PolicyRules {
 		steps = append(steps, txstate.PlannedStep{Kind: "policy-rule", Target: policyRuleTarget(rule), Description: rule.Reason, Owner: netexecutor.OwnerPolicyRule})
 	}
+	if plan.DNS.Action == planner.DNSActionConfigure && plan.DNS.TargetLink != "" {
+		steps = append(steps, txstate.PlannedStep{Kind: "dns", Target: plan.DNS.TargetLink, Description: plan.DNS.Reason, Owner: netexecutor.OwnerDNS})
+	}
 	return txstate.DesiredPlan{
 		PlanID: plan.ProfileID + ":" + planner.ModeTun,
 		TUN: txstate.TUNDesiredState{
@@ -253,9 +262,11 @@ func desiredPlanFromTunPlan(plan planner.TunPlan) txstate.DesiredPlan {
 		},
 		Routes: routes,
 		DNS: txstate.DNSPlan{
-			Backend: plan.DNS.Backend,
-			Link:    plan.DNS.TargetLink,
-			Owner:   txstate.TransactionOwner,
+			Backend:       plan.DNS.Backend,
+			Link:          plan.DNS.TargetLink,
+			Servers:       append([]string{}, plan.DNS.Servers...),
+			SearchDomains: dnsSearchDomains(plan.DNS),
+			Owner:         txstate.TransactionOwner,
 		},
 		NFT: txstate.NFTPlan{
 			Family: plan.Firewall.Family,
@@ -284,6 +295,9 @@ func rollbackMetadataFromTunPlan(plan planner.TunPlan) txstate.RollbackMetadata 
 	metadata := txstate.RollbackMetadata{Routes: routes, PolicyRules: rules}
 	if plan.TunDevice.Name != "" {
 		metadata.TUN = []txstate.TUNRollback{{InterfaceName: plan.TunDevice.Name, Owner: netexecutor.OwnerTunDevice}}
+	}
+	if plan.DNS.Action == planner.DNSActionConfigure && plan.DNS.TargetLink != "" {
+		metadata.DNS = []txstate.DNSRollback{{Backend: plan.DNS.Backend, Link: plan.DNS.TargetLink, SearchDomains: dnsSearchDomains(plan.DNS), Owner: netexecutor.OwnerDNS}}
 	}
 	return metadata
 }
@@ -327,6 +341,12 @@ func tunPlanFromTransaction(tx txstate.Transaction) planner.TunPlan {
 		}
 		plan.PolicyRules = append(plan.PolicyRules, planner.TunPolicyRulePlan{Family: "ipv4", Priority: rule.Priority, Selector: selector, Table: rule.Table, Action: "add"})
 	}
+	if len(tx.Rollback.DNS) > 0 {
+		dns := tx.Rollback.DNS[0]
+		plan.DNS = planner.TunDNSPlan{Backend: dns.Backend, TargetLink: dns.Link, Servers: append([]string{}, tx.DesiredPlan.DNS.Servers...), Action: planner.DNSActionConfigure}
+	} else if tx.DesiredPlan.DNS.Link != "" {
+		plan.DNS = planner.TunDNSPlan{Backend: tx.DesiredPlan.DNS.Backend, TargetLink: tx.DesiredPlan.DNS.Link, Servers: append([]string{}, tx.DesiredPlan.DNS.Servers...), Action: planner.DNSActionConfigure}
+	}
 	return plan
 }
 
@@ -356,6 +376,23 @@ func appliedPolicyRules(plan planner.TunPlan) []planner.TunPolicyRulePlan {
 		}
 	}
 	return out
+}
+
+func dnsStatusLine(plan planner.TunDNSPlan) string {
+	if plan.Action == planner.DNSActionConfigure && plan.TargetLink != "" {
+		return fmt.Sprintf("%s; Link: %s; Servers: %s; Rollback: available", plan.Backend, plan.TargetLink, strings.Join(plan.Servers, ", "))
+	}
+	if plan.Action == planner.DNSActionBlocked {
+		return "blocked: " + plan.Reason
+	}
+	return "not modified"
+}
+
+func dnsSearchDomains(plan planner.TunDNSPlan) []string {
+	if plan.Action != planner.DNSActionConfigure || plan.TargetLink == "" {
+		return nil
+	}
+	return []string{dnsRouteOnlyDomain}
 }
 
 func transactionNow(store txstate.TransactionStore) time.Time {
