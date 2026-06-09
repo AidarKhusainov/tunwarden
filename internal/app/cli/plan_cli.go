@@ -169,6 +169,9 @@ func renderDNSPlan(w io.Writer, p planner.TunDNSPlan) {
 	fmt.Fprintln(w, "DNS plan:")
 	fmt.Fprintf(w, "- backend: %s\n", render.Redact(p.Backend))
 	fmt.Fprintf(w, "- target link: %s\n", render.Redact(p.TargetLink))
+	fmt.Fprintf(w, "- servers: %s\n", render.Redact(strings.Join(p.Servers, ", ")))
+	fmt.Fprintf(w, "- route-only domain: ~.\n")
+	fmt.Fprintf(w, "- default route: yes\n")
 	fmt.Fprintf(w, "- action: %s\n", render.Redact(p.Action))
 	fmt.Fprintf(w, "- reason: %s\n", render.Redact(p.Reason))
 	fmt.Fprintf(w, "- rollback: %s\n", render.Redact(p.Rollback))
@@ -270,7 +273,7 @@ func rulesJSON(v []planner.TunPolicyRulePlan) []map[string]any {
 	return out
 }
 func dnsPlanJSON(p planner.TunDNSPlan) map[string]any {
-	return map[string]any{"backend": render.Redact(p.Backend), "target_link": render.Redact(p.TargetLink), "action": render.Redact(p.Action), "reason": render.Redact(p.Reason), "rollback": render.Redact(p.Rollback), "rollback_steps": redactedStrings(p.RollbackSteps)}
+	return map[string]any{"backend": render.Redact(p.Backend), "target_link": render.Redact(p.TargetLink), "servers": redactedStrings(p.Servers), "route_only_domain": "~.", "default_route": true, "action": render.Redact(p.Action), "reason": render.Redact(p.Reason), "rollback": render.Redact(p.Rollback), "rollback_steps": redactedStrings(p.RollbackSteps)}
 }
 func firewallPlanJSON(p planner.TunFirewallPlan) map[string]any {
 	return map[string]any{"backend": render.Redact(p.Backend), "family": render.Redact(p.Family), "table": render.Redact(p.Table), "table_action": render.Redact(p.TableAction), "chains": firewallChainsJSON(p.Chains), "rules": firewallRulesJSON(p.Rules), "kill_switch": killSwitchPlanJSON(p.KillSwitch), "reason": render.Redact(p.Reason), "rollback": render.Redact(p.Rollback), "rollback_steps": redactedStrings(p.RollbackSteps)}
