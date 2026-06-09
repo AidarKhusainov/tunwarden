@@ -30,18 +30,18 @@ type tunAdapterHandle struct {
 
 var tunAdapterHandles sync.Map
 
-func startTunAdapter(ctx context.Context, plan tunAdapterRuntimePlan) (<-chan struct{}, context.CancelFunc, error) {
+func startTunAdapter(ctx context.Context, plan tunAdapterRuntimePlan) (*exec.Cmd, <-chan struct{}, context.CancelFunc, error) {
 	device := strings.TrimSpace(plan.TunDevice)
 	endpoint := strings.TrimSpace(plan.SOCKSEndpoint)
 	if device == "" {
-		return nil, nil, errors.New("TUN adapter requires a TUN device")
+		return nil, nil, nil, errors.New("TUN adapter requires a TUN device")
 	}
 	if endpoint == "" {
-		return nil, nil, errors.New("TUN adapter requires a private SOCKS endpoint")
+		return nil, nil, nil, errors.New("TUN adapter requires a private SOCKS endpoint")
 	}
 	path, err := resolveTunAdapterPath(plan.Binary)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	cmdCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	deviceArg := "tun" + "://" + device
@@ -51,7 +51,7 @@ func startTunAdapter(ctx context.Context, plan tunAdapterRuntimePlan) (<-chan st
 	cmd.Stderr = log.Writer()
 	if err := cmd.Start(); err != nil {
 		cancel()
-		return nil, nil, fmt.Errorf("start TUN adapter: %w", err)
+		return nil, nil, nil, fmt.Errorf("start TUN adapter: %w", err)
 	}
 	done := make(chan struct{})
 	go func() {
@@ -63,9 +63,9 @@ func startTunAdapter(ctx context.Context, plan tunAdapterRuntimePlan) (<-chan st
 	if err := verifyTunAdapterStarted(done); err != nil {
 		cancel()
 		<-done
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return done, cancel, nil
+	return cmd, done, cancel, nil
 }
 
 func resolveTunAdapterPath(explicit string) (string, error) {
