@@ -10,7 +10,7 @@ import (
 )
 
 func TestResolvedDNSExecutorApplyVerifyAndRollbackCommands(t *testing.T) {
-	runner := &recordingRunner{stdout: "Link 7 (tunwarden0)\n    DNS Domain: ~."}
+	runner := &recordingRunner{stdout: "Link 7 (tunwarden0)\n    DNS Servers: 1.1.1.1\n    DNS Domain: ~."}
 	exec := ResolvedDNSExecutor{Runner: runner}
 	plan := dnsPlanForTest()
 
@@ -29,6 +29,7 @@ func TestResolvedDNSExecutorApplyVerifyAndRollbackCommands(t *testing.T) {
 	}
 
 	want := [][]string{
+		{"resolvectl", "dns", "tunwarden0", "1.1.1.1"},
 		{"resolvectl", "domain", "tunwarden0", "~."},
 		{"resolvectl", "default-route", "tunwarden0", "yes"},
 		{"resolvectl", "status", "tunwarden0", "--no-pager"},
@@ -52,7 +53,7 @@ func TestResolvedDNSExecutorFailsClearlyWhenPlanIsBlocked(t *testing.T) {
 
 func TestResolvedDNSExecutorVerifyRequiresRouteOnlyDomain(t *testing.T) {
 	plan := dnsPlanForTest()
-	err := (ResolvedDNSExecutor{Runner: &recordingRunner{stdout: "Link 7 (tunwarden0)"}}).Verify(context.Background(), plan)
+	err := (ResolvedDNSExecutor{Runner: &recordingRunner{stdout: "Link 7 (tunwarden0)\n    DNS Servers: 1.1.1.1"}}).Verify(context.Background(), plan)
 	if err == nil {
 		t.Fatal("expected verify failure when route-only domain is missing")
 	}
