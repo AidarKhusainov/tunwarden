@@ -11,7 +11,7 @@ The early architecture has two execution modes:
 1. **Proxy-only mode:** starts and supervises Xray without changing system routes, DNS, firewall, or TUN state.
 2. **TUN full-tunnel mode:** applies Linux networking changes only through the daemon-owned transaction model.
 
-The current foundation TUN work implements read-only planning, transaction-state persistence, and a daemon-owned executor slice for TUN interface, route, policy-rule, systemd-resolved DNS, and TunWarden-owned nftables mutation. User-visible `connect --mode tun` must not claim an active full-tunnel connection until the daemon can generate and verify a real TUN-mode Xray runtime config and basic connectivity; starting proxy-only Xray config under TUN mode is forbidden.
+The current foundation TUN work implements read-only planning, transaction-state persistence, daemon-owned apply/verify/rollback for TUN interface, route, policy-rule, systemd-resolved DNS, TunWarden-owned nftables mutation, TUN-mode Xray runtime config generation, TUN adapter startup, and pre-commit full-tunnel route/TCP connectivity verification. Starting proxy-only Xray config under TUN mode is forbidden. TUN mode remains a preview until richer doctor verification, recovery execution coverage, sleep/resume handling, and VM/integration validation are complete.
 
 ## 2. High-level components
 
@@ -172,7 +172,7 @@ System snapshots are read-only inputs to planners. The snapshot package may insp
 
 Snapshot collection must not create TUN devices, mutate routes, mutate DNS, mutate nftables/firewall state, start or stop processes, or write runtime files.
 
-The implemented `plan --mode tun` command consumes this snapshot layer and remains read-only. Actual TUN interface, route, policy-rule, systemd-resolved DNS, and TunWarden-owned nftables mutation is performed only by daemon-owned executor/transaction code; the CLI never mutates host networking directly. User-visible TUN connect remains gated on a real TUN-mode core runtime config.
+The implemented `plan --mode tun` command consumes this snapshot layer and remains read-only. Actual TUN interface, route, policy-rule, systemd-resolved DNS, and TunWarden-owned nftables mutation is performed only by daemon-owned executor/transaction code; the CLI never mutates host networking directly. User-visible TUN connect is a daemon-owned preview flow with pre-commit runtime and connectivity gates.
 
 The canonical snapshot contract is owned by [System snapshot model](./system-snapshot.md).
 
@@ -243,7 +243,9 @@ On daemon startup:
 5. Never assume previous daemon shutdown was clean
 ```
 
-The current implementation adds transaction persistence, transition helpers, startup scan primitives, daemon status summaries, local `status`/`doctor`/`recover` visibility, and daemon-owned apply/verify/rollback for TUN devices, routes, policy rules, systemd-resolved DNS, and TunWarden-owned nftables state. It must still add real TUN-mode Xray runtime config generation and basic connectivity verification before a user-visible full-tunnel `connect --mode tun` flow may commit as an active connection.
+The current implementation adds transaction persistence, transition helpers, startup scan primitives, daemon status summaries, local `status`/`doctor`/`recover` visibility, daemon-owned apply/verify/rollback for TUN devices, routes, policy rules, systemd-resolved DNS, TunWarden-owned nftables state, TUN-mode Xray runtime config generation, TUN adapter startup, and pre-commit route/TCP connectivity verification.
+
+Further hardening is still required before declaring TUN mode stable: richer doctor verification, recovery execution coverage, sleep/resume handling, and VM/integration validation.
 
 ## 8. Planner/executor split
 
@@ -302,7 +304,7 @@ Executors:
 - `CoreExecutor`,
 - `NetworkManagerExecutor`.
 
-Executor implementations must be narrow and auditable. They should not contain hidden planning decisions. The current executor slice applies TUN, routes, policy rules, systemd-resolved DNS, and TunWarden-owned nftables state from the already-inspected plan, but user-visible full-tunnel connect remains blocked until a real TUN-mode core runtime config and connectivity verification are implemented.
+Executor implementations must be narrow and auditable. They should not contain hidden planning decisions. The current preview flow applies TUN, routes, policy rules, systemd-resolved DNS, TunWarden-owned nftables state, TUN-mode runtime config, TUN adapter startup, and pre-commit route/TCP connectivity verification from already-inspected state. Stable TUN release remains blocked until richer doctor verification, recovery execution coverage, sleep/resume handling, and VM/integration validation are complete.
 
 ## 9. Engine abstraction
 
