@@ -38,11 +38,11 @@ func TestTunTransactionCommitsAfterApplyAndVerify(t *testing.T) {
 	}
 }
 
-func TestTunTransactionRollsBackPartialApplyFailure(t *testing.T) {
+func TestTunTransactionRollsBackOnlyAppliedStepsAfterPartialApplyFailure(t *testing.T) {
 	runtimeDir := t.TempDir()
 	executor := &recordingTunExecutor{applyErr: errors.New("route apply failed")}
 	_, err := runTunTransaction(context.Background(), runtimeDir, profile.Profile{ID: "test-profile"}, transactionPlanForTest(), executor, fixedClock())
-	if err == nil || !strings.Contains(err.Error(), "rolled back") {
+	if err == nil || !strings.Contains(err.Error(), "rolled back applied") {
 		t.Fatalf("expected rolled back apply failure, got %v", err)
 	}
 	summaries, warnings := txstate.ScanTransactions(runtimeDir)
@@ -51,6 +51,13 @@ func TestTunTransactionRollsBackPartialApplyFailure(t *testing.T) {
 	}
 	if summaries[0].State != txstate.TransactionRolledBack || summaries[0].RequiresCleanup {
 		t.Fatalf("expected clean rolled-back transaction, got %#v", summaries[0])
+	}
+	tx, _, err := (txstate.TransactionStore{RuntimeDir: runtimeDir}).Load(summaries[0].ID)
+	if err != nil {
+		t.Fatalf("load transaction: %v", err)
+	}
+	if len(tx.Rollback.Routes) != 0 || len(tx.Rollback.PolicyRules) != 0 || len(tx.Rollback.TUN) != 1 {
+		t.Fatalf("expected rollback metadata to contain only applied TUN state, got %#v", tx.Rollback)
 	}
 	if strings.Join(executor.calls, ",") != "apply,rollback" {
 		t.Fatalf("unexpected executor calls: %#v", executor.calls)
@@ -87,7 +94,11 @@ func (e *recordingTunExecutor) Apply(context.Context, planner.TunPlan) ([]netexe
 	if e.applyErr != nil {
 		return []netexecutor.Step{{Kind: "tun-device", Target: "tunwarden0", Owner: netexecutor.OwnerTunDevice}}, e.applyErr
 	}
-	return []netexecutor.Step{{Kind: "tun-device", Target: "tunwarden0", Owner: netexecutor.OwnerTunDevice}, {Kind: "route", Target: "tunwarden:default", Owner: netexecutor.OwnerRoute}, {Kind: "policy-rule", Target: "priority 51820 from all", Owner: netexecutor.OwnerPolicyRule}}, nil
+	return []netexecutor.Step{
+		{Kind: "tun-device", Target: "tunwarden0", Owner: netexecutor.OwnerTunDevice},
+		{Kind: "route", Target: "tunwarden default", Owner: netexecutor.OwnerRoute},
+		{Kind: "policy-rule", Target: "priority 51820 from all lookup tunwarden", Owner: netexecutor.OwnerPolicyRule},
+	}, nil
 }
 
 func (e *recordingTunExecutor) Verify(context.Context, planner.TunPlan) error {
@@ -101,10 +112,32 @@ func (e *recordingTunExecutor) Rollback(context.Context, planner.TunPlan) error 
 }
 
 func transactionPlanForTest() planner.TunPlan {
-	return planner.TunPlan{ProfileID: "test-profile", Mode: planner.ModeTun, TunDevice: planner.TunDevicePlan{Name: "tunwarden0", MTU: 1500, Action: "create"}, Routes: []planner.TunRoutePlan{{Family: "ipv4", Destination: "default", Table: planner.TunRoutingTable, Interface: "tunwarden0", Action: "add"}}, PolicyRules: []planner.TunPolicyRulePlan{{Family: "ipv4", Priority: planner.TunRulePriority, Selector: planner.IPv4DefaultSelector, Table: planner.TunRoutingTable, Action: "add"}}, Steps: []string{"Plan TUN interface tunwarden0"}}
+	return planner.TunPlan{
+		ProfileID: "test-profile",
+		Mode:      planner.ModeTun,
+		TunDevice: planner.TunDevicePlan{Name: "tunwarden0", MTU: 1500, Action: "create"},
+		Routes: []planner.TunRoutePlan{{
+			Family:      "ipv4",
+			Destination: "default",
+			Table:       planner.TunRoutingTable,
+			Interface:   "tunwarden0",
+			Action:      "add",
+		}},
+		PolicyRules: []planner.TunPolicyRulePlan{{
+			Family:   "ipv4",
+			Priority: planner.TunRulePriority,
+			Selector: planner.IPv4DefaultSelector,
+			Table:    planner.TunRoutingTable,
+			Action:   "add",
+		}},
+		Steps: []string{"Plan TUN interface tunwarden0"},
+	}
 }
 
 func fixedClock() func() time.Time {
 	current := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
-	return func() time.Time { current = current.Add(time.Millisecond); return current }
+	return func() time.Time {
+		current = current.Add(time.Millisecond)
+		return current
+	}
 }
