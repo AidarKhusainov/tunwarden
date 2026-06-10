@@ -8,12 +8,39 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/AidarKhusainov/tunwarden/internal/api"
 )
 
 var ErrDaemonUnavailable = errors.New("tunwardend unavailable")
+var ErrDaemonPermissionDenied = errors.New("daemon socket permission denied")
+
+type daemonUnavailableError struct {
+	detail           string
+	cause            error
+	permissionDenied bool
+}
+
+func (e daemonUnavailableError) Error() string {
+	return ErrDaemonUnavailable.Error() + ": " + e.detail
+}
+
+func (e daemonUnavailableError) Unwrap() error {
+	return e.cause
+}
+
+func (e daemonUnavailableError) Is(target error) bool {
+	switch target {
+	case ErrDaemonUnavailable:
+		return true
+	case ErrDaemonPermissionDenied:
+		return e.permissionDenied
+	default:
+		return false
+	}
+}
 
 type StatusClient struct {
 	SocketPath string
@@ -46,7 +73,11 @@ func (c StatusClient) Status(ctx context.Context) (api.StatusResponse, error) {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return api.StatusResponse{}, fmt.Errorf("%w: %s", ErrDaemonUnavailable, unavailableDetail(socketPath, err))
+		return api.StatusResponse{}, daemonUnavailableError{
+			detail:           unavailableDetail(socketPath, err),
+			cause:            err,
+			permissionDenied: isPermissionDenied(err),
+		}
 	}
 	defer resp.Body.Close()
 
@@ -66,9 +97,15 @@ func (c StatusClient) Status(ctx context.Context) (api.StatusResponse, error) {
 
 func IsDaemonUnavailable(err error) bool { return errors.Is(err, ErrDaemonUnavailable) }
 
+func IsDaemonPermissionDenied(err error) bool { return errors.Is(err, ErrDaemonPermissionDenied) }
+
 func UnavailableMessage(err error) string {
 	if err == nil {
 		return "daemon is not reachable; start tunwardend"
+	}
+	var unavailable daemonUnavailableError
+	if errors.As(err, &unavailable) && unavailable.detail != "" {
+		return unavailable.detail
 	}
 	message := stringsAfterWrapped(err.Error())
 	if message == ErrDaemonUnavailable.Error() {
@@ -78,13 +115,23 @@ func UnavailableMessage(err error) string {
 }
 
 func unavailableDetail(socketPath string, err error) string {
+	if isPermissionDenied(err) {
+		return fmt.Sprintf("daemon socket %s is not accessible (permission denied); add the user to the tunwarden group and start a new login session, or fix packaged socket ownership/mode", socketPath)
+	}
 	if errors.Is(err, os.ErrNotExist) {
 		return fmt.Sprintf("daemon socket %s does not exist; start tunwardend", socketPath)
+	}
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return fmt.Sprintf("daemon socket %s refused the connection; remove a stale socket or restart tunwardend", socketPath)
 	}
 	if isTimeout(err) {
 		return fmt.Sprintf("daemon socket %s did not respond before timeout; start or restart tunwardend", socketPath)
 	}
 	return fmt.Sprintf("daemon socket %s is not reachable; start or restart tunwardend", socketPath)
+}
+
+func isPermissionDenied(err error) bool {
+	return errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM)
 }
 
 func isTimeout(err error) bool {

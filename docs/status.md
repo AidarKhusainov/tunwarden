@@ -1,30 +1,28 @@
 # Status command
 
-This document defines the implemented v0.1 behavior for `tunwarden status`.
+This document defines the implemented behavior for `tunwarden status`.
 
-The command name, arguments, exit codes, stdout and stderr rules, JSON compatibility, and milestone boundaries are owned by [CLI contract](./cli.md). The daemon transport is owned by [Daemon local API](./daemon-api.md). This document owns the current read-only status behavior and its safety boundary.
+The command name, arguments, exit codes, stdout and stderr rules, JSON compatibility, and milestone boundaries are owned by [CLI contract](./cli.md). The daemon transport is owned by [Daemon local API](./daemon-api.md). Daemon socket fallback classification is owned by [Status daemon socket classification](./status-daemon-socket.md). This document owns the current read-only status behavior and its safety boundary.
 
 ## Safety boundary
 
-`tunwarden status` is strictly read-only in v0.1.
+`tunwarden status` is strictly read-only.
 
 It may query the local daemon Unix socket. If the daemon is not reachable, it may inspect local TunWarden runtime path metadata as a conservative fallback.
 
-It must not mutate host networking, daemon process lifecycle, core process lifecycle, user profiles, subscriptions, or runtime file contents.
+It must not mutate host networking, daemon process lifecycle, core process lifecycle, user profiles, subscriptions, runtime file contents, TUN devices, routes, DNS settings, nftables objects, or firewall rules.
 
 ## Human output contract
 
 The default human report starts with `TunWarden status`.
 
-When the daemon is reachable, v0.1 daemon-backed output reports:
+When the daemon is reachable, daemon-backed output reports:
 
 - `Daemon: running` from the daemon process itself;
 - `Service: manual` when `tunwardend` is run directly, or `Service: systemd` when it is started by the repository systemd unit;
-- `Connection: inactive` because connection lifecycle is not implemented yet;
+- current connection, active mode, proxy, TUN, route, DNS, firewall, transaction, and startup recovery scan state from the daemon;
 - `Runtime directory: present` because the daemon owns `/run/tunwarden/` while running;
-- `Proxy: inactive` because no proxy process lifecycle exists yet;
-- `TUN: disabled` because TUN mode is outside the current milestone;
-- `Stale state: none` for the current conservative daemon snapshot.
+- `Stale state: none` when the daemon reports no recovery candidates or warnings.
 
 When the daemon is not reachable, the command prints actionable daemon guidance and clearly states that local fallback is being used.
 
@@ -32,26 +30,35 @@ The local fallback reports:
 
 - `Daemon: not reachable (...) ; using local fallback` when daemon access failed;
 - `Service: none` because no daemon supervisor is reachable in the fallback snapshot;
+- `Daemon socket: missing` when the socket path does not exist;
+- `Daemon socket: present but inaccessible (permission denied; check tunwarden group membership)` when the socket exists but the daemon API could not be reached because the caller does not have socket access;
+- `Daemon socket: present as non-socket path (stale)` when the socket path exists as an unexpected filesystem object;
 - `Connection: inactive` when no stale runtime state is found;
 - `Connection: inactive (stale state detected)` when local runtime recovery candidates exist;
-- `Connection: unknown (inspection incomplete)` when local runtime state cannot be inspected reliably;
-- `Proxy: inactive` because no proxy process lifecycle exists yet;
-- `TUN: not managed in this build` because TUN mode is outside the current milestone.
+- `Connection: unknown (inspection incomplete)` when local runtime state cannot be inspected reliably or may belong to an inaccessible live daemon;
+- `Proxy: inactive` because the local fallback does not own daemon process state;
+- `TUN: not managed in this build` when the daemon is not available to report managed TUN state.
 
 Daemon unavailability alone is not an unhealthy local status when the fallback can prove a clean inactive state. Stale runtime state or incomplete fallback visibility still returns diagnostic exit code `3`.
 
-## v0.1 local runtime inspection
+## Local runtime inspection
 
-The v0.1 local fallback inspects only documented TunWarden-owned runtime paths:
+The local fallback inspects only documented TunWarden-owned runtime paths:
 
 ```text
+/run/tunwarden/tunwardend.sock
 /run/tunwarden/generated
+/run/tunwarden/transactions
 /run/tunwarden
 ```
 
 The command does not read generated config contents.
 
-Status treats `/run/tunwarden` or `/run/tunwarden/generated` as stale local runtime state and prints recovery guidance.
+When the daemon socket is missing, status treats `/run/tunwarden`, `/run/tunwarden/generated`, and stale transaction state as local recovery candidates where applicable.
+
+When the daemon socket exists but daemon API access failed with permission denied, status does not classify `/run/tunwarden`, generated runtime configs, or transaction files as stale fallback candidates. They may belong to a live daemon that the caller cannot inspect. Instead, status reports incomplete visibility and guides the user to fix packaged `tunwarden` group membership or socket ownership/mode.
+
+When the daemon socket path exists but is not a Unix socket, status reports that socket path as a stale recovery candidate.
 
 If a read-only inspection cannot complete, the command reports incomplete visibility instead of claiming a clean inactive host.
 
@@ -81,7 +88,7 @@ TUN: disabled
 Stale state: none
 ```
 
-The user running `tunwarden status` must have access to `/run/tunwarden/tunwardend.sock`, normally by being a member of the `tunwarden` group. Without socket access, the command must keep the conservative local fallback behavior instead of requiring root.
+The user running `tunwarden status` must have access to `/run/tunwarden/tunwardend.sock`, normally by being a member of the `tunwarden` group. Without socket access, the command must keep the conservative local fallback behavior instead of requiring root, but it must not report potentially live daemon-owned runtime state as stale-only cleanup.
 
 ## Redaction
 
@@ -90,5 +97,3 @@ Status output must use the shared TunWarden redaction policy from [State and sec
 ## Deferred behavior
 
 `status --json` is intentionally not implemented in this PR and currently fails as invalid usage.
-
-Daemon-backed active profile, active mode, proxy listener, core process, and connection health status remain deferred until process lifecycle work exists.

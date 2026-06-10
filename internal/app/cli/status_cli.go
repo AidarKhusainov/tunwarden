@@ -46,7 +46,7 @@ func runStatus(ctx context.Context, opts options) status.Report {
 		return daemonStatus
 	}
 
-	local := status.Inspect(ctx)
+	local := status.InspectWithOptions(ctx, status.Options{DaemonSocketAccess: daemonSocketAccessFromError(err)})
 	if client.IsDaemonUnavailable(err) {
 		return status.WithDaemonUnavailable(local, client.UnavailableMessage(err))
 	}
@@ -59,6 +59,13 @@ func runStatus(ctx context.Context, opts options) status.Report {
 		local.Connection = "unknown (inspection incomplete)"
 	}
 	return local
+}
+
+func daemonSocketAccessFromError(err error) status.DaemonSocketAccess {
+	if client.IsDaemonPermissionDenied(err) {
+		return status.DaemonSocketAccessPermissionDenied
+	}
+	return status.DaemonSocketAccessUnknown
 }
 
 func runDaemonStatus(ctx context.Context, opts options) (status.Report, error) {

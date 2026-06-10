@@ -21,6 +21,7 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 - The implemented v0.1 daemon transport is owned by [Daemon local API](./daemon-api.md).
 - Implemented daemon-owned nftables firewall execution is owned by [nftables Firewall Executor](./nftables-firewall-executor.md).
 - `tunwarden status`'s implemented daemon-backed and local fallback behavior is owned by [Status command](./status.md).
+- `tunwarden status` daemon socket fallback classification is owned by [Status daemon socket classification](./status-daemon-socket.md).
 - `tunwarden doctor`'s implemented daemon-backed and local fallback diagnostic behavior is owned by [Doctor diagnostics](./doctor-diagnostics.md).
 - `tunwarden logs`'s implemented journald-backed daemon log behavior is owned by [Logs command](./logs.md).
 - `tunwarden recover`'s implemented local dry-run scan is owned by [Recovery dry-run](./recovery-dry-run.md).
@@ -45,6 +46,7 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 | [Daemon local API](./daemon-api.md) | Implemented v0.1 Unix socket daemon API transport, status and doctor endpoints, lifecycle, and safety boundary. |
 | [nftables Firewall Executor](./nftables-firewall-executor.md) | Implemented nftables apply, verification, rollback, ownership boundary, kill-switch rule mapping, and disconnect cleanup for TUN transactions. |
 | [Status command](./status.md) | Implemented v0.1 read-only `tunwarden status` daemon-backed behavior, local fallback behavior, output shape, and safety boundary. |
+| [Status daemon socket classification](./status-daemon-socket.md) | Packaged daemon socket access model consequences for `tunwarden status` fallback classification and permission-denied behavior. |
 | [Doctor diagnostics](./doctor-diagnostics.md) | Implemented v0.1 read-only `tunwarden doctor` daemon-backed behavior, local fallback checks, severities, and stale resource detection boundaries. |
 | [Logs command](./logs.md) | Implemented v0.1 read-only `tunwarden logs` journald integration, daemon log source, redaction, and failure behavior. |
 | [Recovery dry-run](./recovery-dry-run.md) | Implemented v0.1 read-only `tunwarden recover` candidate scan, output shape, and safety boundary. |
