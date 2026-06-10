@@ -39,6 +39,7 @@ jobs:
             jq \
             libcap2-bin \
             nftables \
+            policykit-1 \
             unzip
 
       - name: Install Xray and tun2socks
@@ -104,6 +105,8 @@ jobs:
               kill "$daemon_pid" >/dev/null 2>&1 || true
               wait "$daemon_pid" >/dev/null 2>&1 || true
             fi
+            sudo rm -f /etc/polkit-1/rules.d/49-tunwarden-ci-resolved.rules >/dev/null 2>&1 || true
+            sudo systemctl restart polkit >/dev/null 2>&1 || sudo systemctl restart polkit.service >/dev/null 2>&1 || true
             sudo rm -rf /run/tunwarden >/dev/null 2>&1 || true
           }
 
@@ -259,6 +262,20 @@ jobs:
           sudo rm -rf /run/tunwarden
           sudo install -d -m 0700 -o "$USER" -g "$(id -gn)" /run/tunwarden
           echo "Prepared daemon runtime directory: $(stat -c '%U:%G %a %n' /run/tunwarden)" >> "$raw_log"
+          current_step=""
+
+          current_step="allow non-root runner to configure systemd-resolved"
+          sudo install -d -m 0755 /etc/polkit-1/rules.d
+          cat <<POLKIT | sudo tee /etc/polkit-1/rules.d/49-tunwarden-ci-resolved.rules >/dev/null
+          polkit.addRule(function(action, subject) {
+            if (subject.user == "$USER" && action.id.indexOf("org.freedesktop.resolve1.") == 0) {
+              return polkit.Result.YES;
+            }
+          });
+          POLKIT
+          sudo chmod 0644 /etc/polkit-1/rules.d/49-tunwarden-ci-resolved.rules
+          sudo systemctl restart polkit || sudo systemctl restart polkit.service || true
+          echo "Installed temporary polkit rule for org.freedesktop.resolve1.* and user $USER" >> "$raw_log"
           current_step=""
 
           # The daemon must not run as UID 0 for the TUN success path. Give the
