@@ -16,10 +16,11 @@ import (
 )
 
 type Server struct {
-	RuntimeDir string
-	Status     func(context.Context) api.StatusResponse
-	Doctor     func(context.Context) api.DoctorResponse
-	Lifecycle  *XrayManager
+	RuntimeDir  string
+	Status      func(context.Context) api.StatusResponse
+	Doctor      func(context.Context) api.DoctorResponse
+	Lifecycle   *XrayManager
+	startupScan startupScanFunc
 }
 
 func (s Server) Run(ctx context.Context) error {
@@ -37,6 +38,13 @@ func (s Server) Run(ctx context.Context) error {
 	} else if lifecycle.RuntimeDir == "" {
 		lifecycle.RuntimeDir = runtimeDir
 	}
+
+	startupScanFn := s.startupScan
+	if startupScanFn == nil {
+		startupScanFn = defaultStartupScanFunc(runtimeDir)
+	}
+	startupScan := startupScanFn(ctx)
+	logStartupScan(startupScan)
 
 	lockPath := api.LockPath(runtimeDir)
 	lock, err := os.OpenFile(lockPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
@@ -74,7 +82,7 @@ func (s Server) Run(ctx context.Context) error {
 			statusFn = lifecycle.Status
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(statusFn(r.Context()))
+		_ = json.NewEncoder(w).Encode(withStartupScanStatus(statusFn(r.Context()), startupScan))
 		log.Printf("tunwardend: status request handled")
 	})
 	mux.HandleFunc(api.DoctorPath, func(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +96,7 @@ func (s Server) Run(ctx context.Context) error {
 			doctorFn = lifecycle.Doctor
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(doctorFn(r.Context()))
+		_ = json.NewEncoder(w).Encode(withStartupScanDoctor(doctorFn(r.Context()), startupScan))
 		log.Printf("tunwardend: doctor request handled")
 	})
 	mux.HandleFunc(api.RecoverPath, func(w http.ResponseWriter, r *http.Request) {
