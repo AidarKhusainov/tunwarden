@@ -88,7 +88,7 @@ func TestInspectWithOptionsReportsStaleRuntimeDirectory(t *testing.T) {
 }
 
 func TestInspectWithOptionsDefersStaleClassificationWhenDaemonSocketInaccessible(t *testing.T) {
-	runtimeDir := filepath.Join(t.TempDir(), "tunwarden")
+	runtimeDir := shortSocketRuntimeDir(t)
 	generatedDir := filepath.Join(runtimeDir, generatedDirName)
 	if err := os.MkdirAll(generatedDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -344,4 +344,14 @@ func assertNoCandidate(t *testing.T, report Report, kind string) {
 			t.Fatalf("candidate kind %q should not be present in %#v", kind, report.Candidates)
 		}
 	}
+}
+
+func shortSocketRuntimeDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "tw-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
