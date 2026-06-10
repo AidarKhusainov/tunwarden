@@ -27,6 +27,7 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 - `tunwarden recover`'s implemented local dry-run scan is owned by [Recovery dry-run](./recovery-dry-run.md).
 - The v0.1 proxy-only release-gate checklist is owned by [v0.1 proxy-only acceptance checklist](./v0.1-acceptance.md).
 - The v0.2 safe TUN preview release-gate checklist is owned by [v0.2 safe TUN preview acceptance checklist](./v0.2-acceptance.md).
+- The v0.2 safe TUN preview release-gate result is recorded in [v0.2 safe TUN preview acceptance verification record](./v0.2-acceptance-record.md).
 - Filesystem layout, output redaction, JSON compatibility, confirmation behavior, systemd hardening, and core process safety are owned by [State and security requirements](./state-and-security.md).
 - Package dependency direction is owned by [Package boundaries](./package-boundaries.md).
 - Historical uppercase documents are deprecated and must not be used as canonical references.
@@ -52,6 +53,7 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 | [Recovery dry-run](./recovery-dry-run.md) | Implemented v0.1 read-only `tunwarden recover` candidate scan, output shape, and safety boundary. |
 | [v0.1 acceptance checklist](./v0.1-acceptance.md) | Manual release-gate checklist for validating the proxy-only technical preview on a Tier 1 Linux host without host networking mutation. |
 | [v0.2 acceptance checklist](./v0.2-acceptance.md) | Manual release-gate checklist for validating the safe TUN preview on a Tier 1 Linux host, including success, rollback, cleanup, and recovery dependency evidence. |
+| [v0.2 acceptance record](./v0.2-acceptance-record.md) | Redacted release-gate verification record for issue #31; remains `PENDING` until the exact commit passes on a Tier 1 Linux host. |
 | [Architecture](./architecture.md) | CLI/daemon split, privilege boundary, state model, transaction model, engine abstraction, backend interfaces. |
 | [State and security requirements](./state-and-security.md) | User/daemon/system state separation, XDG/systemd paths, JSON compatibility, redaction, confirmations, service hardening, and core process safety. |
 | [Package boundaries](./package-boundaries.md) | Dependency direction between CLI, daemon, API, domain, planner, snapshot, executor, and adapter packages. |
