@@ -33,15 +33,15 @@ func TestTunExecutorApplyVerifyAndRollbackOrder(t *testing.T) {
 		"tun:create:tunwarden0",
 		"route:add:tunwarden:default",
 		"route:add:main:203.0.113.10/32",
-		"rule:add:51819:to 203.0.113.10/32",
-		"rule:add:51820:from all",
+		"rule:add:9999:to 203.0.113.10/32",
+		"rule:add:10000:from all",
 		"tun:verify:tunwarden0",
 		"route:verify:tunwarden:default",
 		"route:verify:main:203.0.113.10/32",
-		"rule:verify:51819:to 203.0.113.10/32",
-		"rule:verify:51820:from all",
-		"rule:rollback:51820:from all",
-		"rule:rollback:51819:to 203.0.113.10/32",
+		"rule:verify:9999:to 203.0.113.10/32",
+		"rule:verify:10000:from all",
+		"rule:rollback:10000:from all",
+		"rule:rollback:9999:to 203.0.113.10/32",
 		"route:rollback:main:203.0.113.10/32",
 		"route:rollback:tunwarden:default",
 		"tun:rollback:tunwarden0",
@@ -93,9 +93,9 @@ func TestIPRouteAndRuleMappingUsesAddAndTunWardenTableID(t *testing.T) {
 		{"ip", "-4", "route", "flush", "cache"},
 		{"ip", "-4", "route", "add", "203.0.113.10/32", "via", "192.0.2.1", "dev", "eth0", "table", "main"},
 		{"ip", "-4", "route", "flush", "cache"},
-		{"ip", "-4", "rule", "add", "priority", "51819", "to", "203.0.113.10/32", "lookup", "main"},
+		{"ip", "-4", "rule", "add", "priority", "9999", "to", "203.0.113.10/32", "lookup", "main"},
 		{"ip", "-4", "route", "flush", "cache"},
-		{"ip", "-4", "rule", "add", "priority", "51820", "from", "all", "lookup", "51820"},
+		{"ip", "-4", "rule", "add", "priority", "10000", "from", "all", "lookup", "51820"},
 		{"ip", "-4", "route", "flush", "cache"},
 	}
 	if !reflect.DeepEqual(runner.commands, want) {
@@ -117,7 +117,7 @@ func TestIPRouteAndRuleRollbackFlushesRouteCache(t *testing.T) {
 	}
 
 	want := [][]string{
-		{"ip", "-4", "rule", "del", "priority", "51820", "from", "all", "lookup", "51820"},
+		{"ip", "-4", "rule", "del", "priority", "10000", "from", "all", "lookup", "51820"},
 		{"ip", "-4", "route", "flush", "cache"},
 		{"ip", "-4", "route", "del", "default", "dev", "tunwarden0", "table", "51820"},
 		{"ip", "-4", "route", "flush", "cache"},
@@ -141,11 +141,11 @@ func TestIPRouteVerifyChecksDeviceAndGateway(t *testing.T) {
 
 func TestIPPolicyRuleVerifyChecksSelectorAndLookupTable(t *testing.T) {
 	rule := planner.TunPolicyRulePlan{Priority: planner.ServerRulePriority, Selector: "to 203.0.113.10/32", Table: planner.MainRoutingTable, Action: "add"}
-	good := &recordingRunner{stdout: "51819: to 203.0.113.10 lookup main"}
+	good := &recordingRunner{stdout: "9999: to 203.0.113.10 lookup main"}
 	if err := (IPPolicyRuleExecutor{Runner: good}).Verify(context.Background(), rule); err != nil {
 		t.Fatalf("expected rule verify success: %v", err)
 	}
-	bad := &recordingRunner{stdout: "51819: from all lookup 51820"}
+	bad := &recordingRunner{stdout: "9999: from all lookup 51820"}
 	if err := (IPPolicyRuleExecutor{Runner: bad}).Verify(context.Background(), rule); err == nil {
 		t.Fatal("expected rule verify mismatch")
 	}
