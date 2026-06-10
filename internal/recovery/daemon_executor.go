@@ -21,9 +21,45 @@ type DaemonCleanupExecutor struct {
 }
 
 func (e DaemonCleanupExecutor) Cleanup(ctx context.Context, candidate Candidate) CleanupResult {
-	if strings.TrimSpace(candidate.Kind) == "" {
-		return skipped(candidate, "missing recovery candidate kind")
+	results := e.CleanupMany(ctx, candidate)
+	if len(results) == 0 {
+		return skipped(candidate, "no cleanup action produced a result")
 	}
+	if len(results) == 1 {
+		return results[0]
+	}
+	for _, result := range results {
+		if result.Status == "failed" {
+			return failed(candidate, errors.New("transaction cleanup completed with failures"))
+		}
+	}
+	return recovered(candidate)
+}
+
+func (e DaemonCleanupExecutor) CleanupMany(ctx context.Context, candidate Candidate) []CleanupResult {
+	if strings.TrimSpace(candidate.Kind) == "" {
+		return []CleanupResult{skipped(candidate, "missing recovery candidate kind")}
+	}
+	e = e.withDefaults()
+	osExec := OSCleanupExecutor{Runner: e.Runner, RuntimeDir: e.RuntimeDir}
+
+	switch candidate.Kind {
+	case "tun-interface":
+		return []CleanupResult{osExec.cleanupTUNInterface(ctx, candidate)}
+	case "nftables-table":
+		return []CleanupResult{osExec.cleanupNFTablesTable(ctx, candidate)}
+	case "transaction-state":
+		return e.cleanupTransactionState(ctx, candidate, osExec)
+	case "generated-runtime-configs":
+		return []CleanupResult{osExec.cleanupGeneratedRuntimeConfigs(candidate)}
+	case "runtime-directory":
+		return []CleanupResult{skipped(candidate, "runtime root cleanup is intentionally unsupported")}
+	default:
+		return []CleanupResult{skipped(candidate, "unsupported recovery candidate kind")}
+	}
+}
+
+func (e DaemonCleanupExecutor) withDefaults() DaemonCleanupExecutor {
 	if e.Runner == nil {
 		e.Runner = OSRunner{}
 	}
@@ -31,139 +67,192 @@ func (e DaemonCleanupExecutor) Cleanup(ctx context.Context, candidate Candidate)
 		e.RuntimeDir = defaultRuntimeDir
 	}
 	e.RuntimeDir = filepath.Clean(e.RuntimeDir)
-	osExec := OSCleanupExecutor{Runner: e.Runner, RuntimeDir: e.RuntimeDir}
-
-	switch candidate.Kind {
-	case "tun-interface":
-		return osExec.cleanupTUNInterface(ctx, candidate)
-	case "nftables-table":
-		return osExec.cleanupNFTablesTable(ctx, candidate)
-	case "transaction-state":
-		return e.cleanupTransactionState(ctx, candidate, osExec)
-	case "generated-runtime-configs":
-		return osExec.cleanupGeneratedRuntimeConfigs(candidate)
-	case "runtime-directory":
-		return skipped(candidate, "runtime root cleanup is intentionally unsupported")
-	default:
-		return skipped(candidate, "unsupported recovery candidate kind")
-	}
+	return e
 }
 
-func (e DaemonCleanupExecutor) cleanupTransactionState(ctx context.Context, candidate Candidate, osExec OSCleanupExecutor) CleanupResult {
+func (e DaemonCleanupExecutor) cleanupTransactionState(ctx context.Context, candidate Candidate, osExec OSCleanupExecutor) []CleanupResult {
 	if candidate.Transaction == nil {
-		return skipped(candidate, "missing transaction summary")
+		return []CleanupResult{skipped(candidate, "missing transaction summary")}
 	}
 	path := filepath.Clean(candidate.Transaction.Path)
 	if !sameCleanPath(path, candidate.Target) || !isTransactionPath(e.RuntimeDir, path) {
-		return skipped(candidate, "transaction path is outside TunWarden runtime state")
+		return []CleanupResult{skipped(candidate, "transaction path is outside TunWarden runtime state")}
 	}
 	tx, err := txstate.LoadTransactionFile(path)
 	if err != nil {
-		return failed(candidate, fmt.Errorf("load transaction state: %w", err))
+		return []CleanupResult{failed(candidate, fmt.Errorf("load transaction state: %w", err))}
 	}
 	if !tx.RequiresCleanup() {
-		return recovered(candidate)
+		return []CleanupResult{recovered(candidate)}
 	}
-	if err := validateSafeRollback(e.RuntimeDir, tx); err != nil {
-		return skipped(candidate, err.Error())
-	}
-	if err := daemonRollbackTransaction(ctx, osExec, tx); err != nil {
-		return failed(candidate, err)
+
+	results := make([]CleanupResult, 0)
+	results = append(results, e.rollbackChildProcessResults(tx.Rollback.ChildProcesses)...)
+	results = append(results, e.rollbackNFTablesResults(ctx, osExec, tx.Rollback.NFTables)...)
+	results = append(results, e.rollbackDNSResults(ctx, osExec, tx.Rollback.DNS)...)
+	results = append(results, e.rollbackPolicyRuleResults(ctx, osExec, tx.Rollback.PolicyRules)...)
+	results = append(results, e.rollbackRouteResults(ctx, osExec, tx.Rollback.Routes)...)
+	results = append(results, e.rollbackTUNResults(ctx, osExec, tx.Rollback.TUN)...)
+	results = append(results, e.rollbackGeneratedConfigResults(osExec, tx.Rollback.GeneratedConfigs)...)
+
+	if hasFailedCleanup(results) {
+		results = append(results, failed(candidate, errors.New("transaction cleanup completed with failures; transaction state was preserved")))
+		return results
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return failed(candidate, fmt.Errorf("remove transaction state %s: %w", path, err))
+		results = append(results, failed(candidate, fmt.Errorf("remove transaction state %s: %w", path, err)))
+		return results
 	}
-	return recovered(candidate)
+	results = append(results, recovered(candidate))
+	return results
 }
 
-func validateSafeRollback(runtimeDir string, tx txstate.Transaction) error {
-	var errs []error
-	for _, proc := range tx.Rollback.ChildProcesses {
+func (e DaemonCleanupExecutor) rollbackChildProcessResults(processes []txstate.ChildProcessRollback) []CleanupResult {
+	results := make([]CleanupResult, 0, len(processes))
+	for _, proc := range processes {
+		candidate := Candidate{Kind: "child-process", Description: "child process", Target: fmt.Sprintf("%s pid %d", proc.Label, proc.PID)}
 		if proc.Owner != txstate.TransactionOwner {
-			errs = append(errs, fmt.Errorf("ambiguous child process rollback label=%q pid=%d", proc.Label, proc.PID))
+			results = append(results, skipped(candidate, "non-TunWarden child process metadata"))
 			continue
 		}
 		if proc.PID > 1 {
-			errs = append(errs, fmt.Errorf("ambiguous child process pid %d: process identity cannot be verified from stale metadata", proc.PID))
+			results = append(results, skipped(candidate, "process identity cannot be verified from stale metadata"))
+			continue
 		}
+		results = append(results, skipped(candidate, "no live process pid recorded"))
 	}
-	for _, entry := range tx.Rollback.NFTables {
+	return results
+}
+
+func (e DaemonCleanupExecutor) rollbackNFTablesResults(ctx context.Context, osExec OSCleanupExecutor, entries []txstate.NFTablesRollback) []CleanupResult {
+	seen := make(map[string]struct{})
+	results := make([]CleanupResult, 0, len(entries))
+	for _, entry := range entries {
+		candidate := Candidate{Kind: "nftables-table", Description: "nftables table", Target: entry.Family + " " + entry.Table}
 		if entry.Owner != txstate.TransactionOwner || !isManagedNFTTarget(entry.Family, entry.Table) {
-			errs = append(errs, fmt.Errorf("ambiguous nftables rollback target %s %s", entry.Family, entry.Table))
+			results = append(results, skipped(candidate, "ambiguous or non-TunWarden nftables target"))
+			continue
 		}
+		key := entry.Family + " " + entry.Table
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		if err := osExec.rollbackNFTables(ctx, []txstate.NFTablesRollback{entry}); err != nil {
+			results = append(results, failed(candidate, err))
+			continue
+		}
+		results = append(results, recovered(candidate))
 	}
-	for _, dns := range tx.Rollback.DNS {
+	return results
+}
+
+func (e DaemonCleanupExecutor) rollbackDNSResults(ctx context.Context, osExec OSCleanupExecutor, entries []txstate.DNSRollback) []CleanupResult {
+	results := make([]CleanupResult, 0, len(entries))
+	for _, dns := range entries {
+		candidate := Candidate{Kind: "dns", Description: "DNS link state", Target: dns.Link}
 		if dns.Owner != txstate.TransactionOwner || dns.Link != managedInterface || (dns.Backend != "" && dns.Backend != "systemd-resolved") {
-			errs = append(errs, fmt.Errorf("ambiguous DNS rollback target link=%s backend=%s", dns.Link, dns.Backend))
+			results = append(results, skipped(candidate, "ambiguous or non-TunWarden DNS rollback target"))
+			continue
 		}
+		if err := osExec.rollbackDNS(ctx, dns); err != nil {
+			results = append(results, failed(candidate, err))
+			continue
+		}
+		results = append(results, recovered(candidate))
 	}
-	for _, rule := range tx.Rollback.PolicyRules {
+	return results
+}
+
+func (e DaemonCleanupExecutor) rollbackPolicyRuleResults(ctx context.Context, osExec OSCleanupExecutor, rules []txstate.PolicyRuleRollback) []CleanupResult {
+	results := make([]CleanupResult, 0, len(rules))
+	for _, rule := range rules {
+		candidate := Candidate{Kind: "policy-rule", Description: "policy rule", Target: fmt.Sprintf("priority %d table %s", rule.Priority, rule.Table)}
 		if rule.Owner != txstate.TransactionOwner {
-			errs = append(errs, fmt.Errorf("ambiguous policy rule rollback priority %d", rule.Priority))
+			results = append(results, skipped(candidate, "non-TunWarden policy rule metadata"))
 			continue
 		}
 		if _, ok := managedTableToken(rule.Table); !ok {
-			errs = append(errs, fmt.Errorf("ambiguous policy rule rollback priority %d table %s", rule.Priority, rule.Table))
+			results = append(results, skipped(candidate, "ambiguous or non-TunWarden policy rule table"))
+			continue
 		}
+		if err := osExec.rollbackPolicyRule(ctx, rule); err != nil {
+			results = append(results, failed(candidate, err))
+			continue
+		}
+		results = append(results, recovered(candidate))
 	}
-	for _, route := range tx.Rollback.Routes {
+	return results
+}
+
+func (e DaemonCleanupExecutor) rollbackRouteResults(ctx context.Context, osExec OSCleanupExecutor, routes []txstate.RouteRollback) []CleanupResult {
+	results := make([]CleanupResult, 0, len(routes))
+	for _, route := range routes {
+		candidate := Candidate{Kind: "route", Description: "route", Target: fmt.Sprintf("%s table %s", route.CIDR, route.Table)}
 		if route.Owner != txstate.TransactionOwner {
-			errs = append(errs, fmt.Errorf("ambiguous route rollback %s table %s", route.CIDR, route.Table))
+			results = append(results, skipped(candidate, "non-TunWarden route metadata"))
 			continue
 		}
 		if _, ok := managedTableToken(route.Table); !ok {
-			errs = append(errs, fmt.Errorf("ambiguous route rollback %s table %s", route.CIDR, route.Table))
-		}
-		if strings.TrimSpace(route.Dev) != "" && route.Dev != managedInterface {
-			errs = append(errs, fmt.Errorf("ambiguous route rollback %s device %s", route.CIDR, route.Dev))
-		}
-	}
-	for _, tun := range tx.Rollback.TUN {
-		if tun.Owner != txstate.TransactionOwner || tun.InterfaceName != managedInterface {
-			errs = append(errs, fmt.Errorf("ambiguous TUN rollback target %s", tun.InterfaceName))
-		}
-	}
-	for _, config := range tx.Rollback.GeneratedConfigs {
-		if config.Owner != txstate.TransactionOwner {
-			errs = append(errs, fmt.Errorf("ambiguous generated config rollback %s", config.Path))
+			results = append(results, skipped(candidate, "ambiguous or non-TunWarden route table"))
 			continue
 		}
-		if !isUnderDir(filepath.Join(runtimeDir, generatedDirName), filepath.Clean(config.Path)) {
-			errs = append(errs, fmt.Errorf("ambiguous generated config rollback outside TunWarden runtime state: %s", config.Path))
+		if strings.TrimSpace(route.Dev) != "" && route.Dev != managedInterface {
+			results = append(results, skipped(candidate, "ambiguous or non-TunWarden route device"))
+			continue
 		}
+		if err := osExec.rollbackRoute(ctx, route); err != nil {
+			results = append(results, failed(candidate, err))
+			continue
+		}
+		results = append(results, recovered(candidate))
 	}
-	return errors.Join(errs...)
+	return results
 }
 
-func daemonRollbackTransaction(ctx context.Context, exec OSCleanupExecutor, tx txstate.Transaction) error {
-	var errs []error
-	if err := exec.rollbackNFTables(ctx, tx.Rollback.NFTables); err != nil {
-		errs = append(errs, err)
+func (e DaemonCleanupExecutor) rollbackTUNResults(ctx context.Context, osExec OSCleanupExecutor, entries []txstate.TUNRollback) []CleanupResult {
+	results := make([]CleanupResult, 0, len(entries))
+	for _, tun := range entries {
+		candidate := Candidate{Kind: "tun-interface", Description: "TUN interface", Target: tun.InterfaceName}
+		if tun.Owner != txstate.TransactionOwner || tun.InterfaceName != managedInterface {
+			results = append(results, skipped(candidate, "ambiguous or non-TunWarden TUN target"))
+			continue
+		}
+		if err := osExec.rollbackTUN(ctx, tun); err != nil {
+			results = append(results, failed(candidate, err))
+			continue
+		}
+		results = append(results, recovered(candidate))
 	}
-	for i := len(tx.Rollback.DNS) - 1; i >= 0; i-- {
-		if err := exec.rollbackDNS(ctx, tx.Rollback.DNS[i]); err != nil {
-			errs = append(errs, err)
+	return results
+}
+
+func (e DaemonCleanupExecutor) rollbackGeneratedConfigResults(osExec OSCleanupExecutor, configs []txstate.GeneratedConfigRollback) []CleanupResult {
+	results := make([]CleanupResult, 0, len(configs))
+	for _, config := range configs {
+		candidate := Candidate{Kind: "generated-runtime-config", Description: "generated runtime config", Target: config.Path}
+		if config.Owner != txstate.TransactionOwner {
+			results = append(results, skipped(candidate, "non-TunWarden generated config metadata"))
+			continue
+		}
+		if !isUnderDir(filepath.Join(e.RuntimeDir, generatedDirName), filepath.Clean(config.Path)) {
+			results = append(results, skipped(candidate, "generated config path is outside TunWarden runtime state"))
+			continue
+		}
+		if err := osExec.removeGeneratedConfig(config); err != nil {
+			results = append(results, failed(candidate, err))
+			continue
+		}
+		results = append(results, recovered(candidate))
+	}
+	return results
+}
+
+func hasFailedCleanup(results []CleanupResult) bool {
+	for _, result := range results {
+		if result.Status == "failed" {
+			return true
 		}
 	}
-	for i := len(tx.Rollback.PolicyRules) - 1; i >= 0; i-- {
-		if err := exec.rollbackPolicyRule(ctx, tx.Rollback.PolicyRules[i]); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	for i := len(tx.Rollback.Routes) - 1; i >= 0; i-- {
-		if err := exec.rollbackRoute(ctx, tx.Rollback.Routes[i]); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	for i := len(tx.Rollback.TUN) - 1; i >= 0; i-- {
-		if err := exec.rollbackTUN(ctx, tx.Rollback.TUN[i]); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	for i := len(tx.Rollback.GeneratedConfigs) - 1; i >= 0; i-- {
-		if err := exec.removeGeneratedConfig(tx.Rollback.GeneratedConfigs[i]); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	return false
 }
