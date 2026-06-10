@@ -149,8 +149,9 @@ func InspectWithOptions(ctx context.Context, opts Options) Report {
 	}
 	report.Candidates = append(report.Candidates, daemonSocketCandidate(socket)...)
 
+	deferStaleClassification := deferLocalStaleClassification(socket, opts.DaemonSocketAccess)
 	runtime, runtimeWarning := inspectRuntimeDirectory(runtimeDir)
-	if deferLocalStaleClassification(socket) {
+	if deferStaleClassification {
 		runtime = runtimeDirectoryWithInaccessibleDaemon(runtime)
 	}
 	report.RuntimeDirectory = runtime
@@ -158,7 +159,7 @@ func InspectWithOptions(ctx context.Context, opts Options) Report {
 		report.Warnings = append(report.Warnings, *runtimeWarning)
 	}
 
-	if deferLocalStaleClassification(socket) {
+	if deferStaleClassification {
 		report.Warnings = append(report.Warnings, Warning{
 			Target:  "daemon socket " + socketPath,
 			Message: "permission denied; local runtime state may belong to a live tunwardend and was not classified as stale",
@@ -302,13 +303,21 @@ func (r Report) String() string {
 func inspectDaemonSocket(socketPath string, access DaemonSocketAccess) (DaemonSocket, *Warning) {
 	socket := DaemonSocket{Path: socketPath}
 	info, err := os.Lstat(socketPath)
-	switch {
-	case err == nil && info.Mode()&os.ModeSocket != 0:
-		if access == DaemonSocketAccessPermissionDenied {
+	if access == DaemonSocketAccessPermissionDenied {
+		switch {
+		case err == nil && info.Mode()&os.ModeSocket != 0:
 			socket.State = DaemonSocketInaccessible
 			socket.Message = "present but inaccessible (permission denied; check tunwarden group membership)"
 			return socket, nil
+		case err != nil && errors.Is(err, os.ErrPermission):
+			socket.State = DaemonSocketInaccessible
+			socket.Message = "inaccessible (permission denied; check tunwarden group membership)"
+			return socket, &Warning{Target: "daemon socket " + socketPath, Message: "permission denied while inspecting daemon socket path"}
 		}
+	}
+
+	switch {
+	case err == nil && info.Mode()&os.ModeSocket != 0:
 		socket.State = DaemonSocketPresent
 		socket.Message = "present"
 		return socket, nil
@@ -393,8 +402,8 @@ func daemonSocketCandidate(socket DaemonSocket) []Candidate {
 	return []Candidate{{Kind: "daemon-socket", Description: "daemon socket path", Target: socket.Path}}
 }
 
-func deferLocalStaleClassification(socket DaemonSocket) bool {
-	return socket.State == DaemonSocketInaccessible
+func deferLocalStaleClassification(socket DaemonSocket, access DaemonSocketAccess) bool {
+	return access == DaemonSocketAccessPermissionDenied || socket.State == DaemonSocketInaccessible
 }
 
 func runtimeDirectoryWithInaccessibleDaemon(runtime RuntimeDirectory) RuntimeDirectory {
