@@ -10,6 +10,8 @@ import (
 
 	"github.com/AidarKhusainov/tunwarden/internal/api"
 	"github.com/AidarKhusainov/tunwarden/internal/client"
+	"github.com/AidarKhusainov/tunwarden/internal/recovery"
+	txstate "github.com/AidarKhusainov/tunwarden/internal/state"
 )
 
 func TestServerExposesStatusOverUnixSocket(t *testing.T) {
@@ -86,6 +88,110 @@ func TestServerExposesDoctorOverUnixSocket(t *testing.T) {
 	}
 }
 
+func TestServerStartupScanReportsCleanState(t *testing.T) {
+	runtimeDir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- (Server{
+			RuntimeDir: runtimeDir,
+			startupScan: func(context.Context) recovery.PlanResult {
+				return recovery.PlanResult{}
+			},
+		}).Run(ctx)
+	}()
+
+	status := waitForStatus(t, runtimeDir)
+	report := waitForDoctor(t, runtimeDir)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("server shutdown failed: %v", err)
+	}
+	if status.StartupScan == nil {
+		t.Fatal("expected startup scan in daemon status")
+	}
+	if status.StartupScan.Status != api.StartupScanStatusClean {
+		t.Fatalf("expected clean startup scan, got %#v", status.StartupScan)
+	}
+	check := findDoctorCheck(report.Checks, "startup-recovery-scan")
+	if check == nil {
+		t.Fatalf("expected startup recovery doctor check, got %#v", report.Checks)
+	}
+	if check.Severity != "OK" || !strings.Contains(check.Message, "clean inactive state") {
+		t.Fatalf("expected clean startup doctor check, got %#v", check)
+	}
+}
+
+func TestServerStartupScanReportsStaleOwnedResource(t *testing.T) {
+	runtimeDir := t.TempDir()
+	generatedDir := filepath.Join(runtimeDir, "generated")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- (Server{
+			RuntimeDir: runtimeDir,
+			startupScan: func(context.Context) recovery.PlanResult {
+				return recovery.PlanResult{Candidates: []recovery.Candidate{{Kind: "generated-runtime-configs", Description: "generated runtime configs", Target: generatedDir}}}
+			},
+		}).Run(ctx)
+	}()
+
+	status := waitForStatus(t, runtimeDir)
+	report := waitForDoctor(t, runtimeDir)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("server shutdown failed: %v", err)
+	}
+	if status.StartupScan == nil || status.StartupScan.Status != api.StartupScanStatusStale {
+		t.Fatalf("expected stale startup scan, got %#v", status.StartupScan)
+	}
+	if len(status.StartupScan.Candidates) != 1 || status.StartupScan.Candidates[0].Target != generatedDir {
+		t.Fatalf("expected generated runtime startup candidate, got %#v", status.StartupScan.Candidates)
+	}
+	check := findDoctorCheck(report.Checks, "startup-recovery-scan")
+	if check == nil || check.Severity != "WARN" || !strings.Contains(check.Message, "suggested action: tunwarden recover") {
+		t.Fatalf("expected warning startup doctor check with recovery guidance, got %#v", check)
+	}
+}
+
+func TestServerStartupScanReportsPendingTransaction(t *testing.T) {
+	runtimeDir := t.TempDir()
+	store := txstate.TransactionStore{RuntimeDir: runtimeDir}
+	tx := txstate.NewTransaction("tx-startup", "profile-1", "tun", time.Now().UTC())
+	tx.State = txstate.TransactionApplying
+	tx.Rollback = txstate.RollbackMetadata{TUN: []txstate.TUNRollback{{InterfaceName: "tunwarden0", Owner: txstate.TransactionOwner}}}
+	path, err := store.Save(tx)
+	if err != nil {
+		t.Fatalf("save transaction: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- (Server{RuntimeDir: runtimeDir}).Run(ctx) }()
+
+	status := waitForStatus(t, runtimeDir)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("server shutdown failed: %v", err)
+	}
+	if status.StartupScan == nil {
+		t.Fatal("expected startup scan in daemon status")
+	}
+	if status.StartupScan.Status != api.StartupScanStatusStale && status.StartupScan.Status != api.StartupScanStatusStaleIncomplete {
+		t.Fatalf("expected stale startup scan, got %#v", status.StartupScan)
+	}
+	var found bool
+	for _, candidate := range status.StartupScan.Candidates {
+		if candidate.Transaction != nil && candidate.Transaction.ID == "tx-startup" && candidate.Transaction.Path == path {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected pending transaction startup candidate, got %#v", status.StartupScan.Candidates)
+	}
+}
+
 func TestServerRejectsNonSocketAtSocketPath(t *testing.T) {
 	runtimeDir := t.TempDir()
 	socketPath := filepath.Join(runtimeDir, api.SocketName)
@@ -103,4 +209,45 @@ func TestServerRejectsNonSocketAtSocketPath(t *testing.T) {
 	if _, statErr := os.Stat(socketPath); statErr != nil {
 		t.Fatalf("non-socket path must not be removed, stat error: %v", statErr)
 	}
+}
+
+func waitForStatus(t *testing.T, runtimeDir string) api.StatusResponse {
+	t.Helper()
+	statusClient := client.StatusClient{SocketPath: filepath.Join(runtimeDir, api.SocketName), Timeout: time.Second}
+	var lastErr error
+	for i := 0; i < 50; i++ {
+		status, err := statusClient.Status(context.Background())
+		if err == nil {
+			return status
+		}
+		lastErr = err
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("status request did not succeed: %v", lastErr)
+	return api.StatusResponse{}
+}
+
+func waitForDoctor(t *testing.T, runtimeDir string) api.DoctorResponse {
+	t.Helper()
+	doctorClient := client.DoctorClient{SocketPath: filepath.Join(runtimeDir, api.SocketName), Timeout: time.Second}
+	var lastErr error
+	for i := 0; i < 50; i++ {
+		report, err := doctorClient.Doctor(context.Background())
+		if err == nil {
+			return report
+		}
+		lastErr = err
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("doctor request did not succeed: %v", lastErr)
+	return api.DoctorResponse{}
+}
+
+func findDoctorCheck(checks []api.DoctorCheck, name string) *api.DoctorCheck {
+	for i := range checks {
+		if checks[i].Name == name {
+			return &checks[i]
+		}
+	}
+	return nil
 }
