@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/AidarKhusainov/tunwarden/internal/render"
@@ -29,8 +28,6 @@ const (
 	managedRouteTableID   = "51820"
 )
 
-// Candidate describes one clearly TunWarden-owned resource that recover can
-// clean up only in explicit execute mode.
 type Candidate struct {
 	Kind        string `json:"kind"`
 	Description string `json:"description"`
@@ -39,8 +36,6 @@ type Candidate struct {
 	Transaction *TransactionCandidate `json:"transaction,omitempty"`
 }
 
-// TransactionCandidate describes pending or stale transaction state in the
-// recovery model without exposing full rollback metadata or secrets.
 type TransactionCandidate struct {
 	ID                string `json:"id"`
 	State             string `json:"state"`
@@ -50,44 +45,36 @@ type TransactionCandidate struct {
 	Path              string `json:"path"`
 }
 
-// Warning describes a read-only recovery scan that could not complete.
 type Warning struct {
 	Target  string `json:"target"`
 	Message string `json:"message"`
 }
 
-// ScanResult is the read-only snapshot used to build the recovery dry-run plan.
 type ScanResult struct {
 	Candidates []Candidate `json:"candidates"`
 	Warnings   []Warning   `json:"warnings"`
 }
 
-// Scanner inspects host state for clearly TunWarden-owned recovery candidates.
-// Implementations must be strictly read-only.
 type Scanner interface {
 	Scan(ctx context.Context) ScanResult
 }
 
-// PlanResult is the dry-run representation of emergency recovery.
 type PlanResult struct {
 	Candidates []Candidate `json:"candidates"`
 	Warnings   []Warning   `json:"warnings"`
 }
 
-// CleanupResult describes one attempted explicit cleanup action.
 type CleanupResult struct {
 	Candidate Candidate `json:"candidate"`
 	Status    string    `json:"status"`
 	Message   string    `json:"message,omitempty"`
 }
 
-// ExecuteResult is the explicit recovery execution report.
 type ExecuteResult struct {
 	Results  []CleanupResult `json:"results"`
 	Warnings []Warning       `json:"warnings"`
 }
 
-// HasFailures reports whether cleanup execution encountered a failed action.
 func (r ExecuteResult) HasFailures() bool {
 	for _, result := range r.Results {
 		if result.Status == "failed" {
@@ -97,13 +84,14 @@ func (r ExecuteResult) HasFailures() bool {
 	return false
 }
 
-// CleanupExecutor performs explicit cleanup for already-detected candidates.
 type CleanupExecutor interface {
 	Cleanup(ctx context.Context, candidate Candidate) CleanupResult
 }
 
-// Options controls recovery planning and execution. Zero values use safe
-// production defaults.
+type MultiCleanupExecutor interface {
+	CleanupMany(ctx context.Context, candidate Candidate) []CleanupResult
+}
+
 type Options struct {
 	Scanner    Scanner
 	Runner     CommandRunner
@@ -111,29 +99,23 @@ type Options struct {
 	RuntimeDir string
 }
 
-// CommandResult contains a completed command's observable output.
 type CommandResult struct {
 	Stdout   string
 	Stderr   string
 	ExitCode int
 }
 
-// CommandRunner is the command execution abstraction used by recovery scanning
-// and explicit cleanup execution.
 type CommandRunner interface {
 	LookPath(file string) (string, error)
 	Run(ctx context.Context, name string, args ...string) (CommandResult, error)
 }
 
-// OSRunner executes host commands through os/exec.
 type OSRunner struct{}
 
-// LookPath resolves a command using the host PATH.
 func (OSRunner) LookPath(file string) (string, error) {
 	return exec.LookPath(file)
 }
 
-// Run executes a host command and captures stdout, stderr, and exit code.
 func (OSRunner) Run(ctx context.Context, name string, args ...string) (CommandResult, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 
@@ -158,16 +140,13 @@ func (OSRunner) Run(ctx context.Context, name string, args ...string) (CommandRe
 	} else {
 		result.ExitCode = -1
 	}
-
 	return result, err
 }
 
-// Plan returns the current read-only recovery dry-run plan.
 func Plan(ctx context.Context) PlanResult {
 	return PlanWithOptions(ctx, Options{})
 }
 
-// PlanWithOptions builds a recovery dry-run plan with injectable dependencies for tests.
 func PlanWithOptions(ctx context.Context, opts Options) PlanResult {
 	scanner := recoveryScanner(opts)
 	scan := scanner.Scan(ctx)
@@ -177,32 +156,33 @@ func PlanWithOptions(ctx context.Context, opts Options) PlanResult {
 	}
 }
 
-// Execute performs explicit recovery cleanup for the current recovery plan.
 func Execute(ctx context.Context) ExecuteResult {
 	return ExecuteWithOptions(ctx, Options{})
 }
 
-// ExecuteWithOptions performs explicit recovery cleanup with injectable dependencies for tests.
 func ExecuteWithOptions(ctx context.Context, opts Options) ExecuteResult {
 	plan := PlanWithOptions(ctx, opts)
-	executor := opts.Executor
-	if executor == nil {
-		runner := opts.Runner
-		if runner == nil {
-			runner = OSRunner{}
-		}
-		executor = OSCleanupExecutor{Runner: runner, RuntimeDir: runtimeDir(opts.RuntimeDir)}
-	}
-
 	ordered := orderCleanupCandidates(plan.Candidates)
 	results := make([]CleanupResult, 0, len(ordered))
+
+	if opts.Executor == nil {
+		for _, candidate := range ordered {
+			results = append(results, failed(candidate, errors.New("missing daemon-owned recovery cleanup executor")))
+		}
+		return ExecuteResult{Results: results, Warnings: append([]Warning(nil), plan.Warnings...)}
+	}
+	if multi, ok := opts.Executor.(MultiCleanupExecutor); ok {
+		for _, candidate := range ordered {
+			results = append(results, multi.CleanupMany(ctx, candidate)...)
+		}
+		return ExecuteResult{Results: results, Warnings: append([]Warning(nil), plan.Warnings...)}
+	}
 	for _, candidate := range ordered {
-		results = append(results, executor.Cleanup(ctx, candidate))
+		results = append(results, opts.Executor.Cleanup(ctx, candidate))
 	}
 	return ExecuteResult{Results: results, Warnings: append([]Warning(nil), plan.Warnings...)}
 }
 
-// String renders the recovery plan in a stable, CLI-friendly format.
 func (p PlanResult) String() string {
 	var b strings.Builder
 	b.WriteString("TunWarden recovery dry-run\n")
@@ -225,7 +205,6 @@ func (p PlanResult) String() string {
 	return b.String()
 }
 
-// String renders the explicit recovery execution report.
 func (r ExecuteResult) String() string {
 	var b strings.Builder
 	b.WriteString("TunWarden recovery\n")
@@ -293,13 +272,11 @@ func runtimeDir(dir string) string {
 	return filepath.Clean(dir)
 }
 
-// OSScanner inspects the local host for clearly TunWarden-owned resources.
 type OSScanner struct {
 	Runner     CommandRunner
 	RuntimeDir string
 }
 
-// Scan performs a strictly read-only recovery candidate scan.
 func (s OSScanner) Scan(ctx context.Context) ScanResult {
 	runner := s.Runner
 	if runner == nil {
@@ -330,12 +307,8 @@ func (r *ScanResult) scanManagedInterface(ctx context.Context, runner CommandRun
 		command:            "ip",
 		commandUnavailable: "ip command is unavailable",
 		args:               []string{"link", "show", "dev", managedInterface},
-		candidate: Candidate{
-			Kind:        "tun-interface",
-			Description: "TUN interface",
-			Target:      managedInterface,
-		},
-		warningTarget: "TUN interface " + managedInterface,
+		candidate: Candidate{Kind: "tun-interface", Description: "TUN interface", Target: managedInterface},
+		warningTarget:      "TUN interface " + managedInterface,
 	})
 }
 
@@ -344,22 +317,15 @@ func (r *ScanResult) scanManagedNFTTable(ctx context.Context, runner CommandRunn
 		command:            "nft",
 		commandUnavailable: "nft command is unavailable",
 		args:               []string{"list", "table", managedNFTFamily, managedNFTTableName},
-		candidate: Candidate{
-			Kind:        "nftables-table",
-			Description: "nftables table",
-			Target:      managedNFTTable,
-		},
-		warningTarget: "nftables table " + managedNFTTable,
+		candidate:          Candidate{Kind: "nftables-table", Description: "nftables table", Target: managedNFTTable},
+		warningTarget:      "nftables table " + managedNFTTable,
 	})
 }
 
 func (r *ScanResult) scanCommandCandidate(ctx context.Context, runner CommandRunner, scan commandCandidateScan) {
 	commandPath, err := runner.LookPath(scan.command)
 	if err != nil {
-		r.Warnings = append(r.Warnings, Warning{
-			Target:  scan.warningTarget,
-			Message: scan.commandUnavailable,
-		})
+		r.Warnings = append(r.Warnings, Warning{Target: scan.warningTarget, Message: scan.commandUnavailable})
 		return
 	}
 
@@ -369,10 +335,7 @@ func (r *ScanResult) scanCommandCandidate(ctx context.Context, runner CommandRun
 		r.Candidates = append(r.Candidates, scan.candidate)
 	case resourceMissing(cmdResult):
 	case commandFailedUnexpectedly(cmdResult, err):
-		r.Warnings = append(r.Warnings, Warning{
-			Target:  scan.warningTarget,
-			Message: commandFailureMessage(cmdResult, err),
-		})
+		r.Warnings = append(r.Warnings, Warning{Target: scan.warningTarget, Message: commandFailureMessage(cmdResult, err)})
 	}
 }
 
@@ -409,18 +372,11 @@ func (r *ScanResult) scanGeneratedRuntimeConfigs(generatedDir string) {
 		if !stat.IsDir() {
 			description = "generated runtime config path"
 		}
-		r.Candidates = append(r.Candidates, Candidate{
-			Kind:        "generated-runtime-configs",
-			Description: description,
-			Target:      generatedDir,
-		})
+		r.Candidates = append(r.Candidates, Candidate{Kind: "generated-runtime-configs", Description: description, Target: generatedDir})
 	case errors.Is(err, os.ErrNotExist):
 		return
 	default:
-		r.Warnings = append(r.Warnings, Warning{
-			Target:  "generated runtime configs " + generatedDir,
-			Message: err.Error(),
-		})
+		r.Warnings = append(r.Warnings, Warning{Target: "generated runtime configs " + generatedDir, Message: err.Error()})
 	}
 }
 
@@ -432,28 +388,19 @@ func (r *ScanResult) scanRuntimeDir(runtimeDir string) {
 		if !stat.IsDir() {
 			description = "runtime path"
 		}
-		r.Candidates = append(r.Candidates, Candidate{
-			Kind:        "runtime-directory",
-			Description: description,
-			Target:      runtimeDir,
-		})
+		r.Candidates = append(r.Candidates, Candidate{Kind: "runtime-directory", Description: description, Target: runtimeDir})
 	case errors.Is(err, os.ErrNotExist):
 		return
 	default:
-		r.Warnings = append(r.Warnings, Warning{
-			Target:  "runtime directory " + runtimeDir,
-			Message: err.Error(),
-		})
+		r.Warnings = append(r.Warnings, Warning{Target: "runtime directory " + runtimeDir, Message: err.Error()})
 	}
 }
 
-// OSCleanupExecutor removes only allowlisted TunWarden-owned volatile state.
 type OSCleanupExecutor struct {
 	Runner     CommandRunner
 	RuntimeDir string
 }
 
-// Cleanup executes one idempotent cleanup action.
 func (e OSCleanupExecutor) Cleanup(ctx context.Context, candidate Candidate) CleanupResult {
 	if strings.TrimSpace(candidate.Kind) == "" {
 		return skipped(candidate, "missing recovery candidate kind")
@@ -472,11 +419,11 @@ func (e OSCleanupExecutor) Cleanup(ctx context.Context, candidate Candidate) Cle
 	case "nftables-table":
 		return e.cleanupNFTablesTable(ctx, candidate)
 	case "transaction-state":
-		return e.cleanupTransactionState(ctx, candidate)
+		return skipped(candidate, "transaction rollback requires daemon safety validation")
 	case "generated-runtime-configs":
 		return e.cleanupGeneratedRuntimeConfigs(candidate)
 	case "runtime-directory":
-		return e.cleanupRuntimeDirectory(candidate)
+		return skipped(candidate, "runtime root cleanup is intentionally unsupported")
 	default:
 		return skipped(candidate, "unsupported recovery candidate kind")
 	}
@@ -514,107 +461,11 @@ func (e OSCleanupExecutor) cleanupGeneratedRuntimeConfigs(candidate Candidate) C
 	return recovered(candidate)
 }
 
-func (e OSCleanupExecutor) cleanupRuntimeDirectory(candidate Candidate) CleanupResult {
-	if !sameCleanPath(candidate.Target, e.RuntimeDir) {
-		return skipped(candidate, "runtime path is outside TunWarden runtime state")
-	}
-	if err := os.RemoveAll(e.RuntimeDir); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return failed(candidate, fmt.Errorf("remove runtime directory %s: %w", e.RuntimeDir, err))
-	}
-	return recovered(candidate)
-}
-
-func (e OSCleanupExecutor) cleanupTransactionState(ctx context.Context, candidate Candidate) CleanupResult {
-	if candidate.Transaction == nil {
-		return skipped(candidate, "missing transaction summary")
-	}
-	path := filepath.Clean(candidate.Transaction.Path)
-	if !sameCleanPath(path, candidate.Target) || !isTransactionPath(e.RuntimeDir, path) {
-		return skipped(candidate, "transaction path is outside TunWarden runtime state")
-	}
-	tx, err := txstate.LoadTransactionFile(path)
-	if err != nil {
-		return failed(candidate, fmt.Errorf("load transaction state: %w", err))
-	}
-	if !tx.RequiresCleanup() {
-		return recovered(candidate)
-	}
-	if err := e.rollbackTransaction(ctx, tx); err != nil {
-		return failed(candidate, err)
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return failed(candidate, fmt.Errorf("remove transaction state %s: %w", path, err))
-	}
-	return recovered(candidate)
-}
-
-func (e OSCleanupExecutor) rollbackTransaction(ctx context.Context, tx txstate.Transaction) error {
-	var errs []error
-	for i := len(tx.Rollback.ChildProcesses) - 1; i >= 0; i-- {
-		if err := e.stopChildProcess(tx.Rollback.ChildProcesses[i]); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if err := e.rollbackNFTables(ctx, tx.Rollback.NFTables); err != nil {
-		errs = append(errs, err)
-	}
-	for i := len(tx.Rollback.DNS) - 1; i >= 0; i-- {
-		if err := e.rollbackDNS(ctx, tx.Rollback.DNS[i]); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	for i := len(tx.Rollback.PolicyRules) - 1; i >= 0; i-- {
-		if err := e.rollbackPolicyRule(ctx, tx.Rollback.PolicyRules[i]); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	for i := len(tx.Rollback.Routes) - 1; i >= 0; i-- {
-		if err := e.rollbackRoute(ctx, tx.Rollback.Routes[i]); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	for i := len(tx.Rollback.TUN) - 1; i >= 0; i-- {
-		if err := e.rollbackTUN(ctx, tx.Rollback.TUN[i]); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	for i := len(tx.Rollback.GeneratedConfigs) - 1; i >= 0; i-- {
-		if err := e.removeGeneratedConfig(tx.Rollback.GeneratedConfigs[i]); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
-}
-
-func (e OSCleanupExecutor) stopChildProcess(proc txstate.ChildProcessRollback) error {
-	if proc.Owner != txstate.TransactionOwner {
-		return fmt.Errorf("refuse to stop non-TunWarden child process label=%q pid=%d", proc.Label, proc.PID)
-	}
-	if !isAllowedChildProcessLabel(proc.Label) {
-		return fmt.Errorf("refuse to stop ambiguous child process label=%q pid=%d", proc.Label, proc.PID)
-	}
-	if proc.PID <= 1 {
-		return nil
-	}
-	process, err := os.FindProcess(proc.PID)
-	if err != nil {
-		return fmt.Errorf("find child process %d: %w", proc.PID, err)
-	}
-	if err := process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) && !errorStringContains(err, "no such process") {
-		return fmt.Errorf("stop child process %s pid %d: %w", proc.Label, proc.PID, err)
-	}
-	return nil
-}
-
 func (e OSCleanupExecutor) rollbackNFTables(ctx context.Context, entries []txstate.NFTablesRollback) error {
 	seen := make(map[string]struct{})
 	var errs []error
 	for _, entry := range entries {
-		if entry.Owner != txstate.TransactionOwner {
-			errs = append(errs, fmt.Errorf("refuse to rollback non-TunWarden nftables target %s %s", entry.Family, entry.Table))
-			continue
-		}
-		if !isManagedNFTTarget(entry.Family, entry.Table) {
+		if entry.Owner != txstate.TransactionOwner || !isManagedNFTTarget(entry.Family, entry.Table) {
 			errs = append(errs, fmt.Errorf("refuse to rollback non-TunWarden nftables target %s %s", entry.Family, entry.Table))
 			continue
 		}
@@ -631,14 +482,8 @@ func (e OSCleanupExecutor) rollbackNFTables(ctx context.Context, entries []txsta
 }
 
 func (e OSCleanupExecutor) rollbackDNS(ctx context.Context, dns txstate.DNSRollback) error {
-	if dns.Owner != txstate.TransactionOwner {
-		return fmt.Errorf("refuse to rollback non-TunWarden DNS target %s", dns.Link)
-	}
-	if dns.Link != managedInterface {
-		return fmt.Errorf("refuse to rollback non-TunWarden DNS link %s", dns.Link)
-	}
-	if dns.Backend != "" && dns.Backend != "systemd-resolved" {
-		return fmt.Errorf("refuse to rollback unsupported DNS backend %s", dns.Backend)
+	if dns.Owner != txstate.TransactionOwner || dns.Link != managedInterface || (dns.Backend != "" && dns.Backend != "systemd-resolved") {
+		return fmt.Errorf("refuse to rollback ambiguous DNS target link=%s backend=%s", dns.Link, dns.Backend)
 	}
 	if err := e.run(ctx, "resolvectl", "revert", managedInterface); err != nil && !commandErrorIsMissing(err) {
 		return fmt.Errorf("revert systemd-resolved DNS for %s: %w", managedInterface, err)
@@ -704,10 +549,7 @@ func (e OSCleanupExecutor) rollbackRoute(ctx context.Context, route txstate.Rout
 }
 
 func (e OSCleanupExecutor) rollbackTUN(ctx context.Context, tun txstate.TUNRollback) error {
-	if tun.Owner != txstate.TransactionOwner {
-		return fmt.Errorf("refuse to rollback non-TunWarden TUN interface %s", tun.InterfaceName)
-	}
-	if tun.InterfaceName != managedInterface {
+	if tun.Owner != txstate.TransactionOwner || tun.InterfaceName != managedInterface {
 		return fmt.Errorf("refuse to rollback non-TunWarden TUN interface %s", tun.InterfaceName)
 	}
 	if err := e.run(ctx, "ip", "link", "del", "dev", managedInterface); err != nil && !commandErrorIsMissing(err) {
@@ -735,14 +577,16 @@ func (e OSCleanupExecutor) run(ctx context.Context, command string, args ...stri
 	if err != nil {
 		return fmt.Errorf("%s command is unavailable", command)
 	}
-	_, err = runCommand(ctx, e.Runner, path, args...)
-	return err
+	result, err := runCommand(ctx, e.Runner, path, args...)
+	if commandSucceeded(result, err) {
+		return nil
+	}
+	return fmt.Errorf("%s %s: %s", command, strings.Join(args, " "), commandFailureMessage(result, err))
 }
 
 func runCommand(ctx context.Context, runner CommandRunner, name string, args ...string) (CommandResult, error) {
 	cmdCtx, cancel := context.WithTimeout(ctx, defaultCommandTimeout)
 	defer cancel()
-
 	return runner.Run(cmdCtx, name, args...)
 }
 
@@ -860,15 +704,6 @@ func managedTableToken(table string) (string, bool) {
 		return managedRouteTableID, true
 	default:
 		return "", false
-	}
-}
-
-func isAllowedChildProcessLabel(label string) bool {
-	switch strings.TrimSpace(label) {
-	case "xray", "tun2socks":
-		return true
-	default:
-		return false
 	}
 }
 
