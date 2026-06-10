@@ -192,7 +192,10 @@ func FromDaemon(s api.StatusResponse) Report {
 		Service:    s.Service,
 		Connection: s.Connection,
 		Mode:       s.Mode,
-		RuntimeDirectory: RuntimeDirectory{State: RuntimeDirectoryPresent, Message: s.RuntimeDirectory},
+		RuntimeDirectory: RuntimeDirectory{
+			State:   RuntimeDirectoryPresent,
+			Message: s.RuntimeDirectory,
+		},
 		RuntimeConfigPath: s.RuntimeConfigPath,
 		Proxy:             s.Proxy,
 		TUN:               s.TUN,
@@ -311,7 +314,10 @@ func inspectDaemonSocket(socketPath string, access DaemonSocketAccess) (DaemonSo
 		case err != nil && errors.Is(err, os.ErrPermission):
 			socket.State = DaemonSocketInaccessible
 			socket.Message = "inaccessible (permission denied; check tunwarden group membership)"
-			return socket, &Warning{Target: "daemon socket " + socketPath, Message: "permission denied while inspecting daemon socket path"}
+			return socket, &Warning{
+				Target:  "daemon socket " + socketPath,
+				Message: "permission denied while inspecting daemon socket path",
+			}
 		}
 	}
 
