@@ -147,19 +147,18 @@ func TestInspectWithOptionsDefersStaleClassificationWhenSocketPathInspectionDeni
 	if err := os.MkdirAll(transactionsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(socketPath, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.WriteFile(filepath.Join(transactionsDir, "tx.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if os.Geteuid() != 0 {
-		if err := os.Chmod(runtimeDir, 0o000); err != nil {
-			t.Fatal(err)
+	originalLstat := lstat
+	lstat = func(path string) (os.FileInfo, error) {
+		if path == socketPath {
+			return nil, &os.PathError{Op: "lstat", Path: path, Err: os.ErrPermission}
 		}
-		defer func() { _ = os.Chmod(runtimeDir, 0o755) }()
+		return originalLstat(path)
 	}
+	defer func() { lstat = originalLstat }()
 
 	report := InspectWithOptions(context.Background(), Options{
 		RuntimeDir:         runtimeDir,
@@ -179,8 +178,8 @@ func TestInspectWithOptionsDefersStaleClassificationWhenSocketPathInspectionDeni
 
 	got := report.String()
 	for _, want := range []string{
-		"Daemon socket:",
-		"permission denied",
+		"Daemon socket: inaccessible (permission denied; check tunwarden group membership)\n",
+		"permission denied while inspecting daemon socket path\n",
 		"Stale state: unknown (inspection incomplete)\n",
 		"local runtime state may belong to a live tunwardend and was not classified as stale\n",
 	} {
