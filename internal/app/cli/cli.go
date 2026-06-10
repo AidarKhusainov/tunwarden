@@ -53,9 +53,12 @@ type options struct {
 	profileStorePath      string
 	subscriptionStorePath string
 	recover               func(context.Context) recovery.PlanResult
+	recoverExecute        func(context.Context) (recovery.ExecuteResult, error)
 	status                func(context.Context) status.Report
 	daemonStatus          func(context.Context) (status.Report, error)
 	systemSnapshot        func(context.Context, netsnapshot.Options) netsnapshot.Snapshot
+	stdin                 io.Reader
+	stdinIsTerminal       func() bool
 }
 
 // Run executes the user-facing TunWarden command line interface.

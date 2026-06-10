@@ -59,7 +59,6 @@ func TestPlanWithFakeScannerRendersRecoveryCandidates(t *testing.T) {
 			{Kind: "tun-interface", Description: "TUN interface", Target: "tunwarden0"},
 			{Kind: "nftables-table", Description: "nftables table", Target: "inet tunwarden"},
 			{Kind: "generated-runtime-configs", Description: "generated runtime configs", Target: "/run/tunwarden/generated"},
-			{Kind: "runtime-directory", Description: "runtime directory", Target: "/run/tunwarden"},
 		},
 	}}})
 
@@ -69,7 +68,6 @@ func TestPlanWithFakeScannerRendersRecoveryCandidates(t *testing.T) {
 		"Would recover TUN interface: tunwarden0",
 		"Would recover nftables table: inet tunwarden",
 		"Would recover generated runtime configs: /run/tunwarden/generated",
-		"Would recover runtime directory: /run/tunwarden",
 		"No changes were applied.",
 	}
 	for _, text := range want {
@@ -77,8 +75,8 @@ func TestPlanWithFakeScannerRendersRecoveryCandidates(t *testing.T) {
 			t.Fatalf("expected output to contain %q, got %q", text, got)
 		}
 	}
-	if strings.Contains(got, "command:") {
-		t.Fatalf("dry-run output must not render executable cleanup commands, got %q", got)
+	if strings.Contains(got, "runtime directory") || strings.Contains(got, "command:") {
+		t.Fatalf("dry-run output must not render runtime root or executable cleanup commands, got %q", got)
 	}
 }
 
@@ -156,6 +154,49 @@ func TestPlanWithFakeScannerDoesNotRenderCleanHostWhenWarningsExist(t *testing.T
 	}
 }
 
+func TestPlanDoesNotReportRuntimeRootAsCandidate(t *testing.T) {
+	runtimeDir := t.TempDir()
+
+	plan := PlanWithOptions(context.Background(), Options{
+		RuntimeDir: runtimeDir,
+		Runner:     fakeMissingResourcesRunner(),
+	})
+
+	if len(plan.Candidates) != 0 {
+		t.Fatalf("expected runtime root alone to be ignored, got candidates %#v", plan.Candidates)
+	}
+	got := plan.String()
+	if strings.Contains(got, runtimeDir) || strings.Contains(got, "runtime directory") {
+		t.Fatalf("runtime root must not be rendered as a recovery candidate, got %q", got)
+	}
+	if !strings.Contains(got, "No TunWarden-owned recovery candidates found.") {
+		t.Fatalf("expected clean host message, got %q", got)
+	}
+}
+
+func TestExecuteDoesNotReportRuntimeRootWhenOnlyRuntimeDirExists(t *testing.T) {
+	runtimeDir := t.TempDir()
+
+	result := ExecuteWithOptions(context.Background(), Options{
+		RuntimeDir: runtimeDir,
+		Runner:     fakeMissingResourcesRunner(),
+	})
+
+	if len(result.Results) != 0 {
+		t.Fatalf("expected no cleanup results when only runtime root exists, got %#v", result.Results)
+	}
+	if result.HasFailures() || result.HasIncompleteCleanup() {
+		t.Fatalf("runtime root alone must not be treated as failed or incomplete cleanup, got %#v", result)
+	}
+	got := result.String()
+	if strings.Contains(got, runtimeDir) || strings.Contains(got, "runtime directory") {
+		t.Fatalf("runtime root must not be rendered in execute output, got %q", got)
+	}
+	if !strings.Contains(got, "No TunWarden-owned recovery candidates found.") {
+		t.Fatalf("expected clean execute output, got %q", got)
+	}
+}
+
 func TestOSScannerDetectsOwnedResources(t *testing.T) {
 	runtimeDir := t.TempDir()
 	generatedDir := filepath.Join(runtimeDir, "generated")
@@ -184,7 +225,7 @@ func TestOSScannerDetectsOwnedResources(t *testing.T) {
 	assertCandidate(t, plan, "tun-interface", "tunwarden0")
 	assertCandidate(t, plan, "nftables-table", "inet tunwarden")
 	assertCandidate(t, plan, "generated-runtime-configs", generatedDir)
-	assertCandidate(t, plan, "runtime-directory", runtimeDir)
+	assertNoCandidateKind(t, plan, "runtime-directory")
 	if len(plan.Warnings) != 0 {
 		t.Fatalf("expected no warnings, got %#v", plan.Warnings)
 	}
@@ -307,6 +348,15 @@ func assertCandidate(t *testing.T, plan PlanResult, kind string, target string) 
 		}
 	}
 	t.Fatalf("candidate kind=%q target=%q not found in %#v", kind, target, plan.Candidates)
+}
+
+func assertNoCandidateKind(t *testing.T, plan PlanResult, kind string) {
+	t.Helper()
+	for _, candidate := range plan.Candidates {
+		if candidate.Kind == kind {
+			t.Fatalf("candidate kind=%q must not be present in %#v", kind, plan.Candidates)
+		}
+	}
 }
 
 func assertTransactionCandidate(t *testing.T, plan PlanResult, id string) *TransactionCandidate {

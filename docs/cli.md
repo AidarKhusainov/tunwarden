@@ -386,31 +386,46 @@ Privilege model:
 ```bash
 tunwarden recover
 tunwarden recover --execute --yes
+tunwarden recover --execute --yes --json
 ```
 
-Purpose: inspect and later clean up stale TunWarden-owned state.
+Purpose: inspect and explicitly clean up stale TunWarden-owned volatile state.
+
+Daemon requirement:
+
+- `recover`: none; local read-only scanner only;
+- `recover --execute --yes`: required through `tunwardend` local Unix socket API.
 
 Mutation level:
 
 - `recover`: read-only dry-run;
-- `recover --execute --yes`: explicit cleanup of TunWarden-owned state only; deferred until safe cleanup execution exists.
+- `recover --execute --yes`: daemon-owned explicit cleanup of clearly TunWarden-owned volatile state only.
 
 Implemented behavior:
 
-- `recover` is dry-run only;
+- `recover` remains dry-run and never mutates state;
+- `recover --execute --yes` sends cleanup intent to `tunwardend`; the CLI does not perform privileged host cleanup;
+- interactive execute prompts for `yes` unless `--yes` is passed;
+- non-interactive execute requires `--yes`;
+- JSON execute requires `--yes`;
+- execute reports `recovered`, `skipped`, and `failed` cleanup results;
+- failed cleanup returns exit code `1` and JSON `status: "fail"`;
+- incomplete cleanup where transaction state is preserved returns exit code `1` and JSON `status: "warn"`;
+- ambiguous resources are reported as `skipped` and left unchanged;
+- runtime root cleanup is intentionally unsupported; `/run/tunwarden` is not deleted wholesale;
+- stale PID metadata is not sufficient process identity and is not signalled by recovery;
 - pending, failed, rolling-back, or stale transaction files under `/run/tunwarden/transactions/` are shown as recovery candidates;
 - transaction candidates include state, rollback availability, cleanup requirement, and redacted transaction path;
 - invalid or unreadable transaction files are reported as inspection warnings, not ignored.
 
 Expected cleanup candidates:
 
-- TunWarden-owned runtime files;
-- TunWarden-owned generated configs;
-- TunWarden-owned core processes;
-- TunWarden-owned TUN interfaces;
+- clearly TunWarden-owned generated runtime configs;
+- clearly TunWarden-owned TUN interfaces;
+- clearly TunWarden-owned nftables state;
 - TunWarden-owned routes/rules actually recorded in transaction rollback metadata;
-- future TunWarden-owned nftables state;
-- TunWarden-owned DNS state recorded in transaction rollback metadata where reversible.
+- TunWarden-owned DNS state recorded in transaction rollback metadata where reversible;
+- transaction state files only after the cleanup sequence completes safely.
 
 ## 4. Milestone boundaries
 
@@ -420,6 +435,7 @@ The current implementation contains:
 - read-only full-tunnel TUN planning;
 - transaction-state persistence and diagnostics;
 - daemon-owned privileged TUN executor slice for TUN interface, routes, policy rules, and systemd-resolved DNS;
+- daemon-owned recovery cleanup execution for clearly TunWarden-owned volatile state;
 - DNS desired-state persistence in transaction state, including planned servers.
 
 Still deferred:
@@ -428,6 +444,5 @@ Still deferred:
 - configurable DNS policy and non-systemd DNS fallback;
 - nftables/firewall mutation and rollback;
 - full leak-protection verification;
-- `recover --execute --yes` cleanup;
 - reconnect/suspend/resume state machine;
 - GUI.
