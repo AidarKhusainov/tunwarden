@@ -9,8 +9,10 @@ import (
 	"github.com/AidarKhusainov/tunwarden/internal/network/planner"
 )
 
+const resolvedStatusForTest = "Link 7 (tunwarden0)\n    DNS Servers: 1.1.1.1\n    DNS Domain: ~."
+
 func TestResolvedDNSExecutorApplyVerifyAndRollbackCommands(t *testing.T) {
-	runner := &recordingRunner{stdout: "Link 7 (tunwarden0)\n    DNS Servers: 1.1.1.1\n    DNS Domain: ~."}
+	runner := &recordingRunner{stdout: resolvedStatusForTest}
 	exec := ResolvedDNSExecutor{Runner: runner}
 	plan := dnsPlanForTest()
 
@@ -53,7 +55,7 @@ func TestResolvedDNSExecutorFailsClearlyWhenPlanIsBlocked(t *testing.T) {
 
 func TestResolvedDNSExecutorVerifyRequiresRouteOnlyDomain(t *testing.T) {
 	plan := dnsPlanForTest()
-	err := (ResolvedDNSExecutor{Runner: &recordingRunner{stdout: "Link 7 (tunwarden0)\n    DNS Servers: 1.1.1.1"}}).Verify(context.Background(), plan)
+	err := (ResolvedDNSExecutor{Runner: &recordingRunner{stdout: "Link 7 (tunwarden0)"}}).Verify(context.Background(), plan)
 	if err == nil {
 		t.Fatal("expected verify failure when route-only domain is missing")
 	}
@@ -91,26 +93,7 @@ func TestDNSAwareTunExecutorAppliesVerifiesAndRollsBackDNSInSafeOrder(t *testing
 		t.Fatalf("rollback DNS-aware plan: %v", err)
 	}
 
-	want := []string{
-		"tun:create:tunwarden0",
-		"route:add:tunwarden:default",
-		"route:add:main:203.0.113.10/32",
-		"rule:add:51819:to 203.0.113.10/32",
-		"rule:add:51820:from all",
-		"dns:apply:tunwarden0",
-		"tun:verify:tunwarden0",
-		"route:verify:tunwarden:default",
-		"route:verify:main:203.0.113.10/32",
-		"rule:verify:51819:to 203.0.113.10/32",
-		"rule:verify:51820:from all",
-		"dns:verify:tunwarden0",
-		"dns:rollback:tunwarden0",
-		"rule:rollback:51820:from all",
-		"rule:rollback:51819:to 203.0.113.10/32",
-		"route:rollback:main:203.0.113.10/32",
-		"route:rollback:tunwarden:default",
-		"tun:rollback:tunwarden0",
-	}
+	want := dnsAwareCallOrderForTest()
 	if !reflect.DeepEqual(recorder.calls, want) {
 		t.Fatalf("unexpected calls:\nwant %#v\n got %#v", want, recorder.calls)
 	}
@@ -134,6 +117,29 @@ func TestDNSAwareTunExecutorRollsBackDNSWhenApplyFailsAfterDNSMutation(t *testin
 	}
 	if recorder.calls[len(recorder.calls)-1] != "dns:rollback:tunwarden0" {
 		t.Fatalf("expected immediate DNS rollback after DNS apply failure, got %#v", recorder.calls)
+	}
+}
+
+func dnsAwareCallOrderForTest() []string {
+	return []string{
+		"tun:create:tunwarden0",
+		"route:add:tunwarden:default",
+		"route:add:main:203.0.113.10/32",
+		"rule:add:9999:to 203.0.113.10/32",
+		"rule:add:10000:from all",
+		"dns:apply:tunwarden0",
+		"tun:verify:tunwarden0",
+		"route:verify:tunwarden:default",
+		"route:verify:main:203.0.113.10/32",
+		"rule:verify:9999:to 203.0.113.10/32",
+		"rule:verify:10000:from all",
+		"dns:verify:tunwarden0",
+		"dns:rollback:tunwarden0",
+		"rule:rollback:10000:from all",
+		"rule:rollback:9999:to 203.0.113.10/32",
+		"route:rollback:main:203.0.113.10/32",
+		"route:rollback:tunwarden:default",
+		"tun:rollback:tunwarden0",
 	}
 }
 
