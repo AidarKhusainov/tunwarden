@@ -53,15 +53,16 @@ func selectTunProbeHost(plan planner.TunPlan) string {
 }
 
 func defaultLookupTunRouteForProbe(ctx context.Context, host, tunDevice string) error {
+	_ = runDiagnosticCommand(ctx, "ip", "-4", "route", "flush", "cache")
 	cmd := exec.CommandContext(ctx, "ip", "-4", "route", "get", host)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ip -4 route get %s: %w: %s", host, err, strings.TrimSpace(string(output)))
+		return fmt.Errorf("ip -4 route get %s: %w: %s%s", host, err, strings.TrimSpace(string(output)), tunRouteDiagnostics(ctx, host, tunDevice))
 	}
 	line := strings.TrimSpace(string(output))
 	fields := strings.Fields(line)
 	if !containsAdjacentRouteFields(fields, "dev", tunDevice) {
-		return fmt.Errorf("route lookup did not use TUN device %s: %s", tunDevice, line)
+		return fmt.Errorf("route lookup did not use TUN device %s: %s%s", tunDevice, line, tunRouteDiagnostics(ctx, host, tunDevice))
 	}
 	return nil
 }
@@ -82,4 +83,45 @@ func containsAdjacentRouteFields(fields []string, key, value string) bool {
 		}
 	}
 	return false
+}
+
+func tunRouteDiagnostics(ctx context.Context, host, tunDevice string) string {
+	checks := []struct {
+		label string
+		args  []string
+	}{
+		{label: "ip -4 rule show", args: []string{"-4", "rule", "show"}},
+		{label: "ip -4 route show table 51820", args: []string{"-4", "route", "show", "table", strconv.Itoa(planner.TunRoutingTableID)}},
+		{label: "ip -4 route get table 51820", args: []string{"-4", "route", "get", host, "table", strconv.Itoa(planner.TunRoutingTableID)}},
+		{label: "ip -4 addr show dev " + tunDevice, args: []string{"-4", "addr", "show", "dev", tunDevice}},
+		{label: "ip -4 link show dev " + tunDevice, args: []string{"-4", "link", "show", "dev", tunDevice}},
+	}
+
+	var builder strings.Builder
+	builder.WriteString("; diagnostics:")
+	for _, check := range checks {
+		builder.WriteString("\n")
+		builder.WriteString(check.label)
+		builder.WriteString(": ")
+		builder.WriteString(runDiagnosticCommand(ctx, "ip", check.args...))
+	}
+	return builder.String()
+}
+
+func runDiagnosticCommand(ctx context.Context, name string, args ...string) string {
+	cmdCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, name, args...)
+	output, err := cmd.CombinedOutput()
+	text := strings.TrimSpace(string(output))
+	if err != nil {
+		if text == "" {
+			return err.Error()
+		}
+		return err.Error() + ": " + text
+	}
+	if text == "" {
+		return "<empty>"
+	}
+	return text
 }
