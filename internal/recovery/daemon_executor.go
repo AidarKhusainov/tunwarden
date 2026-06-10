@@ -33,6 +33,11 @@ func (e DaemonCleanupExecutor) Cleanup(ctx context.Context, candidate Candidate)
 			return failed(candidate, errors.New("transaction cleanup completed with failures"))
 		}
 	}
+	for _, result := range results {
+		if result.Status == "skipped" {
+			return skipped(candidate, "transaction cleanup skipped at least one resource")
+		}
+	}
 	return recovered(candidate)
 }
 
@@ -97,6 +102,10 @@ func (e DaemonCleanupExecutor) cleanupTransactionState(ctx context.Context, cand
 
 	if hasFailedCleanup(results) {
 		results = append(results, failed(candidate, errors.New("transaction cleanup completed with failures; transaction state was preserved")))
+		return results
+	}
+	if hasSkippedCleanup(results) {
+		results = append(results, skipped(candidate, "transaction cleanup skipped ambiguous resources; transaction state was preserved"))
 		return results
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -251,6 +260,15 @@ func (e DaemonCleanupExecutor) rollbackGeneratedConfigResults(osExec OSCleanupEx
 func hasFailedCleanup(results []CleanupResult) bool {
 	for _, result := range results {
 		if result.Status == "failed" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasSkippedCleanup(results []CleanupResult) bool {
+	for _, result := range results {
+		if result.Status == "skipped" {
 			return true
 		}
 	}
