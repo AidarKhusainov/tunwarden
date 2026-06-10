@@ -61,6 +61,9 @@ func runRecoverCommand(ctx context.Context, args []string, stdout io.Writer, opt
 	if result.HasFailures() {
 		return exitError{code: 1, err: errors.New("recover completed with cleanup failures")}
 	}
+	if result.HasIncompleteCleanup() {
+		return exitError{code: 1, err: errors.New("recover completed with incomplete cleanup")}
+	}
 	return nil
 }
 
@@ -146,6 +149,9 @@ func recoverExecuteJSON(result recovery.ExecuteResult) map[string]any {
 	if result.HasFailures() {
 		status = "fail"
 		errorsOut = append(errorsOut, "recover completed with cleanup failures")
+	} else if result.HasIncompleteCleanup() {
+		status = "warn"
+		errorsOut = append(errorsOut, "recover completed with incomplete cleanup")
 	}
 	return map[string]any{
 		"schema_version": "v1",
