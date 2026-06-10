@@ -90,9 +90,37 @@ func TestIPRouteAndRuleMappingUsesAddAndTunWardenTableID(t *testing.T) {
 
 	want := [][]string{
 		{"ip", "-4", "route", "add", "default", "dev", "tunwarden0", "table", "51820"},
+		{"ip", "-4", "route", "flush", "cache"},
 		{"ip", "-4", "route", "add", "203.0.113.10/32", "via", "192.0.2.1", "dev", "eth0", "table", "main"},
+		{"ip", "-4", "route", "flush", "cache"},
 		{"ip", "-4", "rule", "add", "priority", "51819", "to", "203.0.113.10/32", "lookup", "main"},
+		{"ip", "-4", "route", "flush", "cache"},
 		{"ip", "-4", "rule", "add", "priority", "51820", "from", "all", "lookup", "51820"},
+		{"ip", "-4", "route", "flush", "cache"},
+	}
+	if !reflect.DeepEqual(runner.commands, want) {
+		t.Fatalf("unexpected commands:\nwant %#v\n got %#v", want, runner.commands)
+	}
+}
+
+func TestIPRouteAndRuleRollbackFlushesRouteCache(t *testing.T) {
+	runner := &recordingRunner{}
+	routes := IPRouteExecutor{Runner: runner}
+	rules := IPPolicyRuleExecutor{Runner: runner}
+	plan := executorPlanForTest()
+
+	if err := rules.Rollback(context.Background(), plan.PolicyRules[1]); err != nil {
+		t.Fatalf("rollback rule: %v", err)
+	}
+	if err := routes.Rollback(context.Background(), plan.Routes[0]); err != nil {
+		t.Fatalf("rollback route: %v", err)
+	}
+
+	want := [][]string{
+		{"ip", "-4", "rule", "del", "priority", "51820", "from", "all", "lookup", "51820"},
+		{"ip", "-4", "route", "flush", "cache"},
+		{"ip", "-4", "route", "del", "default", "dev", "tunwarden0", "table", "51820"},
+		{"ip", "-4", "route", "flush", "cache"},
 	}
 	if !reflect.DeepEqual(runner.commands, want) {
 		t.Fatalf("unexpected commands:\nwant %#v\n got %#v", want, runner.commands)
