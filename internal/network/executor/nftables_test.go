@@ -33,9 +33,9 @@ func TestNftablesExecutorApplyVerifyAndRollbackCommands(t *testing.T) {
 	want := [][]string{
 		{"nft", "add", "table", "inet", "tunwarden"},
 		{"nft", "add", "chain", "inet", "tunwarden", "output", "{", "type", "filter", "hook", "output", "priority", "0", ";", "policy", "accept", ";", "}"},
-		{"nft", "add", "rule", "inet", "tunwarden", "output", "ip", "daddr", "203.0.113.10", "counter", "comment", `"` + planner.FirewallServerBypassOwner + `"`, "accept"},
-		{"nft", "add", "rule", "inet", "tunwarden", "output", "oifname", "tunwarden0", "counter", "comment", `"` + planner.FirewallTunEgressOwner + `"`, "accept"},
-		{"nft", "add", "rule", "inet", "tunwarden", "output", "oifname", "!=", "tunwarden0", "counter", "comment", `"` + planner.FirewallKillSwitchOwner + `"`, "reject"},
+		{"nft", "add", "rule", "inet", "tunwarden", "output", "ip", "daddr", "203.0.113.10", "counter", "accept", "comment", `"` + planner.FirewallServerBypassOwner + `"`},
+		{"nft", "add", "rule", "inet", "tunwarden", "output", "oifname", "tunwarden0", "counter", "accept", "comment", `"` + planner.FirewallTunEgressOwner + `"`},
+		{"nft", "add", "rule", "inet", "tunwarden", "output", "oifname", "!=", "tunwarden0", "counter", "reject", "comment", `"` + planner.FirewallKillSwitchOwner + `"`},
 		{"nft", "list", "table", "inet", "tunwarden"},
 		{"nft", "delete", "table", "inet", "tunwarden"},
 	}
@@ -131,10 +131,10 @@ func TestNftablesExecutorVerifyMatchesRuleFieldsOnSameLine(t *testing.T) {
 	output := `table inet tunwarden {
 	chain output {
 		type filter hook output priority 0; policy accept;
-		oifname != "tunwarden0" counter comment "other-project" reject
-		ip daddr 203.0.113.10 counter comment "tunwarden:firewall:server-bypass" accept
-		oifname "tunwarden0" counter comment "tunwarden:firewall:tun-egress" accept
-		meta l4proto tcp counter comment "tunwarden:firewall:kill-switch" reject
+		oifname != "tunwarden0" counter reject comment "other-project"
+		ip daddr 203.0.113.10 counter accept comment "tunwarden:firewall:server-bypass"
+		oifname "tunwarden0" counter accept comment "tunwarden:firewall:tun-egress"
+		meta l4proto tcp counter reject comment "tunwarden:firewall:kill-switch"
 	}
 }`
 	err := (NftablesExecutor{Runner: &recordingRunner{stdout: output}}).Verify(context.Background(), plan)
@@ -172,9 +172,9 @@ func nftablesListOutputForTest() string {
 	return `table inet tunwarden {
 	chain output {
 		type filter hook output priority 0; policy accept;
-		ip daddr 203.0.113.10 counter comment "tunwarden:firewall:server-bypass" accept
-		oifname "tunwarden0" counter comment "tunwarden:firewall:tun-egress" accept
-		oifname != "tunwarden0" counter comment "tunwarden:firewall:kill-switch" reject
+		ip daddr 203.0.113.10 counter accept comment "tunwarden:firewall:server-bypass"
+		oifname "tunwarden0" counter accept comment "tunwarden:firewall:tun-egress"
+		oifname != "tunwarden0" counter reject comment "tunwarden:firewall:kill-switch"
 	}
 }`
 }
