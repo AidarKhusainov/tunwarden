@@ -88,6 +88,30 @@ func TestServerExposesDoctorOverUnixSocket(t *testing.T) {
 	}
 }
 
+func TestServerDoesNotStartupScanBeforeLock(t *testing.T) {
+	runtimeDir := t.TempDir()
+	lockPath := api.LockPath(runtimeDir)
+	if err := os.WriteFile(lockPath, []byte("owned by another daemon"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var scanned bool
+
+	err := (Server{
+		RuntimeDir: runtimeDir,
+		startupScan: func(context.Context) recovery.PlanResult {
+			scanned = true
+			return recovery.PlanResult{}
+		},
+	}).Run(context.Background())
+
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected lock acquisition error, got %v", err)
+	}
+	if scanned {
+		t.Fatal("startup scan must not run before daemon lock acquisition")
+	}
+}
+
 func TestServerStartupScanReportsCleanState(t *testing.T) {
 	runtimeDir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -189,6 +213,62 @@ func TestServerStartupScanReportsPendingTransaction(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected pending transaction startup candidate, got %#v", status.StartupScan.Candidates)
+	}
+}
+
+func TestServerRefreshesStartupScanAfterRecoveryExecute(t *testing.T) {
+	runtimeDir := t.TempDir()
+	generatedDir := filepath.Join(runtimeDir, "generated")
+	if err := os.MkdirAll(generatedDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- (Server{RuntimeDir: runtimeDir}).Run(ctx) }()
+
+	before := waitForStatus(t, runtimeDir)
+	if before.StartupScan == nil || len(before.StartupScan.Candidates) == 0 {
+		cancel()
+		<-done
+		t.Fatalf("expected stale generated runtime startup candidate before recover, got %#v", before.StartupScan)
+	}
+
+	recoveryClient := client.RecoveryClient{SocketPath: filepath.Join(runtimeDir, api.SocketName), DialTimeout: time.Second, OperationTimeout: 5 * time.Second}
+	result, err := recoveryClient.Recover(context.Background())
+	if err != nil {
+		cancel()
+		<-done
+		t.Fatalf("recover execute failed: %v", err)
+	}
+	var recoveredGenerated bool
+	for _, item := range result.Results {
+		if item.Candidate.Kind == "generated-runtime-configs" && item.Status == "recovered" {
+			recoveredGenerated = true
+			break
+		}
+	}
+	if !recoveredGenerated {
+		cancel()
+		<-done
+		t.Fatalf("expected generated runtime configs to be recovered, got %#v", result.Results)
+	}
+
+	after := waitForStatus(t, runtimeDir)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("server shutdown failed: %v", err)
+	}
+	if after.StartupScan == nil {
+		t.Fatal("expected startup scan in daemon status after recovery")
+	}
+	for _, candidate := range after.StartupScan.Candidates {
+		if candidate.Kind == "generated-runtime-configs" || candidate.Target == generatedDir {
+			t.Fatalf("startup scan still reports recovered generated runtime state: %#v", after.StartupScan)
+		}
+	}
+	if after.StartupScan.SuggestedAction == "tunwarden recover" {
+		t.Fatalf("startup scan should not suggest recover after successful cleanup: %#v", after.StartupScan)
 	}
 }
 
