@@ -46,6 +46,7 @@ CI currently checks:
 test -z "$(gofmt -l .)"
 go test ./...
 go vet ./...
+govulncheck ./...
 bash scripts/build-deb.sh
 dpkg-deb --info dist/tunwarden_0.0.0~dev_amd64.deb
 dpkg-deb --contents dist/tunwarden_0.0.0~dev_amd64.deb
@@ -60,6 +61,8 @@ man -l /usr/share/man/man8/tunwardend.8.gz >/dev/null
 sudo apt install -y --reinstall ./dist/tunwarden_0.0.0~dev_amd64.deb
 sudo apt remove -y tunwarden
 ```
+
+Release workflow checks are defined in [Release workflow](./release.md). The release workflow adds tagged artifact validation, checksum generation, and GitHub Release publication on top of the regular CI and package gates.
 
 CI uses Go 1.26.4. The package job intentionally runs on Ubuntu 22.04 to keep the dynamically linked package binary baseline aligned with the declared `libc6 (>= 2.34)` dependency. Local development should use the same Go toolchain unless a PR explicitly updates `go.mod`, CI, and this guide together.
 
@@ -93,6 +96,7 @@ Required mapping:
 | Output redaction or secret handling | `docs/state-and-security.md` |
 | systemd unit or daemon privilege behavior | `docs/state-and-security.md`, `docs/architecture.md` |
 | Debian package layout or lifecycle | `docs/debian-package.md`, `README.md`, `docs/README.md` |
+| Release workflow, release artifact naming, or release validation | `docs/release.md`, `docs/README.md`, `docs/development.md` |
 | TUN, route, DNS, firewall, NetworkManager, suspend/resume behavior | `docs/networking-reliability.md` |
 | Profile, subscription, parser, validation behavior | `docs/subscriptions-and-profiles.md` |
 | Development phase or milestone change | `docs/roadmap.md` |
@@ -125,6 +129,15 @@ Packaging PR checklist:
 - [ ] The package does not ship `/usr/local`, `/run`, `/var/run`, user-home, or generated runtime config paths.
 - [ ] Install, same-version reinstall, man page, and remove behavior are validated in a container or VM.
 - [ ] Full systemd behavior is validated in a VM or systemd-capable host when the PR claims service lifecycle acceptance.
+
+Release PR checklist:
+
+- [ ] Version tag mapping is documented.
+- [ ] Release artifacts include binary, Debian package, and checksums.
+- [ ] Release notes include tag and commit SHA.
+- [ ] Build/test jobs use read-only permissions.
+- [ ] Release publication grants only the write permission needed for GitHub Release assets.
+- [ ] Third-party Actions are pinned to a full-length commit SHA, or tag pinning is explicitly justified in `docs/release.md`.
 
 ## 6. Testing strategy
 
