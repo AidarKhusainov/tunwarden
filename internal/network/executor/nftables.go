@@ -126,7 +126,7 @@ func (e NftablesExecutor) addRule(ctx context.Context, family, table string, rul
 	}
 	args := []string{"add", "rule", family, table, rule.Chain}
 	args = append(args, fields...)
-	args = append(args, "counter", "comment", rule.Ownership, rule.Verdict)
+	args = append(args, "counter", rule.Verdict, "comment", nftStringLiteral(rule.Ownership))
 	if err := runCommand(ctx, e.Runner, "nft", args...); err != nil {
 		return fmt.Errorf("create nftables rule %s %s %s: %w", family, table, rule.RollbackKey, err)
 	}
@@ -201,7 +201,7 @@ func nftOutputContainsRule(output string, rule planner.TunFirewallRulePlan) bool
 
 func nftRuleFields(rule planner.TunFirewallRulePlan) []string {
 	fields := nftExpressionFields(rule.Expr)
-	fields = append(fields, "counter", "comment", rule.Ownership, rule.Verdict)
+	fields = append(fields, "counter", rule.Verdict, "comment", rule.Ownership)
 	return fields
 }
 
@@ -228,6 +228,11 @@ func nftExpressionFields(expr string) []string {
 		fields = append(fields, strings.Trim(field, "\""))
 	}
 	return fields
+}
+
+func nftStringLiteral(value string) string {
+	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(value)
+	return `"` + escaped + `"`
 }
 
 func firewallFamilyTable(plan planner.TunFirewallPlan) (string, string) {

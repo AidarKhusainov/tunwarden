@@ -8,21 +8,28 @@ import (
 	"github.com/AidarKhusainov/tunwarden/internal/network/planner"
 )
 
-func TestVerifyTunConnectivityChecksRouteAndDial(t *testing.T) {
+func TestVerifyTunConnectivityChecksRouteDialAndDNS(t *testing.T) {
 	originalRouteLookup := lookupTunRouteForProbe
 	originalDial := dialTunProbeTarget
+	originalResolve := resolveTunDNSName
 	defer func() {
 		lookupTunRouteForProbe = originalRouteLookup
 		dialTunProbeTarget = originalDial
+		resolveTunDNSName = originalResolve
 	}()
 
-	var routeHost string
-	var routeDevice string
+	var routeLookups []struct {
+		host   string
+		device string
+	}
 	var dialHost string
 	var dialPort uint16
+	var resolvedName string
 	lookupTunRouteForProbe = func(_ context.Context, host, tunDevice string) error {
-		routeHost = host
-		routeDevice = tunDevice
+		routeLookups = append(routeLookups, struct {
+			host   string
+			device string
+		}{host: host, device: tunDevice})
 		return nil
 	}
 	dialTunProbeTarget = func(_ context.Context, host string, port uint16) error {
@@ -30,25 +37,40 @@ func TestVerifyTunConnectivityChecksRouteAndDial(t *testing.T) {
 		dialPort = port
 		return nil
 	}
+	resolveTunDNSName = func(_ context.Context, name string) (string, error) {
+		resolvedName = name
+		return "93.184.216.34", nil
+	}
 
 	err := verifyTunConnectivity(context.Background(), planner.TunPlan{TunDevice: planner.TunDevicePlan{Name: "tunwarden0"}}, tunCoreRuntimePlan{})
 	if err != nil {
 		t.Fatalf("expected connectivity probe to pass, got %v", err)
 	}
-	if routeHost != defaultTunProbeHost || routeDevice != "tunwarden0" {
-		t.Fatalf("unexpected route lookup target: host=%q device=%q", routeHost, routeDevice)
+	if len(routeLookups) != 2 {
+		t.Fatalf("expected route lookup for probe IP and DNS result, got %#v", routeLookups)
+	}
+	if routeLookups[0].host != defaultTunProbeHost || routeLookups[0].device != "tunwarden0" {
+		t.Fatalf("unexpected route lookup target: %#v", routeLookups[0])
+	}
+	if routeLookups[1].host != "93.184.216.34" || routeLookups[1].device != "tunwarden0" {
+		t.Fatalf("unexpected DNS-result route lookup target: %#v", routeLookups[1])
 	}
 	if dialHost != defaultTunProbeHost || dialPort != defaultTunProbePort {
 		t.Fatalf("unexpected dial target: host=%q port=%d", dialHost, dialPort)
+	}
+	if resolvedName != defaultTunDNSProbeName {
+		t.Fatalf("unexpected DNS probe name: %q", resolvedName)
 	}
 }
 
 func TestVerifyTunConnectivityFailsWhenRouteDoesNotUseTun(t *testing.T) {
 	originalRouteLookup := lookupTunRouteForProbe
 	originalDial := dialTunProbeTarget
+	originalResolve := resolveTunDNSName
 	defer func() {
 		lookupTunRouteForProbe = originalRouteLookup
 		dialTunProbeTarget = originalDial
+		resolveTunDNSName = originalResolve
 	}()
 
 	lookupTunRouteForProbe = func(context.Context, string, string) error {
@@ -57,6 +79,10 @@ func TestVerifyTunConnectivityFailsWhenRouteDoesNotUseTun(t *testing.T) {
 	dialTunProbeTarget = func(context.Context, string, uint16) error {
 		t.Fatal("dial must not run when route lookup fails")
 		return nil
+	}
+	resolveTunDNSName = func(context.Context, string) (string, error) {
+		t.Fatal("DNS probe must not run when route lookup fails")
+		return "", nil
 	}
 
 	err := verifyTunConnectivity(context.Background(), planner.TunPlan{TunDevice: planner.TunDevicePlan{Name: "tunwarden0"}}, tunCoreRuntimePlan{})
@@ -68,17 +94,73 @@ func TestVerifyTunConnectivityFailsWhenRouteDoesNotUseTun(t *testing.T) {
 func TestVerifyTunConnectivityFailsWhenDialFails(t *testing.T) {
 	originalRouteLookup := lookupTunRouteForProbe
 	originalDial := dialTunProbeTarget
+	originalResolve := resolveTunDNSName
 	defer func() {
 		lookupTunRouteForProbe = originalRouteLookup
 		dialTunProbeTarget = originalDial
+		resolveTunDNSName = originalResolve
 	}()
 
 	lookupTunRouteForProbe = func(context.Context, string, string) error { return nil }
 	dialTunProbeTarget = func(context.Context, string, uint16) error { return errors.New("dial failed") }
+	resolveTunDNSName = func(context.Context, string) (string, error) {
+		t.Fatal("DNS probe must not run when TCP probe fails")
+		return "", nil
+	}
 
 	err := verifyTunConnectivity(context.Background(), planner.TunPlan{TunDevice: planner.TunDevicePlan{Name: "tunwarden0"}}, tunCoreRuntimePlan{})
 	if err == nil {
 		t.Fatal("expected connectivity probe to fail")
+	}
+}
+
+func TestVerifyTunConnectivityFailsWhenDNSFails(t *testing.T) {
+	originalRouteLookup := lookupTunRouteForProbe
+	originalDial := dialTunProbeTarget
+	originalResolve := resolveTunDNSName
+	defer func() {
+		lookupTunRouteForProbe = originalRouteLookup
+		dialTunProbeTarget = originalDial
+		resolveTunDNSName = originalResolve
+	}()
+
+	lookupTunRouteForProbe = func(context.Context, string, string) error { return nil }
+	dialTunProbeTarget = func(context.Context, string, uint16) error { return nil }
+	resolveTunDNSName = func(context.Context, string) (string, error) { return "", errors.New("dns timeout") }
+
+	err := verifyTunConnectivity(context.Background(), planner.TunPlan{TunDevice: planner.TunDevicePlan{Name: "tunwarden0"}}, tunCoreRuntimePlan{})
+	if err == nil {
+		t.Fatal("expected connectivity probe to fail")
+	}
+}
+
+func TestVerifyTunConnectivityFailsWhenDNSResultDoesNotRouteThroughTun(t *testing.T) {
+	originalRouteLookup := lookupTunRouteForProbe
+	originalDial := dialTunProbeTarget
+	originalResolve := resolveTunDNSName
+	defer func() {
+		lookupTunRouteForProbe = originalRouteLookup
+		dialTunProbeTarget = originalDial
+		resolveTunDNSName = originalResolve
+	}()
+
+	lookupCalls := 0
+	lookupTunRouteForProbe = func(_ context.Context, host, _ string) error {
+		lookupCalls++
+		if host == "93.184.216.34" {
+			return errors.New("route lookup did not use TUN device")
+		}
+		return nil
+	}
+	dialTunProbeTarget = func(context.Context, string, uint16) error { return nil }
+	resolveTunDNSName = func(context.Context, string) (string, error) { return "93.184.216.34", nil }
+
+	err := verifyTunConnectivity(context.Background(), planner.TunPlan{TunDevice: planner.TunDevicePlan{Name: "tunwarden0"}}, tunCoreRuntimePlan{})
+	if err == nil {
+		t.Fatal("expected connectivity probe to fail")
+	}
+	if lookupCalls != 2 {
+		t.Fatalf("expected two route lookups, got %d", lookupCalls)
 	}
 }
 

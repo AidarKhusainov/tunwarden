@@ -268,6 +268,9 @@ func (e IPRouteExecutor) Add(ctx context.Context, plan planner.TunRoutePlan) (St
 	if err := runCommand(ctx, e.Runner, "ip", args...); err != nil {
 		return Step{}, fmt.Errorf("add route %s table %s: %w", plan.Destination, plan.Table, err)
 	}
+	if err := flushIPv4RouteCache(ctx, e.Runner); err != nil {
+		return Step{}, fmt.Errorf("flush IPv4 route cache after add route %s table %s: %w", plan.Destination, plan.Table, err)
+	}
 	return Step{Kind: "route", Target: routeTarget(plan), Description: plan.Reason, Owner: OwnerRoute}, nil
 }
 
@@ -292,6 +295,9 @@ func (e IPRouteExecutor) Rollback(ctx context.Context, plan planner.TunRoutePlan
 	if err := runCommand(ctx, e.Runner, "ip", args...); err != nil && !resourceMissing(err) {
 		return fmt.Errorf("delete route %s table %s: %w", plan.Destination, plan.Table, err)
 	}
+	if err := flushIPv4RouteCache(ctx, e.Runner); err != nil {
+		return fmt.Errorf("flush IPv4 route cache after delete route %s table %s: %w", plan.Destination, plan.Table, err)
+	}
 	return nil
 }
 
@@ -304,6 +310,9 @@ func (e IPPolicyRuleExecutor) Add(ctx context.Context, plan planner.TunPolicyRul
 	args := ruleArgs("add", plan)
 	if err := runCommand(ctx, e.Runner, "ip", args...); err != nil {
 		return Step{}, fmt.Errorf("add policy rule priority %d: %w", plan.Priority, err)
+	}
+	if err := flushIPv4RouteCache(ctx, e.Runner); err != nil {
+		return Step{}, fmt.Errorf("flush IPv4 route cache after add policy rule priority %d: %w", plan.Priority, err)
 	}
 	return Step{Kind: "policy-rule", Target: ruleTarget(plan), Description: plan.Reason, Owner: OwnerPolicyRule}, nil
 }
@@ -328,6 +337,9 @@ func (e IPPolicyRuleExecutor) Rollback(ctx context.Context, plan planner.TunPoli
 	args := ruleArgs("del", plan)
 	if err := runCommand(ctx, e.Runner, "ip", args...); err != nil && !resourceMissing(err) {
 		return fmt.Errorf("delete policy rule priority %d: %w", plan.Priority, err)
+	}
+	if err := flushIPv4RouteCache(ctx, e.Runner); err != nil {
+		return fmt.Errorf("flush IPv4 route cache after delete policy rule priority %d: %w", plan.Priority, err)
 	}
 	return nil
 }
@@ -369,6 +381,10 @@ func (e commandError) Error() string {
 		parts = append(parts, e.err.Error())
 	}
 	return strings.Join(parts, ": ")
+}
+
+func flushIPv4RouteCache(ctx context.Context, runner CommandRunner) error {
+	return runCommand(ctx, runner, "ip", "-4", "route", "flush", "cache")
 }
 
 func routeArgs(op string, plan planner.TunRoutePlan) []string {

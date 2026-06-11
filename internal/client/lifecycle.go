@@ -14,6 +14,8 @@ import (
 	"github.com/AidarKhusainov/tunwarden/internal/api"
 )
 
+const defaultLifecycleTimeout = 30 * time.Second
+
 type LifecycleClient struct {
 	SocketPath string
 	Timeout    time.Duration
@@ -34,7 +36,7 @@ func (c LifecycleClient) do(ctx context.Context, operation, path string, payload
 	}
 	timeout := c.Timeout
 	if timeout == 0 {
-		timeout = 750 * time.Millisecond
+		timeout = defaultLifecycleTimeout
 	}
 
 	var body io.Reader

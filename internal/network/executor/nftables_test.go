@@ -33,14 +33,29 @@ func TestNftablesExecutorApplyVerifyAndRollbackCommands(t *testing.T) {
 	want := [][]string{
 		{"nft", "add", "table", "inet", "tunwarden"},
 		{"nft", "add", "chain", "inet", "tunwarden", "output", "{", "type", "filter", "hook", "output", "priority", "0", ";", "policy", "accept", ";", "}"},
-		{"nft", "add", "rule", "inet", "tunwarden", "output", "ip", "daddr", "203.0.113.10", "counter", "comment", planner.FirewallServerBypassOwner, "accept"},
-		{"nft", "add", "rule", "inet", "tunwarden", "output", "oifname", "tunwarden0", "counter", "comment", planner.FirewallTunEgressOwner, "accept"},
-		{"nft", "add", "rule", "inet", "tunwarden", "output", "oifname", "!=", "tunwarden0", "counter", "comment", planner.FirewallKillSwitchOwner, "reject"},
+		{"nft", "add", "rule", "inet", "tunwarden", "output", "ip", "daddr", "203.0.113.10", "counter", "accept", "comment", `"` + planner.FirewallServerBypassOwner + `"`},
+		{"nft", "add", "rule", "inet", "tunwarden", "output", "oifname", "lo", "counter", "accept", "comment", `"` + planner.FirewallLoopbackOwner + `"`},
+		{"nft", "add", "rule", "inet", "tunwarden", "output", "oifname", "tunwarden0", "counter", "accept", "comment", `"` + planner.FirewallTunEgressOwner + `"`},
+		{"nft", "add", "rule", "inet", "tunwarden", "output", "oifname", "!=", "tunwarden0", "counter", "reject", "comment", `"` + planner.FirewallKillSwitchOwner + `"`},
 		{"nft", "list", "table", "inet", "tunwarden"},
 		{"nft", "delete", "table", "inet", "tunwarden"},
 	}
 	if !reflect.DeepEqual(runner.commands, want) {
 		t.Fatalf("unexpected commands:\nwant %#v\n got %#v", want, runner.commands)
+	}
+}
+
+func TestNftStringLiteralQuotesAndEscapesForNftCLI(t *testing.T) {
+	tests := map[string]string{
+		`tunwarden:firewall:server-bypass`:      `"tunwarden:firewall:server-bypass"`,
+		`tunwarden:firewall:owner "quoted"`:     `"tunwarden:firewall:owner \"quoted\""`,
+		`tunwarden:firewall:owner\with\slashes`: `"tunwarden:firewall:owner\\with\\slashes"`,
+	}
+
+	for input, want := range tests {
+		if got := nftStringLiteral(input); got != want {
+			t.Fatalf("nftStringLiteral(%q) = %q, want %q", input, got, want)
+		}
 	}
 }
 
@@ -117,10 +132,11 @@ func TestNftablesExecutorVerifyMatchesRuleFieldsOnSameLine(t *testing.T) {
 	output := `table inet tunwarden {
 	chain output {
 		type filter hook output priority 0; policy accept;
-		oifname != "tunwarden0" counter comment "other-project" reject
-		ip daddr 203.0.113.10 counter comment "tunwarden:firewall:server-bypass" accept
-		oifname "tunwarden0" counter comment "tunwarden:firewall:tun-egress" accept
-		meta l4proto tcp counter comment "tunwarden:firewall:kill-switch" reject
+		oifname != "tunwarden0" counter reject comment "other-project"
+		ip daddr 203.0.113.10 counter accept comment "tunwarden:firewall:server-bypass"
+		oifname "lo" counter accept comment "tunwarden:firewall:loopback"
+		oifname "tunwarden0" counter accept comment "tunwarden:firewall:tun-egress"
+		meta l4proto tcp counter reject comment "tunwarden:firewall:kill-switch"
 	}
 }`
 	err := (NftablesExecutor{Runner: &recordingRunner{stdout: output}}).Verify(context.Background(), plan)
@@ -145,6 +161,7 @@ func firewallPlanForTest() planner.TunFirewallPlan {
 		}},
 		Rules: []planner.TunFirewallRulePlan{
 			{Chain: planner.FirewallOutputChain, Expr: "ip daddr 203.0.113.10", Verdict: planner.FirewallVerdictAccept, Action: planner.FirewallActionAdd, Ownership: planner.FirewallServerBypassOwner, RollbackKey: planner.FirewallServerBypassKey},
+			{Chain: planner.FirewallOutputChain, Expr: "oifname \"lo\"", Verdict: planner.FirewallVerdictAccept, Action: planner.FirewallActionAdd, Ownership: planner.FirewallLoopbackOwner, RollbackKey: planner.FirewallLoopbackKey},
 			{Chain: planner.FirewallOutputChain, Expr: "oifname \"tunwarden0\"", Verdict: planner.FirewallVerdictAccept, Action: planner.FirewallActionAdd, Ownership: planner.FirewallTunEgressOwner, RollbackKey: planner.FirewallTunEgressKey},
 			{Chain: planner.FirewallOutputChain, Expr: "oifname != \"tunwarden0\"", Verdict: planner.FirewallVerdictReject, Action: planner.FirewallActionAdd, Ownership: planner.FirewallKillSwitchOwner, RollbackKey: planner.FirewallKillSwitchKey},
 		},
@@ -158,9 +175,10 @@ func nftablesListOutputForTest() string {
 	return `table inet tunwarden {
 	chain output {
 		type filter hook output priority 0; policy accept;
-		ip daddr 203.0.113.10 counter comment "tunwarden:firewall:server-bypass" accept
-		oifname "tunwarden0" counter comment "tunwarden:firewall:tun-egress" accept
-		oifname != "tunwarden0" counter comment "tunwarden:firewall:kill-switch" reject
+		ip daddr 203.0.113.10 counter accept comment "tunwarden:firewall:server-bypass"
+		oifname "lo" counter accept comment "tunwarden:firewall:loopback"
+		oifname "tunwarden0" counter accept comment "tunwarden:firewall:tun-egress"
+		oifname != "tunwarden0" counter reject comment "tunwarden:firewall:kill-switch"
 	}
 }`
 }

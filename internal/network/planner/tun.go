@@ -16,8 +16,8 @@ const (
 	DefaultTunMTU       = 1500
 	TunRoutingTable     = "tunwarden"
 	TunRoutingTableID   = 51820
-	TunRulePriority     = 51820
-	ServerRulePriority  = 51819
+	TunRulePriority     = 10000
+	ServerRulePriority  = 9999
 	MainRoutingTable    = "main"
 	IPv4DefaultRoute    = "default"
 	IPv4DefaultSelector = "from all"
@@ -44,9 +44,11 @@ const (
 	FirewallVerdictReject      = "reject"
 	FirewallVerdictDrop        = "drop"
 	FirewallServerBypassOwner  = "tunwarden:firewall:server-bypass"
+	FirewallLoopbackOwner      = "tunwarden:firewall:loopback"
 	FirewallTunEgressOwner     = "tunwarden:firewall:tun-egress"
 	FirewallKillSwitchOwner    = "tunwarden:firewall:kill-switch"
 	FirewallServerBypassKey    = "inet/tunwarden/output/server-bypass"
+	FirewallLoopbackKey        = "inet/tunwarden/output/loopback"
 	FirewallTunEgressKey       = "inet/tunwarden/output/tun-egress"
 	FirewallKillSwitchKey      = "inet/tunwarden/output/kill-switch"
 
@@ -181,7 +183,7 @@ func PlanTunWithOptions(p profile.Profile, s snapshot.Snapshot, opts TunOptions)
 		Selector: IPv4DefaultSelector,
 		Table:    TunRoutingTable,
 		Action:   "add",
-		Reason:   "send default IPv4 traffic through the TunWarden routing table",
+		Reason:   "send default IPv4 traffic through the TunWarden routing table before the kernel main table rule",
 	}}
 	if serverIP != "" {
 		routes = append(routes, serverBypass)
@@ -191,7 +193,7 @@ func PlanTunWithOptions(p profile.Profile, s snapshot.Snapshot, opts TunOptions)
 			Selector: "to " + serverIP + "/32",
 			Table:    MainRoutingTable,
 			Action:   "add",
-			Reason:   "keep VPN server traffic on the current uplink before full-tunnel policy routing",
+			Reason:   "keep VPN server traffic on the current uplink before the full-tunnel policy rule",
 		}}, policyRules...)
 	}
 
@@ -316,7 +318,7 @@ func firewallRuleAction(tableAction string) string {
 }
 
 func firewallRules(policy string, device TunDevicePlan, serverIP, action string) []TunFirewallRulePlan {
-	rules := []TunFirewallRulePlan{serverBypassFirewallRule(serverIP, action), tunEgressFirewallRule(device, action)}
+	rules := []TunFirewallRulePlan{serverBypassFirewallRule(serverIP, action), loopbackFirewallRule(action), tunEgressFirewallRule(device, action)}
 	if rule := killSwitchFirewallRule(policy, device, action); rule.Action != "" {
 		rules = append(rules, rule)
 	}
@@ -339,6 +341,18 @@ func serverBypassFirewallRule(serverIP, action string) TunFirewallRulePlan {
 		rule.Reason = "VPN server bypass target is unknown; firewall bypass rule cannot be applied safely"
 	}
 	return rule
+}
+
+func loopbackFirewallRule(action string) TunFirewallRulePlan {
+	return TunFirewallRulePlan{
+		Chain:       FirewallOutputChain,
+		Expr:        `oifname "lo"`,
+		Verdict:     FirewallVerdictAccept,
+		Action:      action,
+		Reason:      "allow local loopback traffic so systemd-resolved stub DNS and local proxy IPC are not blocked by the TUN kill-switch",
+		Ownership:   FirewallLoopbackOwner,
+		RollbackKey: FirewallLoopbackKey,
+	}
 }
 
 func tunEgressFirewallRule(device TunDevicePlan, action string) TunFirewallRulePlan {
@@ -384,7 +398,7 @@ func killSwitchPlan(policy string, device TunDevicePlan) TunKillSwitchPlan {
 	plan := TunKillSwitchPlan{
 		Policy:   policy,
 		Action:   "block non-TUN traffic according to selected kill-switch policy",
-		Scope:    fmt.Sprintf("allow traffic through %s and the explicit VPN server bypass; block other non-TUN traffic according to policy", device.Name),
+		Scope:    fmt.Sprintf("allow traffic through %s, local loopback, and the explicit VPN server bypass; block other non-TUN traffic according to policy", device.Name),
 		Recovery: "recover --execute --yes must be able to remove TunWarden-owned nftables state",
 	}
 	switch policy {

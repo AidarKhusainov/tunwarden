@@ -43,6 +43,9 @@ func TestGenerateXrayTunConfigUsesPrivateSocksInbound(t *testing.T) {
 		Outbounds []struct {
 			Tag      string `json:"tag"`
 			Protocol string `json:"protocol"`
+			Settings struct {
+				Address string `json:"address"`
+			} `json:"settings"`
 		} `json:"outbounds"`
 	}
 	if err := json.Unmarshal(got, &cfg); err != nil {
@@ -57,6 +60,39 @@ func TestGenerateXrayTunConfigUsesPrivateSocksInbound(t *testing.T) {
 	}
 	if len(cfg.Outbounds) != 1 || cfg.Outbounds[0].Tag != "tunwarden-tun-proxy" || cfg.Outbounds[0].Protocol != "vless" {
 		t.Fatalf("unexpected TUN outbound: %#v", cfg.Outbounds)
+	}
+	if cfg.Outbounds[0].Settings.Address != "example.com" {
+		t.Fatalf("expected default TUN outbound address to use profile server, got %q", cfg.Outbounds[0].Settings.Address)
+	}
+}
+
+func TestGenerateXrayTunConfigCanUsePreResolvedOutboundAddress(t *testing.T) {
+	opts := DefaultXrayTunConfigOptions()
+	opts.OutboundAddressOverride = "203.0.113.10"
+	got, err := GenerateXrayTunConfig(proxyOnlyRealityProfile(), opts)
+	if err != nil {
+		t.Fatalf("generate TUN-mode Xray config: %v", err)
+	}
+	var cfg struct {
+		Outbounds []struct {
+			Settings struct {
+				Address string `json:"address"`
+			} `json:"settings"`
+			StreamSettings map[string]any `json:"streamSettings"`
+		} `json:"outbounds"`
+	}
+	if err := json.Unmarshal(got, &cfg); err != nil {
+		t.Fatalf("decode TUN-mode Xray config: %v", err)
+	}
+	if len(cfg.Outbounds) != 1 {
+		t.Fatalf("expected one TUN outbound, got %#v", cfg.Outbounds)
+	}
+	if cfg.Outbounds[0].Settings.Address != "203.0.113.10" {
+		t.Fatalf("expected pre-resolved outbound address, got %q", cfg.Outbounds[0].Settings.Address)
+	}
+	realitySettings, _ := cfg.Outbounds[0].StreamSettings["realitySettings"].(map[string]any)
+	if realitySettings["serverName"] != "www.example.com" {
+		t.Fatalf("expected Reality serverName to remain profile hostname, got %#v", realitySettings["serverName"])
 	}
 }
 
