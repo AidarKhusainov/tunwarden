@@ -75,7 +75,7 @@ What does not exist yet:
 - `go run ./cmd/tunwardend`
 - `man ./docs/man/tunwarden.1`
 - `man ./docs/man/tunwardend.8`
-- `./scripts/build-deb.sh`
+- `bash scripts/build-deb.sh`
 - `sudo apt install ./dist/tunwarden_0.0.0~dev_amd64.deb`
 - `sudo systemctl start tunwardend` after package installation or manual installation of the packaged unit and daemon binary.
 
