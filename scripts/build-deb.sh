@@ -18,6 +18,7 @@ root_dir="${out_dir}/package-root"
 config=".nfpm.tunwarden.yaml"
 version_package="github.com/AidarKhusainov/tunwarden/internal/app/cli.version"
 package_file_version="${package_version}-${package_release}"
+package="${out_dir}/tunwarden_${package_file_version}_${arch}.deb"
 
 case "${arch}" in
   amd64|arm64) ;;
@@ -43,6 +44,11 @@ fi
 if ! command -v nfpm >/dev/null 2>&1; then
   echo "nfpm is required to build the Debian package" >&2
   echo "install the pinned version from packaging/package-toolchain.env" >&2
+  exit 2
+fi
+
+if ! command -v dpkg-deb >/dev/null 2>&1; then
+  echo "dpkg-deb is required to validate the generated Debian package" >&2
   exit 2
 fi
 
@@ -81,10 +87,25 @@ sed \
 nfpm package --config "${config}" --packager deb --target "${out_dir}"
 rm -f "${config}"
 
-package="${out_dir}/tunwarden_${package_file_version}_${arch}.deb"
-if [ ! -f "${package}" ]; then
-  echo "expected package was not produced: ${package}" >&2
+mapfile -t packages < <(find "${out_dir}" -maxdepth 1 -type f -name "tunwarden_*_${arch}.deb" -print | sort)
+if [ "${#packages[@]}" -ne 1 ]; then
+  echo "expected exactly one generated Debian package, found ${#packages[@]}" >&2
+  printf '%s\n' "${packages[@]}" >&2
   exit 1
+fi
+
+built_package="${packages[0]}"
+built_version="$(dpkg-deb --field "${built_package}" Version)"
+if [ "${built_version}" != "${package_file_version}" ]; then
+  echo "generated Debian package has wrong Version metadata" >&2
+  echo "expected: ${package_file_version}" >&2
+  echo "actual:   ${built_version}" >&2
+  echo "file:     ${built_package}" >&2
+  exit 1
+fi
+
+if [ "${built_package}" != "${package}" ]; then
+  mv "${built_package}" "${package}"
 fi
 
 echo "built ${package}"
