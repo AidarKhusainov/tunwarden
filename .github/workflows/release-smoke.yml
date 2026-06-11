@@ -76,14 +76,39 @@ jobs:
           TUNWARDEN_DEB_VERSION: ${{ env.VERSION }}
           TUNWARDEN_DEB_RELEASE: ${{ env.DEB_RELEASE }}
           TUNWARDEN_DEB_ARCH: amd64
-        run: bash scripts/build-deb.sh
+        run: |
+          set -euo pipefail
+          bash scripts/build-deb.sh
+          echo "dist contents:"
+          find dist -maxdepth 2 -type f -print | sort
+          test -f ".nfpm.tunwarden.yaml" && cat .nfpm.tunwarden.yaml || true
+
+      - name: Resolve built Debian package
+        id: deb
+        run: |
+          set -euo pipefail
+          found="$(find dist -maxdepth 1 -type f -name 'tunwarden_*_amd64.deb' -print | sort)"
+          count="$(printf '%s\n' "$found" | sed '/^$/d' | wc -l)"
+          echo "found Debian packages:"
+          printf '%s\n' "$found"
+          if [ "$count" -ne 1 ]; then
+            echo "expected exactly one Debian package, found $count" >&2
+            exit 1
+          fi
+          deb_path="$found"
+          deb_name="$(basename "$deb_path")"
+          echo "deb_path=$deb_path" >> "$GITHUB_OUTPUT"
+          echo "deb_name=$deb_name" >> "$GITHUB_OUTPUT"
+          echo "package filename: $deb_name"
+          echo "package version: $(dpkg-deb --field "$deb_path" Version)"
+          test "$(dpkg-deb --field "$deb_path" Version)" = "${DEB_FILE_VERSION}"
 
       - name: Inspect package metadata
-        run: dpkg-deb --info "dist/tunwarden_${DEB_FILE_VERSION}_amd64.deb"
+        run: dpkg-deb --info "${{ steps.deb.outputs.deb_path }}"
 
       - name: Inspect package contents
         run: |
-          dpkg-deb --contents "dist/tunwarden_${DEB_FILE_VERSION}_amd64.deb" | tee /tmp/tunwarden-package-contents.txt
+          dpkg-deb --contents "${{ steps.deb.outputs.deb_path }}" | tee /tmp/tunwarden-package-contents.txt
           ! grep -E '(^| )\./usr/local(/|$)' /tmp/tunwarden-package-contents.txt
           ! grep -E '(^| )\./run(/|$)' /tmp/tunwarden-package-contents.txt
           ! grep -E '(^| )\./var/run(/|$)' /tmp/tunwarden-package-contents.txt
@@ -96,13 +121,13 @@ jobs:
       - name: Lint Debian package
         run: |
           set -o pipefail
-          lintian --fail-on error "dist/tunwarden_${DEB_FILE_VERSION}_amd64.deb" 2>&1 | tee /tmp/tunwarden-lintian.txt
+          lintian --fail-on error "${{ steps.deb.outputs.deb_path }}" 2>&1 | tee /tmp/tunwarden-lintian.txt
 
       - name: Install package locally
         run: |
           set -euo pipefail
           ip route show > /tmp/tunwarden-routes-before.txt
-          sudo apt install -y "./dist/tunwarden_${DEB_FILE_VERSION}_amd64.deb"
+          sudo apt install -y "./${{ steps.deb.outputs.deb_path }}"
           ip route show > /tmp/tunwarden-routes-after.txt
           diff -u /tmp/tunwarden-routes-before.txt /tmp/tunwarden-routes-after.txt
           dpkg -L tunwarden
@@ -119,18 +144,20 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/release
-          cp "dist/tunwarden_${DEB_FILE_VERSION}_amd64.deb" dist/release/
+          cp "${{ steps.deb.outputs.deb_path }}" dist/release/
           cd dist/release
-          sha256sum "tunwarden_${VERSION}_linux_amd64.tar.gz" "tunwarden_${DEB_FILE_VERSION}_amd64.deb" > "tunwarden_${VERSION}_checksums.txt"
+          sha256sum "tunwarden_${VERSION}_linux_amd64.tar.gz" "${{ steps.deb.outputs.deb_name }}" > "tunwarden_${VERSION}_checksums.txt"
           cat "tunwarden_${VERSION}_checksums.txt"
 
       - name: Upload smoke artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tunwarden-release-smoke-${{ env.VERSION }}
           path: |
-            dist/release/tunwarden_${{ env.VERSION }}_linux_amd64.tar.gz
-            dist/release/tunwarden_${{ env.DEB_FILE_VERSION }}_amd64.deb
-            dist/release/tunwarden_${{ env.VERSION }}_checksums.txt
+            dist/release/*.tar.gz
+            dist/release/*.deb
+            dist/release/*_checksums.txt
             /tmp/tunwarden-lintian.txt
-          if-no-files-found: error
+            /tmp/tunwarden-package-contents.txt
+          if-no-files-found: ignore
