@@ -20,7 +20,7 @@ Container validation is acceptable for package metadata, file layout, and basic 
 Build a local package with:
 
 ```bash
-./scripts/build-deb.sh
+bash scripts/build-deb.sh
 ```
 
 The default build emits:
@@ -32,7 +32,7 @@ dist/tunwarden_0.0.0~dev_amd64.deb
 Override version and architecture with:
 
 ```bash
-TUNWARDEN_VERSION=0.1.0 TUNWARDEN_DEB_ARCH=amd64 ./scripts/build-deb.sh
+TUNWARDEN_VERSION=0.1.0 TUNWARDEN_DEB_ARCH=amd64 bash scripts/build-deb.sh
 ```
 
 The package version should match future release tags without the leading `v`. Development builds use Debian-compatible `0.0.0~dev`, which sorts before a real `0.0.0` release.
@@ -44,7 +44,7 @@ The build requires:
 - `gzip`.
 - Debian package tools such as `dpkg-deb` for inspection.
 
-The build script prepares a temporary package root under `dist/package-root`. That directory is build output only and must not be committed.
+The build script prepares a temporary package root under `dist/package-root`. That directory is build output only and must not be committed. The script also renders a temporary `.nfpm.tunwarden.yaml` config in the repository root and removes it after package generation.
 
 ## Installed file layout
 
