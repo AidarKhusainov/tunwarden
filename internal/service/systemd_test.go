@@ -11,7 +11,7 @@ func TestSystemdUnitDocumentsSocketAccessModel(t *testing.T) {
 	content := readSystemdUnit(t)
 
 	for _, want := range []string{
-		"ExecStart=/usr/local/bin/tunwardend",
+		"ExecStart=/usr/bin/tunwardend",
 		"User=tunwarden",
 		"Group=tunwarden",
 		"UMask=0007",
