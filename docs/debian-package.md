@@ -15,6 +15,12 @@ Initial package validation targets:
 
 Container validation is acceptable for package metadata, file layout, and basic install/remove checks. Full service lifecycle validation, including `systemctl status tunwardend`, must be done on a VM or host where systemd is PID 1.
 
+## Package toolchain
+
+The package toolchain version contract is owned by `packaging/package-toolchain.env`.
+
+CI and local package validation must install the pinned `NFPM_VERSION` from that file instead of using `@latest`. This keeps package generation reproducible and prevents future upstream nFPM releases from changing `.deb` output without a repository change.
+
 ## Build contract
 
 Build a local package with:
@@ -40,9 +46,10 @@ The package version should match future release tags without the leading `v`. De
 The build requires:
 
 - Go with the project-pinned toolchain from `go.mod`.
-- `nfpm`.
+- The pinned `nfpm` version from `packaging/package-toolchain.env`.
 - `gzip`.
 - Debian package tools such as `dpkg-deb` for inspection.
+- `man-db` for installed man page validation.
 
 The build script prepares a temporary package root under `dist/package-root`. That directory is build output only and must not be committed. The script also renders a temporary `.nfpm.tunwarden.yaml` config in the repository root and removes it after package generation.
 
@@ -59,6 +66,8 @@ The package installs only packaged files under Debian/FHS-appropriate locations:
 /usr/share/man/man8/tunwardend.8.gz
 /usr/share/doc/tunwarden/README.md
 /usr/share/doc/tunwarden/LICENSE
+/usr/share/doc/tunwarden/copyright
+/usr/share/doc/tunwarden/changelog.Debian.gz
 /usr/share/doc/tunwarden/docs/...
 ```
 
@@ -142,6 +151,12 @@ A fresh install places packaged files, registers the unit, and creates sysusers 
 
 A same-version reinstall or package upgrade replaces packaged files. Existing daemon runtime state and `/var/lib/tunwarden` persistent daemon state are not packaged files and are not deleted by package unpack. If the service is running during an upgrade, Debian package replacement semantics apply to files on disk; full live service upgrade/restart policy is deferred until release automation and service lifecycle hardening explicitly define it.
 
+The CI package gate validates the practical same-version reinstall path with:
+
+```bash
+sudo apt install -y --reinstall ./dist/tunwarden_0.0.0~dev_amd64.deb
+```
+
 ### Remove
 
 Package removal stops `tunwardend.service` when `systemctl` is available and then removes packaged files through the package manager. It does not remove user-owned XDG profile/subscription state. It does not remove `/var/lib/tunwarden` persistent daemon state; that state is treated as administrator-visible application state.
@@ -165,8 +180,8 @@ Local install validation:
 sudo apt install ./dist/tunwarden_0.0.0~dev_amd64.deb
 dpkg -L tunwarden
 tunwarden version
-man tunwarden
-man tunwardend
+man -l /usr/share/man/man1/tunwarden.1.gz >/dev/null
+man -l /usr/share/man/man8/tunwardend.8.gz >/dev/null
 systemctl status tunwardend
 ```
 
