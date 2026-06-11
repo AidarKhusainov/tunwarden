@@ -2,7 +2,7 @@ name: tunwarden
 arch: __ARCH__
 platform: linux
 version: __VERSION__
-release: __RELEASE__
+version_schema: none
 section: net
 priority: optional
 maintainer: Aidar Khusainov <19706697+AidarKhusainov@users.noreply.github.com>
