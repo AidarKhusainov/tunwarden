@@ -17,7 +17,7 @@ vMAJOR.MINOR.PATCH
 Examples:
 
 ```text
-v0.1.1
+v0.1.2
 v0.2.0
 ```
 
@@ -25,18 +25,20 @@ The workflow intentionally has no manual tag input. To release a version, create
 
 ## Version mapping
 
-For a tag such as `v0.1.1`:
+For a tag such as `v0.1.2`:
 
 | Value | Mapping |
 | --- | --- |
-| Git tag | `v0.1.1` |
-| Binary version shown by `tunwarden version` | `0.1.1` |
-| Debian package version | `0.1.1` |
-| Binary tarball | `tunwarden_0.1.1_linux_amd64.tar.gz` |
-| Debian package | `tunwarden_0.1.1_amd64.deb` |
-| Checksums | `tunwarden_0.1.1_checksums.txt` |
+| Git tag | `v0.1.2` |
+| Binary version shown by `tunwarden version` | `0.1.2` |
+| Debian upstream version | `0.1.2` |
+| Debian revision | `1` |
+| Debian package version | `0.1.2-1` |
+| Binary tarball | `tunwarden_0.1.2_linux_amd64.tar.gz` |
+| Debian package | `tunwarden_0.1.2-1_amd64.deb` |
+| Checksums | `tunwarden_0.1.2_checksums.txt` |
 
-The GitHub Release package artifact intentionally uses the upstream version as the Debian package version. Public apt repository packaging and Debian revision policy remain out of scope for this workflow.
+The workflow models the Debian revision through nFPM's dedicated release field instead of embedding `-1` inside the upstream version string. This avoids nFPM normalizing `0.1.2-1` into a tilde-qualified version.
 
 ## Artifacts
 
@@ -78,6 +80,7 @@ Generated release notes include:
 - the exact Git tag;
 - the exact commit SHA;
 - the names of all published artifacts;
+- the local Debian package install command;
 - the package auto-start policy.
 
 Curated human release notes can be added by editing the GitHub Release after publication or by extending the workflow in a later PR.
