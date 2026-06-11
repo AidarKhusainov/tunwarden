@@ -2,7 +2,7 @@
 
 This directory contains the stable product and engineering contracts for TunWarden.
 
-Documentation must describe user-visible behavior, safety invariants, filesystem layout, API contracts, packaging behavior, and development rules. It must not be used as a progress log, implementation inventory, pending verification record, or generated status report.
+Documentation describes user-visible behavior, safety invariants, filesystem layout, API contracts, packaging behavior, and development rules. It is not a progress log, implementation inventory, pending verification record, or generated status report.
 
 ## Documentation rules
 
@@ -11,7 +11,7 @@ Documentation must describe user-visible behavior, safety invariants, filesystem
 - Do not duplicate command shapes, paths, package layout, or security rules across documents; link to the canonical owner instead.
 - Keep temporary progress, pending verification, and release evidence in issues, pull requests, release notes, or external redacted records instead of permanent reference documentation.
 - Update the canonical document in the same pull request as the behavior change.
-- Manual pages are concise installed references. They must not become a second source of truth for unstable implementation details.
+- Manual pages are concise installed references. They are not a second source of truth for unstable implementation details.
 
 ## User-facing contracts
 
@@ -49,11 +49,10 @@ Documentation must describe user-visible behavior, safety invariants, filesystem
 | --- | --- |
 | [Debian package contract](./debian-package.md) | Local `.deb` layout, package metadata, install/remove behavior, and validation gates. |
 | [Release workflow](./release.md) | GitHub Release automation, artifacts, version mapping, permissions, and safety boundary. |
+| [Release gates](./release-gates.md) | Reusable release-gate policy and evidence rules. |
 | [Roadmap](./roadmap.md) | Sequencing constraints and deferrals. It is not a repository status log. |
 | [Development guide](./development.md) | Local checks, contributor rules, documentation update rules, testing strategy, and implementation preferences. |
 | [References](./references.md) | External references and assumptions used by the project. |
-| [v0.1 proxy-only acceptance checklist](./v0.1-acceptance.md) | Manual release-gate checklist for proxy-only validation. |
-| [v0.2 safe TUN preview acceptance checklist](./v0.2-acceptance.md) | Manual release-gate checklist for safe TUN validation. |
 
 ## Manual pages
 
