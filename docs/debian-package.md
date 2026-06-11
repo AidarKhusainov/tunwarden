@@ -67,7 +67,7 @@ The package installs only packaged files under Debian/FHS-appropriate locations:
 /usr/share/doc/tunwarden/README.md
 /usr/share/doc/tunwarden/LICENSE
 /usr/share/doc/tunwarden/copyright
-/usr/share/doc/tunwarden/changelog.Debian.gz
+/usr/share/doc/tunwarden/changelog.gz
 /usr/share/doc/tunwarden/docs/...
 ```
 
@@ -92,9 +92,9 @@ Initial metadata contract:
 - priority: `optional`
 - architecture: `amd64` by default, `arm64` optional
 - maintainer: project maintainer metadata from the package manifest
-- runtime dependencies: only dependencies required by the installed package contract
+- runtime dependencies: `libc6`, `systemd`, and `ca-certificates`
 
-The package depends on `systemd` because the installed service contract uses systemd unit, sysusers, runtime/state directory management, and journald-oriented diagnostics.
+The package depends on `libc6` because the package intentionally ships dynamically linked, stripped Linux binaries to satisfy Debian package validation. The package depends on `systemd` because the installed service contract uses systemd unit, sysusers, runtime/state directory management, and journald-oriented diagnostics. The package depends on `ca-certificates` because profile/subscription and future core download flows rely on TLS trust roots.
 
 ## Service install behavior
 
@@ -106,7 +106,7 @@ Package installation:
 - installs the systemd unit;
 - installs the sysusers configuration;
 - creates the package service identities through `systemd-sysusers` when that command is available;
-- reloads the systemd manager configuration when `systemctl` is available;
+- records systemd unit state through Debian systemd helper tools when available;
 - does not start `tunwardend.service`;
 - does not enable `tunwardend.service`;
 - does not start Xray;
@@ -159,11 +159,11 @@ sudo apt install -y --reinstall ./dist/tunwarden_0.0.0~dev_amd64.deb
 
 ### Remove
 
-Package removal stops `tunwardend.service` when `systemctl` is available and then removes packaged files through the package manager. It does not remove user-owned XDG profile/subscription state. It does not remove `/var/lib/tunwarden` persistent daemon state; that state is treated as administrator-visible application state.
+Package removal stops `tunwardend.service` when Debian systemd helper tools are available and then removes packaged files through the package manager. It does not remove user-owned XDG profile/subscription state. It does not remove `/var/lib/tunwarden` persistent daemon state; that state is treated as administrator-visible application state.
 
 ### Purge
 
-If purge is requested, maintainer hooks reset failed systemd unit state when `systemctl` is available. User-owned XDG state is still not removed. Dedicated service users created by sysusers are not manually deleted by TunWarden maintainer scripts.
+If purge is requested, maintainer hooks ask Debian systemd helper tools to purge recorded unit state when available. User-owned XDG state is still not removed. Dedicated service users created by sysusers are not manually deleted by TunWarden maintainer scripts.
 
 ## Inspection and validation gates
 
