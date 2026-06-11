@@ -16,7 +16,6 @@ jobs:
     timeout-minutes: 30
     env:
       VERSION: 0.1.999
-      DEB_RELEASE: 1
       DEB_FILE_VERSION: 0.1.999-1
     steps:
       - name: Checkout
@@ -51,7 +50,7 @@ jobs:
       - name: Install package tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends file lintian man-db
+          sudo apt-get install -y --no-install-recommends dpkg file lintian man-db
           . packaging/package-toolchain.env
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@"${NFPM_VERSION}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
@@ -73,15 +72,13 @@ jobs:
       - name: Build Debian package
         env:
           TUNWARDEN_VERSION: ${{ env.VERSION }}
-          TUNWARDEN_DEB_VERSION: ${{ env.VERSION }}
-          TUNWARDEN_DEB_RELEASE: ${{ env.DEB_RELEASE }}
+          TUNWARDEN_DEB_VERSION: ${{ env.DEB_FILE_VERSION }}
           TUNWARDEN_DEB_ARCH: amd64
         run: |
           set -euo pipefail
           bash scripts/build-deb.sh
           echo "dist contents:"
           find dist -maxdepth 2 -type f -print | sort
-          test -f ".nfpm.tunwarden.yaml" && cat .nfpm.tunwarden.yaml || true
 
       - name: Resolve built Debian package
         id: deb
