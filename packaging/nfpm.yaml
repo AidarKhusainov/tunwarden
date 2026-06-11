@@ -16,6 +16,7 @@ description: |-
   enabling or starting the daemon automatically.
 
 depends:
+  - libc6 (>= 2.34)
   - systemd
   - ca-certificates
 
