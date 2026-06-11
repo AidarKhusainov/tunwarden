@@ -24,6 +24,7 @@ What exists now:
 - Read-only `doctor` command with daemon-backed diagnostics, local Linux host fallback, and explicit `doctor --core --xray <path>` local Xray binary validation.
 - Read-only `logs` command for recent `tunwardend` journald logs.
 - Read-only `recover` dry-run scan for clearly TunWarden-owned recovery candidates.
+- Local manual pages for `tunwarden(1)` and `tunwardend(8)`.
 - Initial internal models for transactions, profiles, subscriptions, read-only system snapshots, and full-tunnel TUN/route/DNS/nftables kill-switch planning.
 - Product, CLI, architecture, state/security, networking, subscription, roadmap, development, and v0.1 acceptance documentation.
 
@@ -70,9 +71,11 @@ What does not exist yet:
 - `go run ./cmd/tunwarden logs`
 - `go run ./cmd/tunwarden recover`
 - `go run ./cmd/tunwardend`
+- `man ./docs/man/tunwarden.1`
+- `man ./docs/man/tunwardend.8`
 - `sudo systemctl start tunwardend` after manually installing `packaging/systemd/tunwardend.service` and the daemon binary.
 
-Canonical command names are defined in [CLI contract](docs/cli.md). The implemented top-level import behavior is covered by the CLI contract and [v0.1 acceptance checklist](docs/v0.1-acceptance.md). The implemented manual and VLESS-import profile behavior is defined in [Profile management](docs/profile-management.md). The implemented subscription behavior is defined in [Subscription management](docs/subscription-management.md). The implemented v0.1 proxy-only plan behavior is defined in [Proxy-only plan](docs/proxy-only-plan.md). The implemented TUN snapshot input behavior is defined in [System snapshot model](docs/system-snapshot.md). The implemented TUN full-tunnel dry-run behavior is defined in [TUN full-tunnel dry-run plan](docs/tun-full-tunnel-plan.md). The implemented v0.1 daemon transport and lifecycle API are defined in [Daemon local API](docs/daemon-api.md). The implemented v0.1 `status` behavior is defined in [Status command](docs/status.md). The implemented v0.1 `doctor` checks are defined in [Doctor diagnostics](docs/doctor-diagnostics.md). The implemented v0.1 `logs` behavior is defined in [Logs command](docs/logs.md). The implemented v0.1 `recover` scan is defined in [Recovery dry-run](docs/recovery-dry-run.md).
+Canonical command names are defined in [CLI contract](docs/cli.md). The implemented top-level import behavior is covered by the CLI contract and [v0.1 acceptance checklist](docs/v0.1-acceptance.md). The implemented manual and VLESS-import profile behavior is defined in [Profile management](docs/profile-management.md). The implemented subscription behavior is defined in [Subscription management](docs/subscription-management.md). The implemented v0.1 proxy-only plan behavior is defined in [Proxy-only plan](docs/proxy-only-plan.md). The implemented TUN snapshot input behavior is defined in [System snapshot model](docs/system-snapshot.md). The implemented TUN full-tunnel dry-run behavior is defined in [TUN full-tunnel dry-run plan](docs/tun-full-tunnel-plan.md). The implemented v0.1 daemon transport and lifecycle API are defined in [Daemon local API](docs/daemon-api.md). The implemented v0.1 `status` behavior is defined in [Status command](docs/status.md). The implemented v0.1 `doctor` checks are defined in [Doctor diagnostics](docs/doctor-diagnostics.md). The implemented v0.1 `logs` behavior is defined in [Logs command](docs/logs.md). The implemented v0.1 `recover` scan is defined in [Recovery dry-run](docs/recovery-dry-run.md). Local user and administrator reference pages are available as [tunwarden(1)](docs/man/tunwarden.1) and [tunwardend(8)](docs/man/tunwardend.8); after package installation they are available through `man tunwarden` and `man tunwardend`.
 
 ## Intended lifecycle model
 
@@ -114,6 +117,8 @@ Primary documents:
 - [Roadmap](docs/roadmap.md)
 - [Development guide](docs/development.md)
 - [References](docs/references.md)
+- [tunwarden(1)](docs/man/tunwarden.1)
+- [tunwardend(8)](docs/man/tunwardend.8)
 
 ## License
 
