@@ -81,7 +81,17 @@ jobs:
           grep -F './usr/share/man/man8/tunwardend.8.gz' /tmp/tunwarden-package-contents.txt
 
       - name: Lint Debian package
-        run: lintian --fail-on error dist/tunwarden_0.0.0~dev_amd64.deb
+        run: |
+          set -o pipefail
+          lintian --fail-on error dist/tunwarden_0.0.0~dev_amd64.deb 2>&1 | tee /tmp/tunwarden-lintian.txt
+
+      - name: Upload lintian diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tunwarden-lintian-diagnostics
+          path: /tmp/tunwarden-lintian.txt
+          if-no-files-found: ignore
 
       - name: Install package locally
         run: |
