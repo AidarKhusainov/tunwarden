@@ -35,24 +35,24 @@ The default build emits:
 dist/tunwarden_0.0.0~dev-1_amd64.deb
 ```
 
-Override the binary version, Debian upstream package version, Debian release, and architecture with:
+Override the binary version, Debian package version, and architecture with:
 
 ```bash
-TUNWARDEN_VERSION=0.1.2 TUNWARDEN_DEB_VERSION=0.1.2 TUNWARDEN_DEB_RELEASE=1 TUNWARDEN_DEB_ARCH=amd64 bash scripts/build-deb.sh
+TUNWARDEN_VERSION=0.1.3 TUNWARDEN_DEB_VERSION=0.1.3-1 TUNWARDEN_DEB_ARCH=amd64 bash scripts/build-deb.sh
 ```
 
-`TUNWARDEN_VERSION` controls the upstream application version reported by `tunwarden version`. `TUNWARDEN_DEB_VERSION` controls the Debian upstream version rendered into nFPM's `version` field. `TUNWARDEN_DEB_RELEASE` controls the Debian revision rendered into nFPM's `release` field. When unset, `TUNWARDEN_DEB_VERSION` defaults to `TUNWARDEN_VERSION` and `TUNWARDEN_DEB_RELEASE` defaults to `1`.
+`TUNWARDEN_VERSION` controls the upstream application version reported by `tunwarden version`. `TUNWARDEN_DEB_VERSION` controls the full Debian package version rendered into nFPM's `version` field and validated with `dpkg-deb --field <package> Version`. When unset, `TUNWARDEN_DEB_VERSION` defaults to `${TUNWARDEN_VERSION}-1`.
 
-Development builds use Debian-compatible upstream version `0.0.0~dev`, which sorts before a real `0.0.0` release. Tagged GitHub Release automation maps `vMAJOR.MINOR.PATCH` to binary version `MAJOR.MINOR.PATCH`, Debian upstream version `MAJOR.MINOR.PATCH`, and Debian revision `1`.
+Development builds use Debian-compatible package version `0.0.0~dev-1`, which sorts before a real `0.0.0-1` release. Tagged GitHub Release automation maps `vMAJOR.MINOR.PATCH` to binary version `MAJOR.MINOR.PATCH` and Debian package version `MAJOR.MINOR.PATCH-1`.
 
-The Debian revision must be modeled through `TUNWARDEN_DEB_RELEASE` and nFPM's `release` field, not embedded into `TUNWARDEN_DEB_VERSION`. Passing a value such as `0.1.2-1` as `TUNWARDEN_DEB_VERSION` is invalid for this package contract because nFPM treats the value as the upstream version and may normalize the resulting package filename unexpectedly.
+The package manifest sets `version_schema: none` so nFPM preserves the Debian package version string exactly instead of treating the `-1` suffix as a semantic-version prerelease and normalizing it into a tilde-qualified Debian version.
 
 The build requires:
 
 - Go with the project-pinned toolchain from `go.mod`.
 - The pinned `nfpm` version from `packaging/package-toolchain.env`.
 - `gzip`.
-- Debian package tools such as `dpkg-deb` for inspection.
+- Debian package tools such as `dpkg-deb` for inspection and package metadata validation.
 - `man-db` for installed man page validation.
 
 The build script prepares a temporary package root under `dist/package-root`. That directory is build output only and must not be committed. The script also renders a temporary `.nfpm.tunwarden.yaml` config in the repository root and removes it after package generation.
@@ -71,7 +71,7 @@ The package installs only packaged files under Debian/FHS-appropriate locations:
 /usr/share/doc/tunwarden/README.md
 /usr/share/doc/tunwarden/LICENSE
 /usr/share/doc/tunwarden/copyright
-/usr/share/doc/tunwarden/changelog.gz
+/usr/share/doc/tunwarden/changelog.Debian.gz
 /usr/share/doc/tunwarden/docs/...
 ```
 
