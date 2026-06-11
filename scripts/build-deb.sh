@@ -13,7 +13,7 @@ version="${TUNWARDEN_VERSION:-0.0.0~dev}"
 arch="${TUNWARDEN_DEB_ARCH:-amd64}"
 out_dir="${TUNWARDEN_DIST_DIR:-dist}"
 root_dir="${out_dir}/package-root"
-config="${out_dir}/nfpm.tunwarden.yaml"
+config=".nfpm.tunwarden.yaml"
 
 case "${arch}" in
   amd64|arm64) ;;
@@ -72,6 +72,7 @@ sed \
   packaging/nfpm.yaml > "${config}"
 
 nfpm package --config "${config}" --packager deb --target "${out_dir}"
+rm -f "${config}"
 
 package="${out_dir}/tunwarden_${version}_${arch}.deb"
 if [ ! -f "${package}" ]; then
