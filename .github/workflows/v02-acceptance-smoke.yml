@@ -110,6 +110,71 @@ jobs:
             sudo rm -rf /run/tunwarden >/dev/null 2>&1 || true
           }
 
+          dns_diagnostics() {
+            local label="$1"
+            {
+              echo
+              echo "== DNS diagnostics: $label =="
+              resolvectl status --no-pager || true
+              resolvectl status tunwarden0 --no-pager || true
+              resolvectl query example.com || true
+              getent ahostsv4 example.com || true
+              ip -4 route get 1.1.1.1 || true
+              ip -4 rule show || true
+              ip -4 route show table 51820 || true
+            } >> "$raw_log" 2>&1
+          }
+
+          final_snapshots() {
+            local label="$1"
+            {
+              echo
+              echo "== $label snapshots =="
+              ip -d link show tunwarden0 || true
+              ip route show table all || true
+              ip rule show || true
+              sudo nft -a list ruleset || true
+              resolvectl status tunwarden0 --no-pager || true
+              pgrep -a xray || true
+              pgrep -a tun2socks || true
+              sudo find "${TUNWARDEN_RUNTIME_DIR:-/run/tunwarden}" -maxdepth 4 -xdev -print -ls || true
+            } >> "$raw_log" 2>&1
+          }
+
+          best_effort_failure_evidence() {
+            set +e
+            if [[ -x ./bin/tunwarden ]]; then
+              {
+                echo
+                echo "== failure best-effort status before cleanup =="
+                ./bin/tunwarden status || true
+                echo
+                echo "== failure best-effort doctor before cleanup =="
+                ./bin/tunwarden doctor || true
+              } >> "$raw_log" 2>&1
+            fi
+            dns_diagnostics "failure before cleanup"
+            final_snapshots "failure before cleanup"
+            if [[ -x ./bin/tunwarden ]]; then
+              {
+                echo
+                echo "== failure best-effort disconnect =="
+                ./bin/tunwarden disconnect || true
+                echo
+                echo "== failure best-effort status after disconnect =="
+                ./bin/tunwarden status || true
+                echo
+                echo "== failure best-effort doctor after disconnect =="
+                ./bin/tunwarden doctor || true
+                echo
+                echo "== failure best-effort recover after disconnect =="
+                ./bin/tunwarden recover || true
+              } >> "$raw_log" 2>&1
+            fi
+            dns_diagnostics "failure after cleanup"
+            final_snapshots "failure after cleanup"
+          }
+
           failure_handler() {
             local status=$?
             set +e
@@ -120,6 +185,7 @@ jobs:
               echo "step: ${current_step:-unknown}"
               echo "exit_code: $status"
             } >> "$raw_log"
+            best_effort_failure_evidence
             emit_sanitized_log
             exit "$status"
           }
@@ -314,6 +380,16 @@ jobs:
           pgrep -a tun2socks >> "$raw_log" 2>&1 || true
           sudo find "$TUNWARDEN_RUNTIME_DIR" -maxdepth 4 -xdev -print -ls >> "$raw_log" 2>&1 || true
 
+          dns_diagnostics "active before connectivity smoke"
+          run_logged "dns-resolvectl-query" resolvectl query example.com
+          run_logged "dns-getent-ahostsv4" getent ahostsv4 example.com
+          resolved_example_ip="$(getent ahostsv4 example.com | awk 'NR == 1 {print $1}')"
+          if [[ -z "$resolved_example_ip" ]]; then
+            echo "::error::getent did not return an IPv4 address for example.com"
+            echo "getent did not return an IPv4 address for example.com" >> "$raw_log"
+            exit 1
+          fi
+          run_logged "direct-ip-connectivity-smoke" curl --max-time 15 --fail --silent --show-error --resolve "example.com:443:$resolved_example_ip" https://example.com/
           run_logged "connectivity-smoke" curl --max-time 15 --fail --silent --show-error https://example.com/
 
           current_step="active VPN external public IP check"
@@ -341,15 +417,7 @@ jobs:
           fi
           current_step=""
 
-          echo "== final snapshots ==" >> "$raw_log"
-          ip -d link show tunwarden0 >> "$raw_log" 2>&1 || true
-          ip route show table all >> "$raw_log" 2>&1 || true
-          ip rule show >> "$raw_log" 2>&1 || true
-          sudo nft -a list ruleset >> "$raw_log" 2>&1 || true
-          resolvectl status tunwarden0 --no-pager >> "$raw_log" 2>&1 || true
-          pgrep -a xray >> "$raw_log" 2>&1 || true
-          pgrep -a tun2socks >> "$raw_log" 2>&1 || true
-          sudo find "$TUNWARDEN_RUNTIME_DIR" -maxdepth 4 -xdev -print -ls >> "$raw_log" 2>&1 || true
+          final_snapshots "final"
 
           emit_sanitized_log
 
