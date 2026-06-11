@@ -10,7 +10,6 @@ homepage: https://github.com/AidarKhusainov/tunwarden
 license: MIT
 description: |-
   Linux-first CLI and daemon foundation for Xray-compatible VPN/proxy profiles.
-
   TunWarden makes VPN and proxy lifecycle behavior explicit, inspectable, and
   recoverable. The initial Debian package installs the CLI, daemon, systemd
   unit, sysusers configuration, manual pages, and project documentation without
@@ -18,7 +17,6 @@ description: |-
 
 depends:
   - systemd
-  - init-system-helpers
   - ca-certificates
 
 scripts:
