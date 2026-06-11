@@ -1,0 +1,259 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve release version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.release-vars.outputs.tag }}
+      version: ${{ steps.release-vars.outputs.version }}
+      deb_version: ${{ steps.release-vars.outputs.deb_version }}
+    steps:
+      - name: Resolve release version
+        id: release-vars
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+$'; then
+            echo "release tag must use vMAJOR.MINOR.PATCH, got: $tag" >&2
+            exit 1
+          fi
+          deb_version="${version}-1"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "deb_version=$deb_version" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Test release commit
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+          cache: true
+
+      - name: Go fmt check
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Go test
+        run: go test ./...
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Govulncheck
+        run: |
+          . packaging/package-toolchain.env
+          go install golang.org/x/vuln/cmd/govulncheck@"${GOVULNCHECK_VERSION}"
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
+  build:
+    name: Build and validate release artifacts
+    needs:
+      - resolve
+      - test
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ needs.resolve.outputs.tag }}
+      version: ${{ needs.resolve.outputs.version }}
+      deb_version: ${{ needs.resolve.outputs.deb_version }}
+      commit_sha: ${{ steps.release-commit.outputs.commit_sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
+      - name: Resolve release commit
+        id: release-commit
+        run: |
+          set -euo pipefail
+          commit_sha="$(git rev-parse HEAD)"
+          echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+          cache: true
+
+      - name: Install package tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends file lintian man-db
+          . packaging/package-toolchain.env
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@"${NFPM_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build Linux binary tarball
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release/bin
+          version_package="github.com/AidarKhusainov/tunwarden/internal/app/cli.version"
+          ldflags="-s -w -X ${version_package}=${VERSION}"
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$ldflags" -o dist/release/bin/tunwarden ./cmd/tunwarden
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$ldflags" -o dist/release/bin/tunwardend ./cmd/tunwardend
+          (cd dist/release/bin && tar -czf "../tunwarden_${VERSION}_linux_amd64.tar.gz" tunwarden tunwardend)
+          ./dist/release/bin/tunwarden version
+          test "$(./dist/release/bin/tunwarden version)" = "tunwarden ${VERSION}"
+
+      - name: Build Debian package
+        env:
+          TUNWARDEN_VERSION: ${{ needs.resolve.outputs.version }}
+          TUNWARDEN_DEB_VERSION: ${{ needs.resolve.outputs.deb_version }}
+          TUNWARDEN_DEB_ARCH: amd64
+        run: bash scripts/build-deb.sh
+
+      - name: Inspect package metadata
+        env:
+          DEB_VERSION: ${{ needs.resolve.outputs.deb_version }}
+        run: dpkg-deb --info "dist/tunwarden_${DEB_VERSION}_amd64.deb"
+
+      - name: Inspect package contents
+        env:
+          DEB_VERSION: ${{ needs.resolve.outputs.deb_version }}
+        run: |
+          dpkg-deb --contents "dist/tunwarden_${DEB_VERSION}_amd64.deb" | tee /tmp/tunwarden-package-contents.txt
+          ! grep -E '(^| )\./usr/local(/|$)' /tmp/tunwarden-package-contents.txt
+          ! grep -E '(^| )\./run(/|$)' /tmp/tunwarden-package-contents.txt
+          ! grep -E '(^| )\./var/run(/|$)' /tmp/tunwarden-package-contents.txt
+          ! grep -E '(^| )\./home(/|$)' /tmp/tunwarden-package-contents.txt
+          grep -F './usr/bin/tunwarden' /tmp/tunwarden-package-contents.txt
+          grep -F './usr/bin/tunwardend' /tmp/tunwarden-package-contents.txt
+          grep -F './usr/share/man/man1/tunwarden.1.gz' /tmp/tunwarden-package-contents.txt
+          grep -F './usr/share/man/man8/tunwardend.8.gz' /tmp/tunwarden-package-contents.txt
+
+      - name: Lint Debian package
+        env:
+          DEB_VERSION: ${{ needs.resolve.outputs.deb_version }}
+        run: |
+          set -o pipefail
+          lintian --fail-on error "dist/tunwarden_${DEB_VERSION}_amd64.deb" 2>&1 | tee /tmp/tunwarden-lintian.txt
+
+      - name: Install package locally
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          DEB_VERSION: ${{ needs.resolve.outputs.deb_version }}
+        run: |
+          set -euo pipefail
+          ip route show > /tmp/tunwarden-routes-before.txt
+          sudo apt install -y "./dist/tunwarden_${DEB_VERSION}_amd64.deb"
+          ip route show > /tmp/tunwarden-routes-after.txt
+          diff -u /tmp/tunwarden-routes-before.txt /tmp/tunwarden-routes-after.txt
+          dpkg -L tunwarden
+          test "$(tunwarden version)" = "tunwarden ${VERSION}"
+          test -x /usr/bin/tunwarden
+          test -x /usr/bin/tunwardend
+          test -f /usr/share/man/man1/tunwarden.1.gz
+          test -f /usr/share/man/man8/tunwardend.8.gz
+          man -l /usr/share/man/man1/tunwarden.1.gz >/dev/null
+          man -l /usr/share/man/man8/tunwardend.8.gz >/dev/null
+          ! pgrep -x tunwardend
+
+      - name: Create checksums
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          DEB_VERSION: ${{ needs.resolve.outputs.deb_version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release
+          cp "dist/tunwarden_${DEB_VERSION}_amd64.deb" dist/release/
+          (cd dist/release && sha256sum "tunwarden_${VERSION}_linux_amd64.tar.gz" "tunwarden_${DEB_VERSION}_amd64.deb" > "tunwarden_${VERSION}_checksums.txt")
+          cat "dist/release/tunwarden_${VERSION}_checksums.txt"
+
+      - name: Upload release artifacts for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: tunwarden-release-artifacts-${{ needs.resolve.outputs.version }}
+          path: |
+            dist/release/tunwarden_${{ needs.resolve.outputs.version }}_linux_amd64.tar.gz
+            dist/release/tunwarden_${{ needs.resolve.outputs.deb_version }}_amd64.deb
+            dist/release/tunwarden_${{ needs.resolve.outputs.version }}_checksums.txt
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: tunwarden-release-artifacts-${{ needs.build.outputs.version }}
+          path: dist/release
+
+      - name: Write release notes
+        run: |
+          cat > release-notes.md <<EOF
+          TunWarden ${{ needs.build.outputs.tag }}
+
+          Git tag: ${{ needs.build.outputs.tag }}
+          Commit SHA: ${{ needs.build.outputs.commit_sha }}
+
+          Artifacts:
+          - tunwarden_${{ needs.build.outputs.version }}_linux_amd64.tar.gz
+          - tunwarden_${{ needs.build.outputs.deb_version }}_amd64.deb
+          - tunwarden_${{ needs.build.outputs.version }}_checksums.txt
+
+          Install the local Debian package with:
+
+          \`\`\`bash
+          sudo apt install ./tunwarden_${{ needs.build.outputs.deb_version }}_amd64.deb
+          \`\`\`
+
+          Package installation does not enable or start the daemon automatically.
+          EOF
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+          DEB_VERSION: ${{ needs.build.outputs.deb_version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "TunWarden ${TAG}" --notes-file release-notes.md
+            gh release upload "$TAG" --clobber \
+              "dist/release/tunwarden_${VERSION}_linux_amd64.tar.gz" \
+              "dist/release/tunwarden_${DEB_VERSION}_amd64.deb" \
+              "dist/release/tunwarden_${VERSION}_checksums.txt"
+          else
+            gh release create "$TAG" \
+              --title "TunWarden ${TAG}" \
+              --notes-file release-notes.md \
+              "dist/release/tunwarden_${VERSION}_linux_amd64.tar.gz" \
+              "dist/release/tunwarden_${DEB_VERSION}_amd64.deb" \
+              "dist/release/tunwarden_${VERSION}_checksums.txt"
+          fi

@@ -2,7 +2,7 @@
 
 This document defines the local Debian package layout, lifecycle behavior, validation targets, and inspection gates for TunWarden.
 
-The package contract is intentionally limited to a locally installable `.deb` artifact. Public apt repository publication, repository signing, tagged release automation, and GitHub Release publication are separate follow-up work.
+The package contract is intentionally limited to a locally installable `.deb` artifact. Public apt repository publication and repository signing are separate follow-up work. Tagged GitHub Release publication is owned by [Release workflow](./release.md) and consumes this package contract instead of redefining it.
 
 ## Supported validation targets
 
@@ -19,7 +19,7 @@ Container validation is acceptable for package metadata, file layout, and basic 
 
 The package toolchain version contract is owned by `packaging/package-toolchain.env`.
 
-CI and local package validation must install the pinned `NFPM_VERSION` from that file instead of using `@latest`. This keeps package generation reproducible and prevents future upstream nFPM releases from changing `.deb` output without a repository change.
+CI, local package validation, and release automation must install the pinned `NFPM_VERSION` from that file instead of using `@latest`. This keeps package generation reproducible and prevents future upstream nFPM releases from changing `.deb` output without a repository change.
 
 ## Build contract
 
@@ -35,13 +35,15 @@ The default build emits:
 dist/tunwarden_0.0.0~dev_amd64.deb
 ```
 
-Override version and architecture with:
+Override the binary version, Debian package version, and architecture with:
 
 ```bash
-TUNWARDEN_VERSION=0.1.0 TUNWARDEN_DEB_ARCH=amd64 bash scripts/build-deb.sh
+TUNWARDEN_VERSION=0.1.0 TUNWARDEN_DEB_VERSION=0.1.0-1 TUNWARDEN_DEB_ARCH=amd64 bash scripts/build-deb.sh
 ```
 
-The package version should match future release tags without the leading `v`. Development builds use Debian-compatible `0.0.0~dev`, which sorts before a real `0.0.0` release.
+`TUNWARDEN_VERSION` controls the upstream application version reported by `tunwarden version`. `TUNWARDEN_DEB_VERSION` controls Debian package metadata and the package filename. When `TUNWARDEN_DEB_VERSION` is unset, the package version defaults to `TUNWARDEN_VERSION`.
+
+Development builds use Debian-compatible `0.0.0~dev`, which sorts before a real `0.0.0` release. Tagged release automation maps `vMAJOR.MINOR.PATCH` to binary version `MAJOR.MINOR.PATCH` and Debian package version `MAJOR.MINOR.PATCH-1`.
 
 The build requires:
 
