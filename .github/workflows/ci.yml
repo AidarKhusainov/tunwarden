@@ -47,6 +47,8 @@ jobs:
   deb-package:
     name: Debian package
     runs-on: ubuntu-22.04
+    env:
+      DEV_DEB: dist/tunwarden_0.0.0~dev-1_amd64.deb
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,11 +71,11 @@ jobs:
         run: bash scripts/build-deb.sh
 
       - name: Inspect package metadata
-        run: dpkg-deb --info dist/tunwarden_0.0.0~dev_amd64.deb
+        run: dpkg-deb --info "${DEV_DEB}"
 
       - name: Inspect package contents
         run: |
-          dpkg-deb --contents dist/tunwarden_0.0.0~dev_amd64.deb | tee /tmp/tunwarden-package-contents.txt
+          dpkg-deb --contents "${DEV_DEB}" | tee /tmp/tunwarden-package-contents.txt
           ! grep -E '(^| )\./usr/local(/|$)' /tmp/tunwarden-package-contents.txt
           ! grep -E '(^| )\./run(/|$)' /tmp/tunwarden-package-contents.txt
           ! grep -E '(^| )\./var/run(/|$)' /tmp/tunwarden-package-contents.txt
@@ -97,7 +99,7 @@ jobs:
       - name: Lint Debian package
         run: |
           set -o pipefail
-          lintian --fail-on error dist/tunwarden_0.0.0~dev_amd64.deb 2>&1 | tee /tmp/tunwarden-lintian.txt
+          lintian --fail-on error "${DEV_DEB}" 2>&1 | tee /tmp/tunwarden-lintian.txt
 
       - name: Upload lintian diagnostics
         if: always()
@@ -109,7 +111,7 @@ jobs:
 
       - name: Install package locally
         run: |
-          sudo apt install -y ./dist/tunwarden_0.0.0~dev_amd64.deb
+          sudo apt install -y "./${DEV_DEB}"
           dpkg -L tunwarden
           tunwarden version
           test "$(tunwarden version)" = "tunwarden 0.0.0~dev"
@@ -124,7 +126,7 @@ jobs:
 
       - name: Reinstall package locally
         run: |
-          sudo apt install -y --reinstall ./dist/tunwarden_0.0.0~dev_amd64.deb
+          sudo apt install -y --reinstall "./${DEV_DEB}"
           test "$(tunwarden version)" = "tunwarden 0.0.0~dev"
           man -l /usr/share/man/man1/tunwarden.1.gz >/dev/null
           man -l /usr/share/man/man8/tunwardend.8.gz >/dev/null
