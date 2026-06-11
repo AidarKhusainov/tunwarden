@@ -14,17 +14,20 @@ import (
 )
 
 const (
-	defaultTunProbeHost = "1.1.1.1"
-	defaultTunProbePort = uint16(53)
-	defaultProbeTimeout = 3 * time.Second
+	defaultTunProbeHost    = "1.1.1.1"
+	defaultTunProbePort    = uint16(53)
+	defaultTunDNSProbeName = "example.com"
+	defaultProbeTimeout    = 3 * time.Second
 )
 
 type tunRouteLookupFunc func(context.Context, string, string) error
 type tunTCPProbeFunc func(context.Context, string, uint16) error
+type tunDNSResolveFunc func(context.Context, string) (string, error)
 
 var (
 	lookupTunRouteForProbe = defaultLookupTunRouteForProbe
 	dialTunProbeTarget     = defaultDialTunProbeTarget
+	resolveTunDNSName      = defaultResolveTunDNSName
 )
 
 func verifyTunConnectivity(ctx context.Context, plan planner.TunPlan, core tunCoreRuntimePlan) error {
@@ -40,6 +43,13 @@ func verifyTunConnectivity(ctx context.Context, plan planner.TunPlan, core tunCo
 	}
 	if err := dialTunProbeTarget(probeCtx, probeHost, defaultTunProbePort); err != nil {
 		return fmt.Errorf("basic full-tunnel connectivity probe to %s:%d failed: %w", probeHost, defaultTunProbePort, err)
+	}
+	resolvedIP, err := resolveTunDNSName(probeCtx, defaultTunDNSProbeName)
+	if err != nil {
+		return fmt.Errorf("full-tunnel DNS probe for %s failed: %w", defaultTunDNSProbeName, err)
+	}
+	if err := lookupTunRouteForProbe(probeCtx, resolvedIP, plan.TunDevice.Name); err != nil {
+		return fmt.Errorf("full-tunnel route lookup for DNS result %s (%s) failed: %w", defaultTunDNSProbeName, resolvedIP, err)
 	}
 	return nil
 }
@@ -76,6 +86,19 @@ func defaultDialTunProbeTarget(ctx context.Context, host string, port uint16) er
 	return conn.Close()
 }
 
+func defaultResolveTunDNSName(ctx context.Context, name string) (string, error) {
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, name)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w%s", name, err, tunDNSDiagnostics(ctx, name))
+	}
+	for _, ip := range ips {
+		if ipv4 := ip.IP.To4(); ipv4 != nil {
+			return ipv4.String(), nil
+		}
+	}
+	return "", fmt.Errorf("resolve %s returned no IPv4 address: %v%s", name, ips, tunDNSDiagnostics(ctx, name))
+}
+
 func containsAdjacentRouteFields(fields []string, key, value string) bool {
 	for i := 0; i+1 < len(fields); i++ {
 		if fields[i] == key && fields[i+1] == value {
@@ -92,7 +115,7 @@ func tunRouteDiagnostics(ctx context.Context, host, tunDevice string) string {
 	}{
 		{label: "ip -4 rule show", args: []string{"-4", "rule", "show"}},
 		{label: "ip -4 route show table 51820", args: []string{"-4", "route", "show", "table", strconv.Itoa(planner.TunRoutingTableID)}},
-		{label: "ip -4 route get table 51820", args: []string{"-4", "route", "get", host, "table", strconv.Itoa(planner.TunRoutingTableID)}},
+		{label: "ip -4 route get table 51820", args: []string{"-4", "route", "get", "table", strconv.Itoa(planner.TunRoutingTableID), host}},
 		{label: "ip -4 addr show dev " + tunDevice, args: []string{"-4", "addr", "show", "dev", tunDevice}},
 		{label: "ip -4 link show dev " + tunDevice, args: []string{"-4", "link", "show", "dev", tunDevice}},
 	}
@@ -104,6 +127,28 @@ func tunRouteDiagnostics(ctx context.Context, host, tunDevice string) string {
 		builder.WriteString(check.label)
 		builder.WriteString(": ")
 		builder.WriteString(runDiagnosticCommand(ctx, "ip", check.args...))
+	}
+	return builder.String()
+}
+
+func tunDNSDiagnostics(ctx context.Context, name string) string {
+	checks := []struct {
+		label string
+		name  string
+		args  []string
+	}{
+		{label: "resolvectl query " + name, name: "resolvectl", args: []string{"query", name}},
+		{label: "getent ahostsv4 " + name, name: "getent", args: []string{"ahostsv4", name}},
+		{label: "resolvectl status", name: "resolvectl", args: []string{"status", "--no-pager"}},
+	}
+
+	var builder strings.Builder
+	builder.WriteString("; DNS diagnostics:")
+	for _, check := range checks {
+		builder.WriteString("\n")
+		builder.WriteString(check.label)
+		builder.WriteString(": ")
+		builder.WriteString(runDiagnosticCommand(ctx, check.name, check.args...))
 	}
 	return builder.String()
 }
