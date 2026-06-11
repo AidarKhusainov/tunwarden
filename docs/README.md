@@ -29,6 +29,7 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 - The v0.2 safe TUN preview release-gate checklist is owned by [v0.2 safe TUN preview acceptance checklist](./v0.2-acceptance.md).
 - The v0.2 safe TUN preview release-gate result is recorded in [v0.2 safe TUN preview acceptance verification record](./v0.2-acceptance-record.md).
 - Filesystem layout, output redaction, JSON compatibility, confirmation behavior, systemd hardening, and core process safety are owned by [State and security requirements](./state-and-security.md).
+- Local Debian package layout and lifecycle behavior are owned by [Debian package contract](./debian-package.md).
 - Package dependency direction is owned by [Package boundaries](./package-boundaries.md).
 - Local manual pages are concise user/admin references. They must link back to canonical docs instead of becoming a second source of truth for unstable implementation details.
 - Historical uppercase documents are deprecated and must not be used as canonical references.
@@ -57,6 +58,7 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 | [v0.2 acceptance record](./v0.2-acceptance-record.md) | Redacted release-gate verification record for issue #31; remains `PENDING` until the exact commit passes on a Tier 1 Linux host. |
 | [Architecture](./architecture.md) | CLI/daemon split, privilege boundary, state model, transaction model, engine abstraction, backend interfaces. |
 | [State and security requirements](./state-and-security.md) | User/daemon/system state separation, XDG/systemd paths, JSON compatibility, redaction, confirmations, service hardening, and core process safety. |
+| [Debian package contract](./debian-package.md) | Local `.deb` artifact layout, install/upgrade/remove lifecycle, service auto-start policy, and package validation gates. |
 | [Package boundaries](./package-boundaries.md) | Dependency direction between CLI, daemon, API, domain, planner, snapshot, executor, and adapter packages. |
 | [Networking and reliability requirements](./networking-reliability.md) | TUN, routing, DNS, firewall, NetworkManager, sleep/resume, health checks, recovery, and reliability test requirements. |
 | [Subscriptions and profiles](./subscriptions-and-profiles.md) | Subscription inputs, format adapters, normalized profile model, validation, update behavior, storage. |
@@ -110,7 +112,7 @@ The primary value proposition is:
 4. **Daemon-owned privilege:** Privileged networking belongs in the daemon, not in a SUID GUI/client binary.
 5. **Observable by default.** Users must be able to inspect routes, DNS, firewall state, core process status, and connection health while respecting the documented output policy.
 6. **Linux networking is dynamic.** Sleep/resume, Wi-Fi roaming, DHCP changes, DNS changes, and interface changes are normal events.
-7. **NetworkManager connectivity is advisory.** Desktop connectivity indicators may be wrong while the VPN data path still works; TunWarden must run independent health checks.
+7. **NetworkManager connectivity is advisory.** Desktop connectivity indicators may be wrong while the VPN data path still works; TunWarden must show NetworkManager connectivity state as diagnostic metadata but run independent health checks.
 8. **Small reliable core before convenience.** Proxy-only and safe TUN foundations come before GUI, auto-select, complex routing UI, and additional engines.
 
 ## Canonical command shape
@@ -143,6 +145,10 @@ tunwarden plan --mode proxy-only <profile-id>
 tunwarden plan --mode tun <profile-id>
 tunwarden recover
 tunwarden recover --execute --yes
+
+# local package build and install
+./scripts/build-deb.sh
+sudo apt install ./dist/tunwarden_0.0.0~dev_amd64.deb
 
 # local reference documentation
 man tunwarden
