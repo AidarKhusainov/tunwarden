@@ -225,6 +225,8 @@ jobs:
           - tunwarden_${{ needs.build.outputs.deb_version }}_amd64.deb
           - tunwarden_${{ needs.build.outputs.version }}_checksums.txt
 
+          Install the local Debian package with: sudo apt install ./tunwarden_${{ needs.build.outputs.deb_version }}_amd64.deb
+
           Package installation does not enable or start the daemon automatically.
           EOF
 
