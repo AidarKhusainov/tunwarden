@@ -146,9 +146,8 @@ jobs:
           export TUNWARDEN_XRAY_PATH="$RUNNER_TEMP/tunwarden-tools/xray/xray"
           export TUNWARDEN_TUN2SOCKS_PATH="$RUNNER_TEMP/tunwarden-tools/bin/tun2socks"
           export XDG_STATE_HOME="$RUNNER_TEMP/tunwarden-state"
-          export XDG_RUNTIME_DIR="$RUNNER_TEMP/tunwarden-runtime"
-          mkdir -p "$XDG_STATE_HOME" "$XDG_RUNTIME_DIR"
-          chmod 700 "$XDG_RUNTIME_DIR"
+          export TUNWARDEN_RUNTIME_DIR="/run/tunwarden"
+          mkdir -p "$XDG_STATE_HOME"
 
           run_logged() {
             current_step="$1"
@@ -208,6 +207,7 @@ jobs:
             go version
             "$TUNWARDEN_XRAY_PATH" version | head -n 1 || true
             "$TUNWARDEN_TUN2SOCKS_PATH" -version || true
+            echo "Acceptance runtime directory: $TUNWARDEN_RUNTIME_DIR"
             ls -l /dev/net/tun || true
             ip -V || true
             nft --version || true
@@ -259,9 +259,9 @@ jobs:
           resolvectl status --no-pager >> "$raw_log" 2>&1 || true
 
           current_step="prepare daemon runtime directory"
-          sudo rm -rf /run/tunwarden
-          sudo install -d -m 0700 -o "$USER" -g "$(id -gn)" /run/tunwarden
-          echo "Prepared daemon runtime directory: $(stat -c '%U:%G %a %n' /run/tunwarden)" >> "$raw_log"
+          sudo rm -rf "$TUNWARDEN_RUNTIME_DIR"
+          sudo install -d -m 0700 -o "$USER" -g "$(id -gn)" "$TUNWARDEN_RUNTIME_DIR"
+          echo "Prepared daemon runtime directory: $(stat -c '%U:%G %a %n' "$TUNWARDEN_RUNTIME_DIR")" >> "$raw_log"
           current_step=""
 
           current_step="allow non-root runner to configure systemd-resolved"
@@ -278,15 +278,17 @@ jobs:
           echo "Installed temporary polkit rule for org.freedesktop.resolve1.* and user $USER" >> "$raw_log"
           current_step=""
 
-          # The daemon must not run as UID 0 for the TUN success path. Give the
-          # current runner process ambient CAP_NET_ADMIN before starting the daemon.
+          # This smoke intentionally tests the packaged-style runtime directory
+          # contract: TUNWARDEN_RUNTIME_DIR=/run/tunwarden, prepared as a
+          # non-root runner-owned directory, while the daemon itself still runs
+          # as the non-root runner with ambient CAP_NET_ADMIN.
           current_step="start non-root daemon with CAP_NET_ADMIN"
           sudo capsh \
             --keep=1 \
             --user="$USER" \
             --caps="cap_net_admin+eip" \
             --addamb="cap_net_admin" \
-            -- -c "cd '$PWD' && env XDG_STATE_HOME='$XDG_STATE_HOME' XDG_RUNTIME_DIR='$XDG_RUNTIME_DIR' TUNWARDEN_XRAY_PATH='$TUNWARDEN_XRAY_PATH' TUNWARDEN_TUN2SOCKS_PATH='$TUNWARDEN_TUN2SOCKS_PATH' ./bin/tunwardend" \
+            -- -c "cd '$PWD' && env XDG_STATE_HOME='$XDG_STATE_HOME' TUNWARDEN_RUNTIME_DIR='$TUNWARDEN_RUNTIME_DIR' TUNWARDEN_XRAY_PATH='$TUNWARDEN_XRAY_PATH' TUNWARDEN_TUN2SOCKS_PATH='$TUNWARDEN_TUN2SOCKS_PATH' ./bin/tunwardend" \
             >> "$raw_log" 2>&1 &
           daemon_pid=$!
           sleep 2
@@ -310,7 +312,7 @@ jobs:
           resolvectl status tunwarden0 --no-pager >> "$raw_log" 2>&1 || true
           pgrep -a xray >> "$raw_log" 2>&1 || true
           pgrep -a tun2socks >> "$raw_log" 2>&1 || true
-          sudo find /run/tunwarden -maxdepth 4 -xdev -print -ls >> "$raw_log" 2>&1 || true
+          sudo find "$TUNWARDEN_RUNTIME_DIR" -maxdepth 4 -xdev -print -ls >> "$raw_log" 2>&1 || true
 
           run_logged "connectivity-smoke" curl --max-time 15 --fail --silent --show-error https://example.com/
 
@@ -347,7 +349,7 @@ jobs:
           resolvectl status tunwarden0 --no-pager >> "$raw_log" 2>&1 || true
           pgrep -a xray >> "$raw_log" 2>&1 || true
           pgrep -a tun2socks >> "$raw_log" 2>&1 || true
-          sudo find /run/tunwarden -maxdepth 4 -xdev -print -ls >> "$raw_log" 2>&1 || true
+          sudo find "$TUNWARDEN_RUNTIME_DIR" -maxdepth 4 -xdev -print -ls >> "$raw_log" 2>&1 || true
 
           emit_sanitized_log
 
