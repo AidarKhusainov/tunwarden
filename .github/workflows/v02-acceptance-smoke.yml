@@ -4,6 +4,12 @@ on:
   pull_request:
     branches:
       - master
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+      - unlabeled
   workflow_dispatch:
 
 permissions:
@@ -13,7 +19,7 @@ jobs:
   secret-backed-tun-smoke:
     name: Secret-backed TUN smoke
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'run-v0.2-acceptance'))
     timeout-minutes: 45
     env:
       TUNWARDEN_ACCEPTANCE_VLESS_URI: ${{ secrets.NLD_LINK }}
@@ -257,7 +263,7 @@ jobs:
               echo "attempt $attempt" >> "$raw_log"
               for provider in "${providers[@]}"; do
                 name="${provider%%|*}"
-                url="${provider#*|}"
+                url="${provider#*}"
                 value="$(curl -4 --connect-timeout 5 --max-time 15 --retry 1 --retry-delay 1 --fail --silent --show-error "$url" 2>>"$raw_log" | tr -d '[:space:]' || true)"
                 if [[ -z "$value" ]]; then
                   echo "$name: unavailable" >> "$raw_log"
@@ -325,6 +331,7 @@ jobs:
 
           run_logged "plan-tun" ./bin/tunwarden plan --mode tun "$profile_id"
           run_logged "plan-tun-json" ./bin/tunwarden plan --mode tun "$profile_id" --json
+          run_logged "doctor-initial" ./bin/tunwarden doctor
 
           current_step="baseline external public IP check"
           baseline_public_ip="$(fetch_public_ip "before VPN")"
