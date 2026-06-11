@@ -1,0 +1,248 @@
+.TH TUNWARDEND 8 "June 2026" "TunWarden" "System Administration"
+.SH NAME
+tunwardend \- local TunWarden daemon for proxy and VPN lifecycle state
+.SH SYNOPSIS
+.SY tunwardend
+.YS
+.PP
+Packaged systemd deployments normally use:
+.EX
+systemctl start tunwardend
+systemctl status tunwardend --no-pager
+journalctl -u tunwardend -n 50 --no-pager
+.EE
+.SH DESCRIPTION
+.B tunwardend
+is the local daemon for TunWarden. It owns daemon runtime state, the local
+Unix socket API, generated runtime configuration, supervised Xray child
+processes, startup recovery scan visibility, and daemon-owned cleanup or
+networking transactions where the current milestone enables them.
+.PP
+The daemon API is local-only and uses HTTP/JSON over a Unix domain socket at
+.IR /run/tunwarden/tunwardend.sock
+for packaged deployments. User-facing command names, output, exit codes, and
+JSON shape belong to
+.BR tunwarden (1)
+and the canonical project documentation.
+.PP
+The foundation packaged service is intentionally least-privilege. The default
+packaged proxy-only path runs the daemon as an unprivileged service identity
+and does not grant ambient or bounding capabilities.
+.SH SERVICE MANAGEMENT
+The packaged service unit is
+.BR tunwardend.service .
+Typical administrator commands are:
+.EX
+sudo systemctl start tunwardend
+systemctl status tunwardend --no-pager
+journalctl -u tunwardend -n 50 --no-pager
+sudo systemctl stop tunwardend
+.EE
+.PP
+After manually installing the repository unit for development, reload systemd
+before starting the service:
+.EX
+sudo systemctl daemon-reload
+sudo systemd-analyze verify /etc/systemd/system/tunwardend.service
+sudo systemctl start tunwardend
+.EE
+.PP
+Users that run
+.BR tunwarden (1)
+against the packaged daemon need access to the daemon socket, normally through
+the
+.B tunwarden
+group. Start a new login session after changing group membership.
+.SH FILES
+.TP
+.I /usr/local/bin/tunwardend
+Default daemon path referenced by the repository systemd unit used for manual
+installation and development packaging.
+.TP
+.I /run/tunwarden/
+Daemon runtime directory. Packaged systemd units create it with
+.B RuntimeDirectory=tunwarden
+and mode
+.BR 0750 .
+.TP
+.I /run/tunwarden/tunwardend.sock
+Local daemon API socket. The daemon applies socket mode
+.BR 0660 .
+.TP
+.I /run/tunwarden/generated/
+Daemon-owned generated runtime configuration directory. Generated Xray config
+files are volatile runtime output, not persistent source of truth.
+.TP
+.I /run/tunwarden/transactions/
+Volatile transaction state used by status, diagnostics, rollback, disconnect,
+and recovery paths.
+.TP
+.I /var/lib/tunwarden/
+Reserved daemon state directory created by
+.BR StateDirectory=tunwarden .
+The current packaged baseline does not use it as profile or subscription
+source of truth.
+.TP
+.I packaging/systemd/tunwardend.service
+Repository systemd unit source.
+.TP
+.I packaging/sysusers.d/tunwarden.conf
+Repository sysusers definition for packaged service identities.
+.SH SECURITY MODEL
+The packaged proxy-only baseline runs
+.B tunwardend
+as
+.BR tunwarden:tunwarden .
+For that default non-root service path, proxy-only Xray child processes inherit
+the same unprivileged service identity.
+.PP
+If a UID 0 daemon deployment is used for proxy-only mode, Xray must not inherit
+UID 0. The daemon must start proxy-only Xray as the dedicated
+.BR tunwarden-xray:tunwarden-xray
+identity with supplementary groups disabled. In that UID 0 path, generated
+Xray runtime configuration remains private by using ownership
+.BR root:tunwarden-xray ,
+generated directory mode
+.BR 0750 ,
+and generated config file mode
+.BR 0640 .
+.PP
+The current packaged unit grants no ambient capabilities and has an empty
+capability bounding set. Proxy-only mode must not grant
+.BR CAP_NET_ADMIN ,
+.BR CAP_NET_RAW ,
+broad file capabilities, or ambient capabilities to the daemon or the Xray
+child.
+.PP
+The daemon service starts from least privilege and every future packaged
+privilege expansion must be documented with the exact capability set and the
+reason each capability is required. The CLI must not become a privileged or
+SUID networking mutator.
+.SH RUNTIME STATE
+On startup, the daemon creates or uses the runtime directory, creates a lock
+file, removes only a stale Unix socket at the socket path, fails if the socket
+path exists but is not a Unix socket, listens on the Unix socket, applies the
+socket mode, and serves local status, doctor, connect, disconnect, and recovery
+endpoints according to the current implementation.
+.PP
+During proxy-only connect, the daemon selects the Xray execution identity,
+validates the mode and profile snapshot received from the CLI, builds a
+generated Xray config, writes it under
+.IR /run/tunwarden/generated/ ,
+starts Xray as a supervised child process, and records active state for
+status. Proxy-only lifecycle must not mutate TUN devices, routes, policy
+rules, DNS settings, nftables, or firewall state.
+.PP
+During graceful shutdown, the daemon stops an active Xray child, shuts down the
+HTTP server, closes the Unix socket listener, removes the socket path, and
+removes the lock file.
+.PP
+On disconnect, the daemon stops the active Xray child, removes the generated
+runtime config path, and reports inactive proxy state. If Xray exits
+unexpectedly, the daemon keeps the generated config for inspection or recovery
+and reports the core failure through status warnings.
+.PP
+Recovery dry-run inspection is read-only. Explicit recovery execution is scoped
+to clearly TunWarden-owned volatile resources and must skip ambiguous targets.
+The runtime root
+.I /run/tunwarden
+is not removed wholesale.
+.SH LOGS
+The packaged service writes stdout and stderr to journald:
+.EX
+journalctl -u tunwardend -n 50 --no-pager
+journalctl -u tunwardend -f
+.EE
+.PP
+The user-facing command
+.BR "tunwarden logs"
+uses
+.BR journalctl (1)
+to read recent daemon logs, and
+.BR "tunwarden logs --core"
+filters daemon-forwarded Xray lifecycle and stdout/stderr lines.
+.SH TROUBLESHOOTING
+.TP
+.B Daemon is not reachable
+Check service state and recent logs:
+.EX
+systemctl status tunwardend --no-pager
+journalctl -u tunwardend -n 50 --no-pager
+.EE
+.TP
+.B Permission denied when using tunwarden status or doctor
+Check that the user belongs to the
+.B tunwarden
+group and that the socket exists with restrictive group access:
+.EX
+id
+ls -ld /run/tunwarden
+ls -l /run/tunwarden/tunwardend.sock
+.EE
+.TP
+.B Socket path exists but daemon cannot start
+The daemon removes stale Unix sockets, but it fails when the socket path is a
+non-socket filesystem object. Inspect the path before deleting anything.
+.TP
+.B Xray exited unexpectedly
+Use:
+.EX
+tunwarden status
+tunwarden logs --core
+journalctl -u tunwardend -n 100 --no-pager
+.EE
+.TP
+.B Stale TunWarden-owned runtime state
+Inspect first:
+.EX
+tunwarden recover
+.EE
+Then use explicit daemon-owned cleanup only when the output is understood:
+.EX
+tunwarden recover --execute --yes
+.EE
+.SH EXAMPLES
+.TP
+Manual development install of service identities and the systemd unit:
+.EX
+sudo install -m 0644 packaging/sysusers.d/tunwarden.conf \
+  /usr/lib/sysusers.d/tunwarden.conf
+sudo systemd-sysusers /usr/lib/sysusers.d/tunwarden.conf
+sudo usermod -aG tunwarden "$USER"
+sudo install -m 0644 packaging/systemd/tunwardend.service \
+  /etc/systemd/system/tunwardend.service
+sudo systemd-analyze verify /etc/systemd/system/tunwardend.service
+sudo systemctl daemon-reload
+sudo systemctl start tunwardend
+.EE
+.TP
+Verify daemon-backed inactive state:
+.EX
+systemctl status tunwardend --no-pager
+tunwarden status
+journalctl -u tunwardend -n 50 --no-pager
+.EE
+.TP
+Run a local non-root development daemon with a temporary runtime directory:
+.EX
+TUNWARDEN_RUNTIME_DIR=/tmp/tunwarden-dev go run ./cmd/tunwardend
+TUNWARDEN_RUNTIME_DIR=/tmp/tunwarden-dev go run ./cmd/tunwarden status
+.EE
+.TP
+Run proxy-only lifecycle with an explicit Xray path in local development:
+.EX
+TUNWARDEN_RUNTIME_DIR=/tmp/tunwarden-dev \
+TUNWARDEN_XRAY_PATH=/usr/local/bin/xray \
+go run ./cmd/tunwardend
+.EE
+.SH SEE ALSO
+.BR tunwarden (1),
+.BR systemctl (1),
+.BR journalctl (1),
+.BR systemd.unit (5),
+.BR sysusers.d (5)
+.PP
+Canonical project documentation is installed in the repository under
+.I docs/
+and starts with
+.IR docs/README.md .
