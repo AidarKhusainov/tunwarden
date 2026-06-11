@@ -14,6 +14,7 @@ arch="${TUNWARDEN_DEB_ARCH:-amd64}"
 out_dir="${TUNWARDEN_DIST_DIR:-dist}"
 root_dir="${out_dir}/package-root"
 config=".nfpm.tunwarden.yaml"
+version_package="github.com/AidarKhusainov/tunwarden/internal/app/cli.version"
 
 case "${arch}" in
   amd64|arm64) ;;
@@ -51,8 +52,9 @@ mkdir -p \
   "${root_dir}/usr/share/man/man8" \
   "${root_dir}/usr/share/doc/tunwarden"
 
-CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "-s -w" -o "${root_dir}/usr/bin/tunwarden" ./cmd/tunwarden
-CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "-s -w" -o "${root_dir}/usr/bin/tunwardend" ./cmd/tunwardend
+ldflags="-s -w -X ${version_package}=${version}"
+CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "${ldflags}" -o "${root_dir}/usr/bin/tunwarden" ./cmd/tunwarden
+CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "${ldflags}" -o "${root_dir}/usr/bin/tunwardend" ./cmd/tunwardend
 
 install -m 0644 packaging/systemd/tunwardend.service "${root_dir}/usr/lib/systemd/system/tunwardend.service"
 install -m 0644 packaging/sysusers.d/tunwarden.conf "${root_dir}/usr/lib/sysusers.d/tunwarden.conf"
