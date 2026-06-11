@@ -30,6 +30,9 @@ jobs:
       - name: Go test
         run: go test ./...
 
+      - name: Go vet
+        run: go vet ./...
+
   deb-package:
     name: Debian package
     runs-on: ubuntu-latest
@@ -51,7 +54,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Build Debian package
-        run: ./scripts/build-deb.sh
+        run: bash scripts/build-deb.sh
 
       - name: Inspect package metadata
         run: dpkg-deb --info dist/tunwarden_0.0.0~dev_amd64.deb
@@ -93,3 +96,5 @@ jobs:
           ! dpkg -L tunwarden
           test ! -e /usr/bin/tunwarden
           test ! -e /usr/bin/tunwardend
+          test ! -e /usr/lib/systemd/system/tunwardend.service
+          test ! -e /usr/lib/sysusers.d/tunwarden.conf
