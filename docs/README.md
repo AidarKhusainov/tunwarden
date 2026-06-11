@@ -29,6 +29,7 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 - The v0.2 safe TUN preview release-gate checklist is owned by [v0.2 safe TUN preview acceptance checklist](./v0.2-acceptance.md).
 - Filesystem layout, output redaction, JSON compatibility, confirmation behavior, systemd hardening, and core process safety are owned by [State and security requirements](./state-and-security.md).
 - Package dependency direction is owned by [Package boundaries](./package-boundaries.md).
+- Local manual pages are concise user/admin references. They must link back to canonical docs instead of becoming a second source of truth for unstable implementation details.
 - Historical uppercase documents are deprecated and must not be used as canonical references.
 
 ## Canonical documentation map
@@ -60,6 +61,8 @@ TunWarden is a Linux-first, CLI-first VPN/proxy client for Xray-compatible confi
 | [Roadmap](./roadmap.md) | Ordered implementation phases and milestone boundaries. |
 | [Development guide](./development.md) | Local checks, contribution rules, safety constraints, documentation update rules. |
 | [References](./references.md) | External technical references and the assumptions derived from them. |
+| [tunwarden(1)](./man/tunwarden.1) | Local CLI manual page installed as `man tunwarden` by packages. |
+| [tunwardend(8)](./man/tunwardend.8) | Local daemon/admin manual page installed as `man tunwardend` by packages. |
 
 ## Product thesis
 
@@ -138,6 +141,10 @@ tunwarden plan --mode proxy-only <profile-id>
 tunwarden plan --mode tun <profile-id>
 tunwarden recover
 tunwarden recover --execute --yes
+
+# local reference documentation
+man tunwarden
+man tunwardend
 ```
 
 ## Definition of done for early development
