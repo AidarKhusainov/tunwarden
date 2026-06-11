@@ -1,6 +1,6 @@
 [Unit]
 Description=TunWarden daemon
-Documentation=https://github.com/AidarKhusainov/tunwarden/tree/master/docs
+Documentation=man:tunwardend(8) https://github.com/AidarKhusainov/tunwarden/tree/master/docs
 After=network.target
 
 [Service]
@@ -15,7 +15,8 @@ RestartSec=2s
 # deployment must still start proxy-only Xray through the dedicated
 # tunwarden-xray child identity instead of letting the core inherit UID 0.
 # TUN devices, routes, DNS settings, nftables rules, and firewall rules remain
-# out of scope for this unit.
+# out of scope for this unit. See tunwardend(8) for the packaged service and
+# daemon runtime contract.
 User=tunwarden
 Group=tunwarden
 UMask=0007
