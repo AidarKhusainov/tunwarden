@@ -25,7 +25,7 @@ go run ./cmd/tunwarden recover
 For packaging changes, also run where the required tools are available:
 
 ```bash
-./scripts/build-deb.sh
+bash scripts/build-deb.sh
 dpkg-deb --info dist/tunwarden_0.0.0~dev_amd64.deb
 dpkg-deb --contents dist/tunwarden_0.0.0~dev_amd64.deb
 lintian dist/tunwarden_0.0.0~dev_amd64.deb
@@ -36,7 +36,8 @@ CI currently checks:
 ```bash
 test -z "$(gofmt -l .)"
 go test ./...
-./scripts/build-deb.sh
+go vet ./...
+bash scripts/build-deb.sh
 dpkg-deb --info dist/tunwarden_0.0.0~dev_amd64.deb
 dpkg-deb --contents dist/tunwarden_0.0.0~dev_amd64.deb
 lintian --fail-on error dist/tunwarden_0.0.0~dev_amd64.deb
