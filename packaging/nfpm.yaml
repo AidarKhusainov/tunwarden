@@ -53,5 +53,3 @@ contents:
   - src: ./dist/package-root/usr/share/doc/tunwarden
     dst: /usr/share/doc/tunwarden
     type: tree
-    file_info:
-      mode: 0644
