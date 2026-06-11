@@ -18,6 +18,7 @@ description: |-
 
 depends:
   - systemd
+  - init-system-helpers
   - ca-certificates
 
 scripts:
