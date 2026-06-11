@@ -25,7 +25,109 @@ jobs:
           cache: true
 
       - name: Go fmt check
-        run: test -z "$(gofmt -l .)"
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "$files"
+            exit 1
+          fi
 
       - name: Go test
         run: go test ./...
+
+      - name: Go vet
+        run: go vet ./...
+
+  deb-package:
+    name: Debian package
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+          cache: true
+
+      - name: Install package tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends file lintian man-db
+          . packaging/package-toolchain.env
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@"${NFPM_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build Debian package
+        run: bash scripts/build-deb.sh
+
+      - name: Inspect package metadata
+        run: dpkg-deb --info dist/tunwarden_0.0.0~dev_amd64.deb
+
+      - name: Inspect package contents
+        run: |
+          dpkg-deb --contents dist/tunwarden_0.0.0~dev_amd64.deb | tee /tmp/tunwarden-package-contents.txt
+          ! grep -E '(^| )\./usr/local(/|$)' /tmp/tunwarden-package-contents.txt
+          ! grep -E '(^| )\./run(/|$)' /tmp/tunwarden-package-contents.txt
+          ! grep -E '(^| )\./var/run(/|$)' /tmp/tunwarden-package-contents.txt
+          ! grep -E '(^| )\./home(/|$)' /tmp/tunwarden-package-contents.txt
+          ! grep -E '(^| )\./run/tunwarden/generated(/|$)' /tmp/tunwarden-package-contents.txt
+          grep -F './usr/bin/tunwarden' /tmp/tunwarden-package-contents.txt
+          grep -F './usr/bin/tunwardend' /tmp/tunwarden-package-contents.txt
+          grep -F './usr/lib/systemd/system/tunwardend.service' /tmp/tunwarden-package-contents.txt
+          grep -F './usr/lib/sysusers.d/tunwarden.conf' /tmp/tunwarden-package-contents.txt
+          grep -F './usr/share/man/man1/tunwarden.1.gz' /tmp/tunwarden-package-contents.txt
+          grep -F './usr/share/man/man8/tunwardend.8.gz' /tmp/tunwarden-package-contents.txt
+
+      - name: Validate packaged binary linkage
+        run: |
+          file dist/package-root/usr/bin/tunwarden dist/package-root/usr/bin/tunwardend
+          ldd dist/package-root/usr/bin/tunwarden
+          ldd dist/package-root/usr/bin/tunwardend
+          ldd dist/package-root/usr/bin/tunwarden | grep -F 'libc.so.6'
+          ldd dist/package-root/usr/bin/tunwardend | grep -F 'libc.so.6'
+
+      - name: Lint Debian package
+        run: |
+          set -o pipefail
+          lintian --fail-on error dist/tunwarden_0.0.0~dev_amd64.deb 2>&1 | tee /tmp/tunwarden-lintian.txt
+
+      - name: Upload lintian diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tunwarden-lintian-diagnostics
+          path: /tmp/tunwarden-lintian.txt
+          if-no-files-found: ignore
+
+      - name: Install package locally
+        run: |
+          sudo apt install -y ./dist/tunwarden_0.0.0~dev_amd64.deb
+          dpkg -L tunwarden
+          tunwarden version
+          test "$(tunwarden version)" = "tunwarden 0.0.0~dev"
+          test -x /usr/bin/tunwarden
+          test -x /usr/bin/tunwardend
+          test -f /usr/lib/systemd/system/tunwardend.service
+          test -f /usr/lib/sysusers.d/tunwarden.conf
+          test -f /usr/share/man/man1/tunwarden.1.gz
+          test -f /usr/share/man/man8/tunwardend.8.gz
+          man -l /usr/share/man/man1/tunwarden.1.gz >/dev/null
+          man -l /usr/share/man/man8/tunwardend.8.gz >/dev/null
+
+      - name: Reinstall package locally
+        run: |
+          sudo apt install -y --reinstall ./dist/tunwarden_0.0.0~dev_amd64.deb
+          test "$(tunwarden version)" = "tunwarden 0.0.0~dev"
+          man -l /usr/share/man/man1/tunwarden.1.gz >/dev/null
+          man -l /usr/share/man/man8/tunwardend.8.gz >/dev/null
+
+      - name: Remove package locally
+        run: |
+          sudo apt remove -y tunwarden
+          ! dpkg -L tunwarden
+          test ! -e /usr/bin/tunwarden
+          test ! -e /usr/bin/tunwardend
+          test ! -e /usr/lib/systemd/system/tunwardend.service
+          test ! -e /usr/lib/sysusers.d/tunwarden.conf

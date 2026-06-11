@@ -1,6 +1,7 @@
 # Go
 /bin/
 /dist/
+/.nfpm.tunwarden.yaml
 *.test
 coverage.out
 

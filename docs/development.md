@@ -6,6 +6,7 @@
 - Linux for networking implementation work.
 - Ubuntu LTS or Debian stable for Tier 1 manual testing.
 - `iproute2`, `nftables`, `systemd`, `systemd-resolved`, and NetworkManager for full networking work.
+- `nfpm`, `dpkg-deb`, and optionally `lintian` for local Debian package work.
 
 The module language version is declared as `go 1.26` in `go.mod`; the exact stable toolchain is pinned with `toolchain go1.26.4` and mirrored in CI.
 
@@ -21,14 +22,46 @@ go run ./cmd/tunwarden doctor
 go run ./cmd/tunwarden recover
 ```
 
+For packaging changes, also run where the required tools are available:
+
+```bash
+bash scripts/build-deb.sh
+dpkg-deb --info dist/tunwarden_0.0.0~dev_amd64.deb
+dpkg-deb --contents dist/tunwarden_0.0.0~dev_amd64.deb
+file dist/package-root/usr/bin/tunwarden dist/package-root/usr/bin/tunwardend
+ldd dist/package-root/usr/bin/tunwarden
+ldd dist/package-root/usr/bin/tunwardend
+lintian --fail-on error dist/tunwarden_0.0.0~dev_amd64.deb
+sudo apt install ./dist/tunwarden_0.0.0~dev_amd64.deb
+tunwarden version
+man -l /usr/share/man/man1/tunwarden.1.gz >/dev/null
+man -l /usr/share/man/man8/tunwardend.8.gz >/dev/null
+sudo apt install -y --reinstall ./dist/tunwarden_0.0.0~dev_amd64.deb
+sudo apt remove -y tunwarden
+```
+
 CI currently checks:
 
 ```bash
 test -z "$(gofmt -l .)"
 go test ./...
+go vet ./...
+bash scripts/build-deb.sh
+dpkg-deb --info dist/tunwarden_0.0.0~dev_amd64.deb
+dpkg-deb --contents dist/tunwarden_0.0.0~dev_amd64.deb
+file dist/package-root/usr/bin/tunwarden dist/package-root/usr/bin/tunwardend
+ldd dist/package-root/usr/bin/tunwarden
+ldd dist/package-root/usr/bin/tunwardend
+lintian --fail-on error dist/tunwarden_0.0.0~dev_amd64.deb
+sudo apt install -y ./dist/tunwarden_0.0.0~dev_amd64.deb
+tunwarden version
+man -l /usr/share/man/man1/tunwarden.1.gz >/dev/null
+man -l /usr/share/man/man8/tunwardend.8.gz >/dev/null
+sudo apt install -y --reinstall ./dist/tunwarden_0.0.0~dev_amd64.deb
+sudo apt remove -y tunwarden
 ```
 
-CI uses Go 1.26.4. Local development should use the same toolchain unless a PR explicitly updates `go.mod`, CI, and this guide together.
+CI uses Go 1.26.4. The package job intentionally runs on Ubuntu 22.04 to keep the dynamically linked package binary baseline aligned with the declared `libc6 (>= 2.34)` dependency. Local development should use the same Go toolchain unless a PR explicitly updates `go.mod`, CI, and this guide together.
 
 ## 3. Safety rules for contributors
 
@@ -59,6 +92,7 @@ Required mapping:
 | State path, runtime file, or ownership model | `docs/state-and-security.md`, `docs/architecture.md` |
 | Output redaction or secret handling | `docs/state-and-security.md` |
 | systemd unit or daemon privilege behavior | `docs/state-and-security.md`, `docs/architecture.md` |
+| Debian package layout or lifecycle | `docs/debian-package.md`, `README.md`, `docs/README.md` |
 | TUN, route, DNS, firewall, NetworkManager, suspend/resume behavior | `docs/networking-reliability.md` |
 | Profile, subscription, parser, validation behavior | `docs/subscriptions-and-profiles.md` |
 | Development phase or milestone change | `docs/roadmap.md` |
@@ -80,6 +114,17 @@ Recommended PR checklist:
 - [ ] Output follows the redaction policy.
 - [ ] Documentation is updated with code changes.
 - [ ] Failure modes are described in the PR body.
+
+Packaging PR checklist:
+
+- [ ] Local `.deb` artifact builds for `amd64`.
+- [ ] `dpkg-deb --info` and `dpkg-deb --contents` show expected metadata and file layout.
+- [ ] Packaged binaries report the package version through `tunwarden version`.
+- [ ] Packaged binaries have the expected dynamic linkage baseline for the declared package dependencies.
+- [ ] `lintian` is clean of errors, or every relevant warning is documented and justified.
+- [ ] The package does not ship `/usr/local`, `/run`, `/var/run`, user-home, or generated runtime config paths.
+- [ ] Install, same-version reinstall, man page, and remove behavior are validated in a container or VM.
+- [ ] Full systemd behavior is validated in a VM or systemd-capable host when the PR claims service lifecycle acceptance.
 
 ## 6. Testing strategy
 
@@ -108,6 +153,21 @@ Use Linux network namespaces where possible for:
 - TUN lifecycle,
 - rollback behavior,
 - stale state detection.
+
+### Package tests
+
+Use package inspection and local install/remove validation for:
+
+- Debian metadata,
+- installed file layout,
+- package lifecycle behavior,
+- absence of generated runtime files in package contents,
+- binary and man page availability after install,
+- version consistency between package metadata and `tunwarden version`,
+- same-version reinstall behavior,
+- dynamic linkage compatibility with the declared package dependency baseline.
+
+Use a VM or systemd-capable host for service lifecycle assertions such as `systemctl status tunwardend`, runtime directory creation, journald behavior, and daemon startup under the packaged unit.
 
 ### Manual tests
 
