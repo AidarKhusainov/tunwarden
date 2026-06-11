@@ -17,7 +17,7 @@ vMAJOR.MINOR.PATCH
 Examples:
 
 ```text
-v0.1.2
+v0.1.3
 v0.2.0
 ```
 
@@ -25,20 +25,18 @@ The workflow intentionally has no manual tag input. To release a version, create
 
 ## Version mapping
 
-For a tag such as `v0.1.2`:
+For a tag such as `v0.1.3`:
 
 | Value | Mapping |
 | --- | --- |
-| Git tag | `v0.1.2` |
-| Binary version shown by `tunwarden version` | `0.1.2` |
-| Debian upstream version | `0.1.2` |
-| Debian revision | `1` |
-| Debian package version | `0.1.2-1` |
-| Binary tarball | `tunwarden_0.1.2_linux_amd64.tar.gz` |
-| Debian package | `tunwarden_0.1.2-1_amd64.deb` |
-| Checksums | `tunwarden_0.1.2_checksums.txt` |
+| Git tag | `v0.1.3` |
+| Binary version shown by `tunwarden version` | `0.1.3` |
+| Debian package version | `0.1.3-1` |
+| Binary tarball | `tunwarden_0.1.3_linux_amd64.tar.gz` |
+| Debian package | `tunwarden_0.1.3-1_amd64.deb` |
+| Checksums | `tunwarden_0.1.3_checksums.txt` |
 
-The workflow models the Debian revision through nFPM's dedicated release field instead of embedding `-1` inside the upstream version string. This avoids nFPM normalizing `0.1.2-1` into a tilde-qualified version.
+The workflow passes the full Debian package version to the package build script as `TUNWARDEN_DEB_VERSION`. The package manifest sets `version_schema: none` so nFPM preserves the Debian package version string exactly instead of treating the `-1` suffix as a semantic-version prerelease and normalizing it into a tilde-qualified Debian version.
 
 ## Artifacts
 
