@@ -66,9 +66,9 @@ ldflags="-s -w -X ${version_package}=${binary_version}"
 CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "${ldflags}" -o "${root_dir}/usr/bin/tunwarden" ./cmd/tunwarden
 CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "${ldflags}" -o "${root_dir}/usr/bin/tunwardend" ./cmd/tunwardend
 
-go run ./cmd/tunwarden completion bash > "${root_dir}/usr/share/bash-completion/completions/tunwarden"
-go run ./cmd/tunwarden completion zsh > "${root_dir}/usr/share/zsh/vendor-completions/_tunwarden"
-go run ./cmd/tunwarden completion fish > "${root_dir}/usr/share/fish/vendor_completions.d/tunwarden.fish"
+"${root_dir}/usr/bin/tunwarden" completion bash > "${root_dir}/usr/share/bash-completion/completions/tunwarden"
+"${root_dir}/usr/bin/tunwarden" completion zsh > "${root_dir}/usr/share/zsh/vendor-completions/_tunwarden"
+"${root_dir}/usr/bin/tunwarden" completion fish > "${root_dir}/usr/share/fish/vendor_completions.d/tunwarden.fish"
 chmod 0644 \
   "${root_dir}/usr/share/bash-completion/completions/tunwarden" \
   "${root_dir}/usr/share/zsh/vendor-completions/_tunwarden" \
