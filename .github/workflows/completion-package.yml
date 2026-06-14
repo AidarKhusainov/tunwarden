@@ -43,7 +43,7 @@ jobs:
           go run ./cmd/tunwarden completion zsh | grep -F '#compdef tunwarden'
           go run ./cmd/tunwarden completion fish | grep -F 'complete -c tunwarden -f'
           go run ./cmd/tunwarden completion bash | grep -F 'proxy-only tun'
-          go run ./cmd/tunwarden completion fish | grep -F "-a 'proxy-only tun'"
+          go run ./cmd/tunwarden completion fish | grep -F -- "-a 'proxy-only tun'"
 
       - name: Validate package completion file layout
         run: |
