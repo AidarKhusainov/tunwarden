@@ -77,6 +77,42 @@ func TestImportLocalContentXrayJSONSkipsUnsupportedOutbound(t *testing.T) {
 	}
 }
 
+func TestImportLocalContentXrayJSONRejectsUnsupportedTransportSecurity(t *testing.T) {
+	tests := []struct {
+		name        string
+		content     string
+		wantMessage string
+	}{
+		{
+			name:        "unsupported-network",
+			content:     strings.Replace(localImportVLESSJSON, `"network": "tcp"`, `"network": "ftp"`, 1),
+			wantMessage: "unsupported VLESS transport",
+		},
+		{
+			name:        "unsupported-security",
+			content:     strings.Replace(localImportVLESSJSON, `"security": "reality"`, `"security": "xtls"`, 1),
+			wantMessage: "unsupported VLESS security",
+		},
+		{
+			name:        "incompatible-reality-ws",
+			content:     strings.Replace(localImportVLESSJSON, `"network": "tcp"`, `"network": "ws"`, 1),
+			wantMessage: "transport/security combination",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ImportLocalContent([]byte(tt.content))
+			if err == nil {
+				t.Fatal("expected unsupported Xray JSON import to fail")
+			}
+			if !strings.Contains(err.Error(), tt.wantMessage) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantMessage, err)
+			}
+		})
+	}
+}
+
 func TestImportLocalContentPlainURIListFallback(t *testing.T) {
 	content := "\n" + localImportVLESSURI("plain") + "\nhysteria2://unsupported.example\n"
 
