@@ -20,14 +20,15 @@ Usage:
   tunwarden doctor
   tunwarden logs
   tunwarden recover
+  tunwarden completion <bash|zsh|fish>
   tunwarden help [command]
 
 Current status:
   This is an early foundation build. Commands import VLESS profiles and Base64
   subscriptions, manage local profiles and subscriptions, print proxy-only plans,
   start and stop daemon-managed proxy-only Xray, report daemon-backed or local
-  status, diagnostics, daemon/core logs, and recovery plans; they do not mutate
-  TUN, routes, DNS, nftables, or firewall state.
+  status, diagnostics, daemon/core logs, recovery plans, and shell completion
+  definitions; they do not mutate TUN, routes, DNS, nftables, or firewall state.
 `)
 }
 
