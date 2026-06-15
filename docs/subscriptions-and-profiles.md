@@ -31,6 +31,8 @@ TunWarden must support adding subscription URLs.
 
 HTTP(S) subscription fetches must send an explicit `User-Agent: TunWarden` request header. The value intentionally identifies TunWarden without pretending to be a browser or another VPN/proxy client, and it must not include provider tokens, user identities, operating-system details, device details, or other fine-grained fingerprinting data.
 
+Subscription client identity/HWID behavior is owned by [Subscription client identity](./subscription-client-identity.md). Until a provider-specific Remnawave/Happ wire contract is confirmed with sanitized evidence, HTTP(S) subscription fetches must not add guessed HWID/device query parameters or headers. They must not send raw `/etc/machine-id`, MAC addresses, hostnames, DMI serials, disk serials, CPU identifiers, or other raw hardware identifiers.
+
 Initial command shape:
 
 ```bash
@@ -258,97 +260,3 @@ Important rule:
 > Generated Xray config is runtime output, not the persistent source of truth.
 
 This allows TunWarden to change routing/DNS/runtime behavior without rewriting imported subscription data.
-
-## 10. Provider compatibility notes
-
-### 10.1 Remnawave
-
-Remnawave can expose subscription templates in multiple client-oriented formats such as Base64 links, Xray JSON, sing-box JSON, and Mihomo-style formats.
-
-TunWarden should not implement Remnawave as a hard-coded special case first. It should support the generic formats and then add provider-specific metadata handling if useful.
-
-### 10.2 3x-ui
-
-3x-ui is an Xray panel and can expose common Xray-related protocols and subscription outputs.
-
-TunWarden should initially treat it as a generic subscription source unless provider-specific behavior is required.
-
-## 11. Storage requirements
-
-Manual profile source of truth is user-owned state and must use the documented user state location from [State and security requirements](./state-and-security.md):
-
-```text
-$XDG_STATE_HOME/tunwarden/profiles.json
-```
-
-When `XDG_STATE_HOME` is unset, the fallback is:
-
-```text
-~/.local/state/tunwarden/profiles.json
-```
-
-User-owned profile and subscription source of truth must not require root and must not be hidden only in daemon-private directories.
-
-Future daemon-owned or package-owned cache/state may use explicit daemon state locations when that behavior is implemented and documented, for example:
-
-```text
-/var/lib/tunwarden/subscriptions.json
-/var/lib/tunwarden/cache/subscriptions/<subscription-id>/last-good.raw
-/var/lib/tunwarden/cache/subscriptions/<subscription-id>/last-good.normalized.json
-```
-
-Sensitive fields must be handled carefully.
-
-Potential future requirement:
-
-- use OS keyring or encrypted storage for secrets.
-
-## 12. CLI examples
-
-```bash
-# Add a manual profile
-tunwarden profile add --name test --server example.com --port 443 --protocol vless
-
-# Add a subscription
-tunwarden subscription add personal https://example.com/sub
-
-# Update all subscriptions
-tunwarden subscription update --all
-
-# Show import diff before applying
-tunwarden subscription update personal --dry-run
-
-# List imported profiles
-tunwarden profile list
-
-# Show normalized profile
-tunwarden profile show personal/us-1
-
-# Connect
-tunwarden connect personal/us-1
-```
-
-## 13. Testing requirements
-
-Required test fixtures:
-
-- valid VLESS URI,
-- valid VLESS Reality URI,
-- valid VMess URI,
-- valid Trojan URI,
-- valid Shadowsocks URI,
-- Base64 list with mixed valid/invalid lines,
-- subscription update with removed nodes,
-- subscription update with changed node names,
-- malformed URI,
-- unsupported URI,
-- duplicate nodes.
-
-## 14. Out of scope for MVP
-
-- Provider account management.
-- Subscription purchase flow.
-- QR scanner.
-- GUI import wizard.
-- Automatic provider API integration beyond subscription URLs.
-- Full rule editor for provider-provided routing.
