@@ -187,12 +187,13 @@ Use `httptest.Server` integration tests for provider and subscription behavior:
 
 Use fixture-backed parser tests for subscription formats whose structure must remain stable. Xray JSON fixtures may include `log`, `dns`, `routing`, importable proxy outbounds, and non-profile service/routing outbounds.
 
-Use fake external binaries and fake executors for non-root daemon lifecycle coverage:
+Use fake executors and deterministic daemon-package tests for non-root daemon lifecycle coverage:
 
-- fake Xray process supervision,
 - generated runtime config creation and cleanup,
-- active and inactive lifecycle status through daemon-owned state,
-- TUN lifecycle orchestration with fake Xray, fake tun2socks, fake host-network executor, and fake route/TCP/DNS probes.
+- active and inactive lifecycle state through daemon-owned state,
+- TUN transaction apply, verify, rollback, and commit behavior,
+- TUN runtime config generation,
+- TUN route/TCP/DNS connectivity probes with fake probe functions.
 
 ### Privileged and real-world tests
 
