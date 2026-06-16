@@ -68,8 +68,8 @@ daemon when daemon-owned runtime behavior is required.
 .PP
 TunWarden is designed around safe defaults. Read-only commands must not
 require root. The CLI must not become a privileged or SUID networking
-mutator. Privileged networking state, when enabled by the documented
-milestone, belongs to the daemon transaction and recovery model.
+mutator. Privileged networking state belongs to the daemon transaction and
+recovery model.
 .SH COMMANDS
 .TP
 .B version
@@ -86,18 +86,38 @@ require root.
 .TP
 .B import <share-uri|local-path|file-or-http-url>
 Import a supported share URI, one-shot local import file, or subscription
-source. Ordinary local paths are detected as Xray JSON, plain URI-list, or
-Base64 URI-list inputs and are normalized into user-owned profiles with
-source
-.BR imported_file .
-Supported local Xray JSON import currently covers VLESS outbounds that map to
-the normalized profile model. Unsupported local entries are reported clearly
-when at least one supported profile is imported. Malformed Xray JSON object
-files fail as JSON errors and do not fall back to URI-list parsing.
+source.
 .PP
 .RS
-The command creates user-owned TunWarden state only; it does not connect,
-start
+Ordinary local paths are detected as Xray JSON, plain URI-list, or Base64
+URI-list inputs and are normalized into user-owned profiles with source
+.BR imported_file .
+Supported local Xray JSON import covers VLESS outbounds that map to the
+normalized profile model. Unsupported local entries are reported clearly when at
+least one supported profile is imported. Malformed Xray JSON object files fail
+as JSON errors and do not fall back to URI-list parsing.
+.RE
+.PP
+.RS
+.B file://,
+.B http://,
+and
+.B https://
+inputs are subscription sources. Supported subscription response formats are
+Base64 URI-list and Xray JSON object or array. The detected subscription format
+is persisted in subscription metadata and is shown by
+.B subscription list
+and
+.BR "subscription show" .
+Malformed subscription JSON that starts with
+.B {
+or
+.B [
+fails as JSON and does not fall back to Base64 parsing.
+.RE
+.PP
+.RS
+The command creates user-owned TunWarden state only; it does not connect, start
 .BR tunwardend (8),
 start Xray, require root, create TUN devices, mutate routes, DNS, nftables, or
 firewall state. Raw Xray JSON is not stored as persistent source of truth or
@@ -105,8 +125,7 @@ runtime configuration.
 .RE
 .TP
 .B profile add --name <name> --server <host> --port <port> --protocol <protocol>
-Create a manual profile. Supported protocol names in the current contract
-include
+Create a manual profile. Supported protocol names include
 .BR vless ,
 .BR vmess ,
 .BR trojan ,
@@ -127,43 +146,39 @@ Delete a stored profile. Destructive state-removal commands require explicit
 confirmation in non-interactive and JSON contexts.
 .TP
 .B subscription add --name <name> --url <url>
-Add a subscription source and import supported profiles from it.
+Add a subscription source. The source is persisted without fetching it.
 .TP
 .B subscription update <subscription-id>
-Refresh a subscription source. Failed updates preserve the last known good
-state according to the canonical documentation.
+Fetch a subscription source, detect Base64 URI-list or Xray JSON, normalize
+supported profiles, and replace only profiles owned by that subscription. Failed
+updates preserve last known good profile and subscription metadata state.
 .TP
 .B subscription list [--json]
-List subscription sources.
+List subscription sources with redacted URLs, persisted format, profile count,
+and update time.
 .TP
 .B subscription show <subscription-id> [--json]
-Show a subscription source with sensitive URL material redacted.
-.TP
-.B subscription delete <subscription-id> [--yes]
-Delete a subscription source when the implemented behavior requires explicit
-confirmation.
+Show one subscription source with sensitive URL material redacted. JSON output
+uses the same persisted format metadata as human output.
 .TP
 .B plan --mode proxy-only <profile-id> [--json]
 Render a read-only proxy-only plan. The plan describes generated Xray config
-paths and local proxy listeners and states that no TUN, route, DNS,
-nftables, or firewall state will be changed.
+paths and local proxy listeners and states that no TUN, route, DNS, nftables, or
+firewall state will be changed.
 .TP
 .B plan --mode tun <profile-id> [--json]
-Render a read-only or preview full-tunnel plan according to the current
-milestone contract. The output is intended for inspection before host
-networking mutation and includes rollback-oriented state where applicable.
+Render a read-only full-tunnel plan for inspection before host networking
+mutation.
 .TP
 .B connect [--mode proxy-only|tun] <profile-id>
 Start a connection through the local daemon API. The default mode is
 .BR proxy-only .
-Proxy-only mode starts and stops daemon-managed Xray runtime state and must
-not mutate routes, DNS, TUN devices, nftables, or firewall state. TUN mode is
-a safe preview path and must follow the documented daemon-owned transaction
-and rollback model.
+Proxy-only mode starts and stops daemon-managed Xray runtime state and must not
+mutate routes, DNS, TUN devices, nftables, or firewall state.
 .TP
 .B disconnect
-Stop the active daemon-managed connection. The operation is intended to be
-safe to repeat.
+Stop the active daemon-managed connection. The operation is intended to be safe
+to repeat.
 .TP
 .B status
 Print daemon-backed status when the daemon is reachable, otherwise use a
@@ -181,19 +196,17 @@ diagnostics.
 Read recent
 .BR tunwardend.service
 journal entries through
-.BR journalctl (1) .
+.BR journalctl (1).
 The
 .B --core
 view filters daemon-forwarded Xray lifecycle and stdout/stderr lines.
 .TP
 .B recover
-Inspect clearly TunWarden-owned recovery candidates without mutating host
-state.
+Inspect clearly TunWarden-owned recovery candidates without mutating host state.
 .TP
 .B recover --execute --yes [--json]
-Send explicit cleanup intent to the daemon. The CLI does not perform
-privileged host cleanup directly. Ambiguous resources are skipped and left
-unchanged.
+Send explicit cleanup intent to the daemon. The CLI does not perform privileged
+host cleanup directly. Ambiguous resources are skipped and left unchanged.
 .SH OPTIONS
 .TP
 .B --help, -h
@@ -207,15 +220,9 @@ Print machine-readable JSON for commands whose JSON contract is implemented.
 Commands with deferred JSON support fail fast with exit status 2 instead of
 printing unstable JSON.
 .TP
-.B --verbose
-Print additional diagnostic detail where supported.
-.TP
-.B --quiet
-Print only essential output where supported.
-.TP
 .B --yes
-Confirm a command that removes state or executes recovery cleanup. This flag
-is intentionally long-only.
+Confirm a command that removes state or executes recovery cleanup. This flag is
+intentionally long-only.
 .TP
 .B --execute
 Execute recovery cleanup through the daemon. This flag is intentionally
@@ -269,18 +276,15 @@ Default output is human-readable and intended for technical users. Errors are
 printed to standard error. Stable command output is printed to standard output
 where the implementation supports that separation.
 .PP
+Successful subscription import and update output includes a detected
+.B Format:
+line. `subscription list` and `subscription show` read the persisted format from
+subscription metadata.
+.PP
 JSON output is available only for commands with an implemented JSON contract.
 Implemented JSON output includes a
 .B schema_version
 field. Human and JSON output must apply the same redaction policy.
-.PP
-.B status --json,
-.B logs --json,
-.B connect --json,
-and
-.B disconnect --json
-are deferred in the current contract and fail as invalid usage rather than
-emitting unstable schemas.
 .SH FILES
 .TP
 .I $XDG_CONFIG_HOME/tunwarden/
@@ -341,9 +345,9 @@ The
 command is read-only and static. It must not contact the daemon, read user
 state, print secrets, or require root.
 .PP
-Local import parses supported file content into normalized profiles only. It
-must not execute or persist raw Xray JSON as source of truth or runtime
-configuration.
+Local and subscription imports parse supported content into normalized profiles
+only. They must not execute or persist raw Xray JSON as source of truth or
+runtime configuration.
 .PP
 Output, JSON, diagnostics, plans, recovery reports, and logs must redact
 subscription URLs, share URIs, generated core config contents, private keys,
@@ -376,6 +380,20 @@ Import a local Xray JSON or URI-list file without connecting:
 tunwarden import ./profiles.json
 tunwarden import ./profiles.txt
 tunwarden profile list
+.EE
+.TP
+Import and inspect a subscription without connecting:
+.EX
+tunwarden import https://example.com/subscription
+tunwarden subscription list
+tunwarden profile list
+.EE
+.TP
+Refresh an explicit subscription source:
+.EX
+tunwarden subscription add --name personal --url https://example.com/subscription
+tunwarden subscription update personal
+tunwarden subscription show personal
 .EE
 .TP
 Inspect a safe proxy-only plan:
