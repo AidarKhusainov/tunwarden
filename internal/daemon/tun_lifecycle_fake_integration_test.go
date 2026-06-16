@@ -59,11 +59,11 @@ func TestXrayManagerConnectTunWithFakeExecutorAndProcesses(t *testing.T) {
 
 	executor := &fakeTunPlanExecutor{}
 	manager := &XrayManager{
-		RuntimeDir:         runtimeDir,
-		XrayPath:           fakeXray,
-		StopTimeout:        200 * time.Millisecond,
-		tunExecutor:        executor,
-		snapshotCollector:  fakeTunSnapshot,
+		RuntimeDir:        runtimeDir,
+		XrayPath:          fakeXray,
+		StopTimeout:       200 * time.Millisecond,
+		tunExecutor:       executor,
+		snapshotCollector: fakeTunSnapshot,
 	}
 
 	p := daemonTunIntegrationProfile()
@@ -177,12 +177,12 @@ func daemonTunIntegrationProfile() profile.Profile {
 
 func fakeTunSnapshot(context.Context, netsnapshot.Options) netsnapshot.Snapshot {
 	return netsnapshot.Snapshot{
-		OS: "linux",
-		DefaultIPv4: netsnapshot.Route{Status: netsnapshot.StatusDetected, Family: "ipv4", Destination: "default", Interface: "eth0", Gateway: "192.0.2.1"},
-		DefaultIPv6: netsnapshot.Route{Status: netsnapshot.StatusMissing, Family: "ipv6"},
-		ServerRoute: netsnapshot.Route{Status: netsnapshot.StatusDetected, Family: "ipv4", Destination: "203.0.113.10", Interface: "eth0", Gateway: "192.0.2.1"},
-		DNS: netsnapshot.DNS{Mode: "systemd-resolved", Resolved: netsnapshot.Finding{Status: netsnapshot.StatusDetected, Summary: "systemd-resolved detected"}},
-		Nftables: netsnapshot.Nftables{Availability: netsnapshot.Finding{Status: netsnapshot.StatusDetected, Summary: "nft available"}, TunWardenTable: netsnapshot.Finding{Status: netsnapshot.StatusMissing, Summary: "table missing"}},
+		OS:             "linux",
+		DefaultIPv4:    netsnapshot.Route{Status: netsnapshot.StatusDetected, Family: "ipv4", Destination: "default", Interface: "eth0", Gateway: "192.0.2.1"},
+		DefaultIPv6:    netsnapshot.Route{Status: netsnapshot.StatusMissing, Family: "ipv6"},
+		ServerRoute:    netsnapshot.Route{Status: netsnapshot.StatusDetected, Family: "ipv4", Destination: "203.0.113.10", Interface: "eth0", Gateway: "192.0.2.1"},
+		DNS:            netsnapshot.DNS{Mode: "systemd-resolved", Resolved: netsnapshot.Finding{Status: netsnapshot.StatusDetected, Summary: "systemd-resolved detected"}},
+		Nftables:       netsnapshot.Nftables{Availability: netsnapshot.Finding{Status: netsnapshot.StatusDetected, Summary: "nft available"}, TunWardenTable: netsnapshot.Finding{Status: netsnapshot.StatusMissing, Summary: "table missing"}},
 	}
 }
 
