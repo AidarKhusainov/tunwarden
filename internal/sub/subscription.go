@@ -131,7 +131,11 @@ func ValidateSource(source Source) error {
 	} else if err := validateSourceURL(source.URL); err != nil {
 		messages = append(messages, err.Error())
 	}
-	if source.Format != FormatBase64 {
+	switch source.Format {
+	case FormatBase64, FormatXrayJSON:
+	case "":
+		messages = append(messages, "format is required")
+	default:
 		messages = append(messages, fmt.Sprintf("unsupported subscription format %q", source.Format))
 	}
 	if len(messages) > 0 {
