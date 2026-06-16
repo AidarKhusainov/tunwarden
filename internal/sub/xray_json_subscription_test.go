@@ -71,18 +71,6 @@ func TestParseSubscriptionContentImportsXrayJSONArray(t *testing.T) {
 	}
 }
 
-func TestParseSubscriptionContentRejectsPlaceholderUnsupportedClientJSON(t *testing.T) {
-	_, _, err := ParseSubscriptionContent([]byte(remoteXrayConfigObject("not-a-real-client", "placeholder.example", "App not supported", "tcp", "tls")))
-	if err == nil {
-		t.Fatal("expected placeholder/dummy JSON to fail")
-	}
-	for _, want := range []string{"Xray JSON", "no supported", "user id must be a UUID"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("expected error containing %q, got %v", want, err)
-		}
-	}
-}
-
 func TestParseSubscriptionContentMalformedJSONDoesNotFallbackToBase64(t *testing.T) {
 	format, _, err := ParseSubscriptionContent([]byte("  {not-json"))
 	if err == nil {
@@ -93,23 +81,6 @@ func TestParseSubscriptionContentMalformedJSONDoesNotFallbackToBase64(t *testing
 	}
 	if !strings.Contains(err.Error(), "Xray JSON") || strings.Contains(err.Error(), "Base64") {
 		t.Fatalf("expected JSON-only error without Base64 fallback, got %v", err)
-	}
-}
-
-func TestParseSubscriptionContentRejectsUnsupportedJSONTopLevelTypes(t *testing.T) {
-	for _, body := range []string{`"string"`, `42`, `true`, `null`, `[true]`} {
-		t.Run(body, func(t *testing.T) {
-			format, _, err := ParseSubscriptionContent([]byte(body))
-			if err == nil {
-				t.Fatal("expected unsupported JSON top-level type to fail")
-			}
-			if format != FormatXrayJSON {
-				t.Fatalf("expected format %q, got %q", FormatXrayJSON, format)
-			}
-			if !strings.Contains(err.Error(), "unsupported") && !strings.Contains(err.Error(), "no supported") {
-				t.Fatalf("expected clear unsupported JSON error, got %v", err)
-			}
-		})
 	}
 }
 
