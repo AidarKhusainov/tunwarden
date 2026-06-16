@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	clientIDFileName                  = "client-id"
-	subscriptionClientIDPlaceholder   = "{tunwarden-client-id}"
+	clientIDFileName                = "client-id"
+	subscriptionClientIDPlaceholder = "{tunwarden-client-id}"
 )
 
 // DefaultClientIDPath returns the user-owned subscription client identity path.
