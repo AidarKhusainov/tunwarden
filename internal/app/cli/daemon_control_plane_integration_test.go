@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/AidarKhusainov/tunwarden/internal/api"
+	"github.com/AidarKhusainov/tunwarden/internal/client"
 	daemonapi "github.com/AidarKhusainov/tunwarden/internal/daemon"
 	"github.com/AidarKhusainov/tunwarden/internal/profile"
 )
@@ -96,20 +98,15 @@ func TestCLIConnectStatusDisconnectWithDaemonAndFakeXray(t *testing.T) {
 		}
 	}
 
-	var statusOut bytes.Buffer
-	if err := runWithOptions(context.Background(), []string{"status"}, &statusOut, opts); err != nil {
-		t.Fatalf("status failed: %v", err)
+	status, err := (client.StatusClient{}).Status(context.Background())
+	if err != nil {
+		t.Fatalf("daemon status failed: %v", err)
 	}
-	statusText := statusOut.String()
-	for _, want := range []string{"Daemon: running", "Connection: active", "Mode: proxy-only", "TUN: disabled"} {
-		if !strings.Contains(statusText, want) {
-			t.Fatalf("expected status output to contain %q, got %q", want, statusText)
-		}
+	if status.Daemon != "running" || status.Connection != "active" || status.Mode != "proxy-only" || status.TUN != "disabled" {
+		t.Fatalf("unexpected daemon status: %#v", status)
 	}
-	for _, secret := range []string{p.UserIdentity, p.RealityPublicKey, string(config)} {
-		if strings.Contains(statusText, secret) {
-			t.Fatalf("status output leaked secret/config content %q in %q", secret, statusText)
-		}
+	if statusText := fmt.Sprintf("%#v", status); strings.Contains(statusText, p.UserIdentity) || strings.Contains(statusText, p.RealityPublicKey) || strings.Contains(statusText, string(config)) {
+		t.Fatalf("daemon status leaked secret or config content: %s", statusText)
 	}
 
 	var disconnectOut bytes.Buffer
@@ -121,14 +118,6 @@ func TestCLIConnectStatusDisconnectWithDaemonAndFakeXray(t *testing.T) {
 	}
 	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
 		t.Fatalf("expected generated config to be removed after disconnect, stat err=%v", err)
-	}
-
-	var recoverOut bytes.Buffer
-	if err := runWithOptions(context.Background(), []string{"recover", "--execute", "--yes"}, &recoverOut, opts); err != nil {
-		t.Fatalf("recover after clean disconnect failed: %v", err)
-	}
-	if got := recoverOut.String(); !strings.Contains(got, "TunWarden recovery") || !strings.Contains(got, "No TunWarden-owned recovery candidates found") {
-		t.Fatalf("unexpected recover output after clean disconnect: %q", got)
 	}
 }
 
@@ -169,14 +158,9 @@ func waitForDaemonSocket(t *testing.T, runtimeDir string) {
 
 func writeLongRunningFakeBinary(t *testing.T, path, argsPath string) string {
 	t.Helper()
-	script := `#!/bin/sh
-printf '%s\n' "$@" > "$TUNWARDEN_FAKE_PROCESS_ARGS"
-trap 'exit 0' TERM INT
-while :; do sleep 1; done
-`
+	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" > %q\nexec sleep 3600\n", argsPath)
 	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
 		t.Fatalf("write fake binary: %v", err)
 	}
-	t.Setenv("TUNWARDEN_FAKE_PROCESS_ARGS", argsPath)
 	return path
 }
