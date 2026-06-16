@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"path/filepath"
 	"strconv"
 	"testing"
 )
@@ -46,9 +47,14 @@ func TestRunCLICompletionRuntimeSupportsZshAndFish(t *testing.T) {
 }
 
 func TestRunCLICompletionRuntimeZshAndFishMissingStateIsQuiet(t *testing.T) {
+	dir := t.TempDir()
+	opts := options{
+		profileStorePath:      filepath.Join(dir, "missing-profiles.json"),
+		subscriptionStorePath: filepath.Join(dir, "missing-subscriptions.json"),
+	}
 	for _, shell := range []string{"zsh", "fish"} {
 		t.Run(shell, func(t *testing.T) {
-			got := runCompletionRuntime(t, options{}, shellCompleteArgs(shell, 2, "tunwarden", "connect", "")...)
+			got := runCompletionRuntime(t, opts, shellCompleteArgs(shell, 2, "tunwarden", "connect", "")...)
 			assertContainsLine(t, got, ":no-files")
 			assertNotContainsLine(t, got, "alpha")
 		})
