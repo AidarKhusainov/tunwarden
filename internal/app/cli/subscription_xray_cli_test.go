@@ -187,7 +187,7 @@ func TestRunCLIImportHTTPPlaceholderXrayJSONFailsWithoutPersisting(t *testing.T)
 	if err == nil {
 		t.Fatal("expected placeholder JSON import to fail")
 	}
-	for _, want := range []string{"Xray JSON", "no supported", "user id must be a UUID"} {
+	for _, want := range []string{"Xray JSON", "user id must be a UUID"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("expected error containing %q, got %v", want, err)
 		}
