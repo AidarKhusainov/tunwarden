@@ -32,7 +32,7 @@ func TestRunCLICompletionGeneratesSupportedShells(t *testing.T) {
 		{
 			name: "fish",
 			args: []string{"completion", "fish"},
-			want: []string{"complete -c tunwarden -f -a", "__complete fish", "proxy-only tun", "vless vmess trojan shadowsocks"},
+			want: []string{"complete -c tunwarden -f", "__complete fish", "__fish_tunwarden_using_command plan", "-l mode -x -a 'proxy-only tun'", "-l protocol -x -a 'vless vmess trojan shadowsocks'", "-l follow -s f"},
 		},
 	}
 
