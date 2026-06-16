@@ -129,7 +129,7 @@ func runSubscriptionUpdate(ctx context.Context, store sub.Store, profileStore pr
 	if err != nil {
 		return err
 	}
-	parsed, err := sub.ParseBase64Subscription(content)
+	format, parsed, err := sub.ParseSubscriptionContent(content)
 	if err != nil {
 		return err
 	}
@@ -152,6 +152,7 @@ func runSubscriptionUpdate(ctx context.Context, store sub.Store, profileStore pr
 			return rollbackProfiles(err)
 		}
 	}
+	source.Format = format
 	source.ProfileIDs = profileIDs(parsed.Profiles)
 	source.LastUpdatedAt = time.Now().UTC()
 	if err := store.Update(source); err != nil {
@@ -300,6 +301,7 @@ func subscriptionForOutput(source sub.Source) subscriptionOutput {
 
 func printSubscriptionUpdateResult(stdout io.Writer, result sub.UpdateResult) {
 	fmt.Fprintf(stdout, "Subscription updated: %s\n", render.Redact(result.Subscription.ID))
+	fmt.Fprintf(stdout, "Format: %s\n", result.Subscription.Format)
 	fmt.Fprintf(stdout, "Imported: %d\n", result.Imported)
 	fmt.Fprintf(stdout, "Updated: %d\n", result.Updated)
 	fmt.Fprintf(stdout, "Unchanged: %d\n", result.Unchanged)
@@ -372,19 +374,13 @@ func printSubscriptionHelp(w io.Writer) {
   tunwarden subscription list [--json]
   tunwarden subscription show <subscription-id> [--json]
 
-Manage Base64 URI-list subscriptions in local TunWarden user state. These
-commands never start network processes and never mutate TUN, routes, DNS,
-nftables, or firewall state.
+Manage subscription sources and imported subscription profiles in local
+TunWarden user state.
 
-Implemented in v0.1:
-  add/list/show/update, file/http/https subscription fetch, Base64 URI-list
-  parsing, supported VLESS entry import into the profile store, unsupported
-  entry reporting, JSON list/show output, and last-known-good profile state
-  preservation when fetch, decode, parse, validation, or subscription metadata
-  update fails after profile apply.
+Supported subscription sources:
+  file/http/https
 
-Not implemented yet:
-  subscription delete, scheduled updates, provider metadata, VMess/Trojan/
-  Shadowsocks import, latency testing, dry-run update, update --json
+Supported subscription formats:
+  Base64 URI-list, Xray JSON
 `)
 }

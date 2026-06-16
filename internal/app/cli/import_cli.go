@@ -135,7 +135,7 @@ func runSubscriptionImport(ctx context.Context, sourceURL string, stdout io.Writ
 	if err != nil {
 		return err
 	}
-	parsed, err := sub.ParseBase64Subscription(content)
+	format, parsed, err := sub.ParseSubscriptionContent(content)
 	if err != nil {
 		return err
 	}
@@ -181,6 +181,7 @@ func runSubscriptionImport(ctx context.Context, sourceURL string, stdout io.Writ
 			return rollbackProfilesAndSubscription(err)
 		}
 	}
+	source.Format = format
 	source.ProfileIDs = profileIDs(parsed.Profiles)
 	source.LastUpdatedAt = time.Now().UTC()
 	if err := subscriptionStore.Update(source); err != nil {
@@ -208,6 +209,7 @@ func importedSubscriptionName(rawURL string) string {
 
 func printSubscriptionImportResult(stdout io.Writer, result sub.UpdateResult) {
 	fmt.Fprintf(stdout, "Subscription imported: %s\n", render.Redact(result.Subscription.ID))
+	fmt.Fprintf(stdout, "Format: %s\n", result.Subscription.Format)
 	fmt.Fprintf(stdout, "Imported: %d\n", result.Imported)
 	fmt.Fprintf(stdout, "Updated: %d\n", result.Updated)
 	fmt.Fprintf(stdout, "Unchanged: %d\n", result.Unchanged)
@@ -241,7 +243,7 @@ Supported local files:
   Xray JSON, plain URI-list, Base64 URI-list
 
 Supported subscription URLs:
-  Base64 URI-list over file/http/https
+  Base64 URI-list and Xray JSON over file/http/https
 
 Examples:
   tunwarden import 'vless://...'
