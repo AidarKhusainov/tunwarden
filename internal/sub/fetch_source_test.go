@@ -100,7 +100,7 @@ func TestFetchSourceRejectsInvalidClientIDPlaceholderURLsBeforeCreatingIdentity(
 	defer server.Close()
 
 	tests := map[string]struct {
-		sourceURL           string
+		sourceURL          string
 		wantPlaceholderErr bool
 	}{
 		"host parse validation": {
@@ -110,19 +110,19 @@ func TestFetchSourceRejectsInvalidClientIDPlaceholderURLsBeforeCreatingIdentity(
 			sourceURL: "https://user:" + subscriptionClientIDPlaceholder + "@example.com/sub?hwid=x",
 		},
 		"path": {
-			sourceURL:           server.URL + "/" + subscriptionClientIDPlaceholder + "?hwid=x",
+			sourceURL:          server.URL + "/" + subscriptionClientIDPlaceholder + "?hwid=x",
 			wantPlaceholderErr: true,
 		},
 		"fragment": {
-			sourceURL:           server.URL + "/sub?hwid=x#" + subscriptionClientIDPlaceholder,
+			sourceURL:          server.URL + "/sub?hwid=x#" + subscriptionClientIDPlaceholder,
 			wantPlaceholderErr: true,
 		},
 		"query key": {
-			sourceURL:           server.URL + "/sub?" + subscriptionClientIDPlaceholder + "=x",
+			sourceURL:          server.URL + "/sub?" + subscriptionClientIDPlaceholder + "=x",
 			wantPlaceholderErr: true,
 		},
 		"partial query value": {
-			sourceURL:           server.URL + "/sub?hwid=prefix-" + subscriptionClientIDPlaceholder,
+			sourceURL:          server.URL + "/sub?hwid=prefix-" + subscriptionClientIDPlaceholder,
 			wantPlaceholderErr: true,
 		},
 	}
