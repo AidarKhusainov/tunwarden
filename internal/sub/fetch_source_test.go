@@ -91,7 +91,7 @@ func TestFetchSourceReplacesClientIDPlaceholder(t *testing.T) {
 	}
 }
 
-func TestFetchSourceRejectsClientIDPlaceholderOutsideQueryValue(t *testing.T) {
+func TestFetchSourceRejectsInvalidClientIDPlaceholderURLsBeforeCreatingIdentity(t *testing.T) {
 	stateHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -99,19 +99,41 @@ func TestFetchSourceRejectsClientIDPlaceholderOutsideQueryValue(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tests := map[string]string{
-		"host":                "https://" + subscriptionClientIDPlaceholder + ".example.com/sub?hwid=x",
-		"userinfo":            "https://user:" + subscriptionClientIDPlaceholder + "@example.com/sub?hwid=x",
-		"path":                server.URL + "/" + subscriptionClientIDPlaceholder + "?hwid=x",
-		"fragment":            server.URL + "/sub?hwid=x#" + subscriptionClientIDPlaceholder,
-		"query key":           server.URL + "/sub?" + subscriptionClientIDPlaceholder + "=x",
-		"partial query value": server.URL + "/sub?hwid=prefix-" + subscriptionClientIDPlaceholder,
+	tests := map[string]struct {
+		sourceURL           string
+		wantPlaceholderErr bool
+	}{
+		"host parse validation": {
+			sourceURL: "https://" + subscriptionClientIDPlaceholder + ".example.com/sub?hwid=x",
+		},
+		"userinfo parse validation": {
+			sourceURL: "https://user:" + subscriptionClientIDPlaceholder + "@example.com/sub?hwid=x",
+		},
+		"path": {
+			sourceURL:           server.URL + "/" + subscriptionClientIDPlaceholder + "?hwid=x",
+			wantPlaceholderErr: true,
+		},
+		"fragment": {
+			sourceURL:           server.URL + "/sub?hwid=x#" + subscriptionClientIDPlaceholder,
+			wantPlaceholderErr: true,
+		},
+		"query key": {
+			sourceURL:           server.URL + "/sub?" + subscriptionClientIDPlaceholder + "=x",
+			wantPlaceholderErr: true,
+		},
+		"partial query value": {
+			sourceURL:           server.URL + "/sub?hwid=prefix-" + subscriptionClientIDPlaceholder,
+			wantPlaceholderErr: true,
+		},
 	}
 
-	for name, sourceURL := range tests {
+	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := FetchSource(context.Background(), Source{ID: name, Name: name, URL: sourceURL, Format: FormatBase64})
-			if !errors.Is(err, errUnsupportedClientIDPlaceholder) {
+			_, err := FetchSource(context.Background(), Source{ID: name, Name: name, URL: tc.sourceURL, Format: FormatBase64})
+			if err == nil {
+				t.Fatal("expected invalid placeholder URL to fail")
+			}
+			if tc.wantPlaceholderErr && !errors.Is(err, errUnsupportedClientIDPlaceholder) {
 				t.Fatalf("expected unsupported placeholder error, got %v", err)
 			}
 			clientIDPath := filepath.Join(stateHome, "tunwarden", clientIDFileName)
