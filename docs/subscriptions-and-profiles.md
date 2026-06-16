@@ -1,281 +1,12 @@
-# Subscriptions and Profiles
+# Subscriptions and profiles
 
-## 1. Purpose
+TunWarden stores user-owned subscription sources separately from normalized profiles. Subscription fetches and local imports are normalized into the same profile model that connection planning and daemon lifecycle use.
 
-TunWarden must support both direct/manual connections and subscription-based profiles.
+Generated Xray configuration is runtime output. It is not the persistent source of truth for imported profiles or subscriptions.
 
-The goal is not to preserve every provider-specific detail forever. The goal is to normalize different inputs into a stable internal profile model that can be validated, tested, and converted into runtime core configuration.
+## State model
 
-Implemented manual profile management behavior is documented in [Profile management](./profile-management.md).
-
-## 2. Input sources
-
-### 2.1 Manual profiles
-
-Manual profiles should be supported from the beginning.
-
-Initial protocols to consider:
-
-- VLESS,
-- VMess,
-- Trojan,
-- Shadowsocks.
-
-Manual profiles are required for development because they make networking tests independent from subscription providers.
-
-The v0.1 foundation implementation supports explicit manual `profile add`, `profile list`, `profile show`, and `profile delete --yes` commands for persistent user-owned local profile state.
-
-### 2.2 Subscription URLs
-
-TunWarden must support adding subscription URLs.
-
-HTTP(S) subscription fetches must send an explicit `User-Agent: TunWarden` request header. The value intentionally identifies TunWarden without pretending to be a browser or another VPN/proxy client, and it must not include provider tokens, user identities, operating-system details, device details, or other fine-grained fingerprinting data.
-
-Initial command shape:
-
-```bash
-tunwarden subscription add personal https://example.com/sub
-tunwarden subscription update personal
-tunwarden subscription list
-tunwarden subscription remove personal
-```
-
-### 2.3 Imported files
-
-Future support:
-
-- local JSON files,
-- local YAML files,
-- exported Xray configs,
-- sing-box configs,
-- Mihomo/Clash YAML.
-
-## 3. Subscription format families
-
-TunWarden should be designed around format adapters.
-
-```text
-SubscriptionSource
-  -> Fetcher
-  -> FormatDetector
-  -> Parser
-  -> Normalizer
-  -> Validator
-  -> ProfileStore
-```
-
-Expected format families:
-
-- Base64 list of share links,
-- plain text share links,
-- Xray JSON,
-- sing-box JSON,
-- Mihomo/Clash YAML,
-- provider-specific templates such as Remnawave,
-- 3x-ui compatible subscription outputs.
-
-## 4. Share link support
-
-Initial URI schemes:
-
-```text
-vless://
-vmess://
-trojan://
-ss://
-```
-
-Future URI schemes:
-
-```text
-hysteria://
-hysteria2://
-tuic://
-wireguard://
-```
-
-Unsupported URI schemes must produce clear errors, not silent skips.
-
-## 5. Internal profile model
-
-Every imported node must be normalized to an internal model.
-
-Suggested fields:
-
-```text
-Profile
-  id
-  name
-  source
-  protocol
-  server
-  port
-  user_identity
-  security
-  transport
-  mux
-  packet_encoding
-  udp_support
-  dns_policy
-  routing_policy
-  tags
-  provider_metadata
-  raw_source_reference
-  created_at
-  updated_at
-```
-
-### 5.1 Source metadata
-
-```text
-ProfileSource
-  type: manual | subscription | imported_file
-  subscription_id
-  provider_name
-  original_url
-  original_format
-  last_updated_at
-```
-
-### 5.2 Security model
-
-Security fields must not be flattened into unstructured strings.
-
-Examples:
-
-```text
-Security
-  tls_enabled
-  server_name
-  alpn
-  fingerprint
-  reality
-  allow_insecure
-```
-
-Reality-specific example:
-
-```text
-RealitySettings
-  public_key
-  short_id
-  spider_x
-```
-
-### 5.3 Transport model
-
-Examples:
-
-```text
-Transport
-  type: tcp | ws | grpc | httpupgrade | xhttp | quic | kcp
-  path
-  host
-  service_name
-  headers
-```
-
-## 6. Validation requirements
-
-### VAL-001: Required fields
-
-Each normalized profile must validate required fields:
-
-- protocol,
-- server,
-- port,
-- protocol-specific identity/auth fields,
-- transport compatibility,
-- security compatibility.
-
-### VAL-002: Unsafe settings warnings
-
-TunWarden must warn about risky settings:
-
-- `allowInsecure = true`,
-- missing SNI when TLS requires it,
-- unsupported transport,
-- unsupported UDP behavior,
-- unknown fingerprint,
-- IPv6 enabled without full IPv6 routing support.
-
-### VAL-003: Provider errors
-
-Subscription update failures must preserve the last known good profiles unless the user explicitly removes them.
-
-### VAL-004: Deterministic IDs
-
-Imported profiles should receive deterministic IDs where possible so subscription updates do not duplicate nodes unnecessarily.
-
-Candidate inputs:
-
-```text
-subscription_id + protocol + server + port + user_identity + transport + security fingerprint
-```
-
-## 7. Subscription update behavior
-
-Subscription update must be safe.
-
-Required behavior:
-
-1. Fetch subscription.
-2. Detect format.
-3. Parse into candidate nodes.
-4. Normalize.
-5. Validate.
-6. Produce update diff.
-7. Apply only if parsing/validation is good enough.
-8. Keep last good state if update fails.
-
-Diff categories:
-
-- added profiles,
-- removed profiles,
-- changed profiles,
-- unchanged profiles,
-- invalid profiles.
-
-## 8. Profile selection
-
-MVP selection can be manual.
-
-Future selection features:
-
-- latency test,
-- URL test,
-- auto-select fastest node,
-- provider group selection,
-- fallback group,
-- rule-based group selection.
-
-## 9. Runtime profile rendering
-
-The internal profile model must be rendered into generated core config at connection time.
-
-Important rule:
-
-> Generated Xray config is runtime output, not the persistent source of truth.
-
-This allows TunWarden to change routing/DNS/runtime behavior without rewriting imported subscription data.
-
-## 10. Provider compatibility notes
-
-### 10.1 Remnawave
-
-Remnawave can expose subscription templates in multiple client-oriented formats such as Base64 links, Xray JSON, sing-box JSON, and Mihomo-style formats.
-
-TunWarden should not implement Remnawave as a hard-coded special case first. It should support the generic formats and then add provider-specific metadata handling if useful.
-
-### 10.2 3x-ui
-
-3x-ui is an Xray panel and can expose common Xray-related protocols and subscription outputs.
-
-TunWarden should initially treat it as a generic subscription source unless provider-specific behavior is required.
-
-## 11. Storage requirements
-
-Manual profile source of truth is user-owned state and must use the documented user state location from [State and security requirements](./state-and-security.md):
+Profiles are stored under the documented user state directory:
 
 ```text
 $XDG_STATE_HOME/tunwarden/profiles.json
@@ -287,68 +18,114 @@ When `XDG_STATE_HOME` is unset, the fallback is:
 ~/.local/state/tunwarden/profiles.json
 ```
 
-User-owned profile and subscription source of truth must not require root and must not be hidden only in daemon-private directories.
-
-Future daemon-owned or package-owned cache/state may use explicit daemon state locations when that behavior is implemented and documented, for example:
+Subscription metadata is stored alongside user state:
 
 ```text
-/var/lib/tunwarden/subscriptions.json
-/var/lib/tunwarden/cache/subscriptions/<subscription-id>/last-good.raw
-/var/lib/tunwarden/cache/subscriptions/<subscription-id>/last-good.normalized.json
+$XDG_STATE_HOME/tunwarden/subscriptions.json
 ```
 
-Sensitive fields must be handled carefully.
+Subscription metadata contains the local subscription ID, name, source URL, detected format, imported profile IDs, and last successful update time. User-facing output must redact full subscription URLs and provider tokens.
 
-Potential future requirement:
+## Subscription sources
 
-- use OS keyring or encrypted storage for secrets.
+Supported source schemes:
 
-## 12. CLI examples
+- `file://`
+- `http://`
+- `https://`
+
+HTTP(S) subscription fetches send:
+
+```text
+User-Agent: TunWarden
+```
+
+The User-Agent identifies TunWarden without pretending to be another client and must not include provider tokens, user identities, operating-system details, device details, or other fine-grained fingerprinting data.
+
+Subscription fetches are bounded, read-only operations. They must not connect to the VPN, start `tunwardend`, start Xray, require root, create TUN devices, mutate routes, mutate DNS, mutate nftables, or mutate firewall state.
+
+## Subscription formats
+
+Supported response formats:
+
+- Base64 URI-list
+- Xray JSON object
+- Xray JSON array
+
+Format detection uses the response body, not the HTTP `Content-Type` header. After trimming whitespace:
+
+- `{` starts the Xray JSON object path;
+- `[` starts the Xray JSON array path;
+- malformed JSON that starts with `{` or `[` fails as JSON and must not fall back to Base64;
+- other content is parsed as Base64 URI-list.
+
+The detected format is persisted in subscription metadata after a successful import or update and is shown by `subscription list` and `subscription show`.
+
+## Normalization
+
+Subscription entries are normalized into TunWarden profiles with source `subscription`.
+
+Supported Xray JSON import covers VLESS outbounds that map to the normalized profile model. Each supported outbound is converted into a profile containing server, port, protocol, identity, transport, security, TLS/Reality, WebSocket, and gRPC fields that TunWarden already understands.
+
+Raw provider responses and raw Xray JSON are not stored as persistent profile source of truth.
+
+Unsupported entries are reported clearly when at least one supported profile is imported. A response with no supported profiles fails and leaves existing state unchanged.
+
+## Update behavior
+
+A subscription update follows this sequence:
+
+1. Fetch the source.
+2. Detect the response format.
+3. Parse and normalize supported profiles.
+4. Validate normalized profiles.
+5. Replace only profiles owned by that subscription.
+6. Persist subscription metadata with the detected format, imported profile IDs, and update time.
+
+Failed fetch, decode, parse, validation, profile replacement, or metadata update must preserve the last known good profiles and subscription metadata.
+
+Duplicate profile IDs inside one subscription response fail the update. Unsupported protocol, transport, security, or incompatible transport/security combinations are reported as unsupported profile entries rather than silently accepted.
+
+## CLI behavior
+
+Import a one-off local file:
 
 ```bash
-# Add a manual profile
-tunwarden profile add --name test --server example.com --port 443 --protocol vless
-
-# Add a subscription
-tunwarden subscription add personal https://example.com/sub
-
-# Update all subscriptions
-tunwarden subscription update --all
-
-# Show import diff before applying
-tunwarden subscription update personal --dry-run
-
-# List imported profiles
-tunwarden profile list
-
-# Show normalized profile
-tunwarden profile show personal/us-1
-
-# Connect
-tunwarden connect personal/us-1
+tunwarden import ./profiles.json
+tunwarden import ./profiles.txt
 ```
 
-## 13. Testing requirements
+Import a subscription through the first-run convenience entrypoint:
 
-Required test fixtures:
+```bash
+tunwarden import https://example.com/subscription
+```
 
-- valid VLESS URI,
-- valid VLESS Reality URI,
-- valid VMess URI,
-- valid Trojan URI,
-- valid Shadowsocks URI,
-- Base64 list with mixed valid/invalid lines,
-- subscription update with removed nodes,
-- subscription update with changed node names,
-- malformed URI,
-- unsupported URI,
-- duplicate nodes.
+Manage an explicit subscription source:
 
-## 14. Out of scope for MVP
+```bash
+tunwarden subscription add --name personal --url https://example.com/subscription
+tunwarden subscription update personal
+tunwarden subscription list
+tunwarden subscription show personal
+```
 
-- Provider account management.
-- Subscription purchase flow.
-- QR scanner.
-- GUI import wizard.
-- Automatic provider API integration beyond subscription URLs.
-- Full rule editor for provider-provided routing.
+Human output for successful subscription import/update includes a concise detected format line:
+
+```text
+Format: base64
+```
+
+or:
+
+```text
+Format: xray-json
+```
+
+`subscription list --json` and `subscription show --json` expose the persisted format and redacted URL metadata with the common JSON envelope.
+
+## Security requirements
+
+Subscription and profile commands must not print full subscription URLs, full share URIs, raw user identities, passwords, private keys, authorization headers, provider tokens, or generated core configuration contents.
+
+User-owned profile and subscription state must not require root and must not be hidden only in daemon-private directories.
