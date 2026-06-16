@@ -99,7 +99,6 @@ func printZshCompletion(w io.Writer) {
 # static commands: %s
 # static connection modes: %s
 # static profile protocols: %s
-# static zsh compatibility markers: 'proxy-only' 'tun' --protocol
 
 _tunwarden() {
   local runtime_output line value description plain
@@ -157,8 +156,6 @@ func printFishCompletion(w io.Writer) {
 # static commands: %s
 # static connection modes: %s
 # static profile protocols: %s
-# static fish compatibility markers: __fish_tunwarden_using_command connect
-# static fish compatibility markers: -a 'proxy-only tun' -l protocol
 
 function __fish_tunwarden_runtime
     set -l words (commandline -opc)
@@ -197,12 +194,4 @@ complete -c tunwarden -n '__fish_tunwarden_needs_files' -F
 
 func completionWords(values []string) string {
 	return strings.Join(values, " ")
-}
-
-func zshWords(values []string) string {
-	quoted := make([]string, len(values))
-	for i, value := range values {
-		quoted[i] = "'" + value + "'"
-	}
-	return strings.Join(quoted, " ")
 }
