@@ -252,8 +252,12 @@ func FetchSource(ctx context.Context, source Source) ([]byte, error) {
 		}
 		return data, nil
 	case "http", "https":
+		requestURL, err := subscriptionRequestURL(source.URL)
+		if err != nil {
+			return nil, fmt.Errorf("fetch subscription %s: %w", source.ID, err)
+		}
 		client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: sameOriginRedirectPolicy}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, source.URL, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("fetch subscription %s: %w", source.ID, err)
 		}
