@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -53,7 +54,7 @@ func LoadOrCreateClientID(path string) (string, error) {
 	}
 	if err := createClientID(path, id); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return readClientID(path)
+			return readClientIDAfterConcurrentCreate(path)
 		}
 		return "", err
 	}
@@ -70,6 +71,19 @@ func readClientID(path string) (string, error) {
 		return "", fmt.Errorf("read subscription client identity %s: invalid client-id", path)
 	}
 	return id, nil
+}
+
+func readClientIDAfterConcurrentCreate(path string) (string, error) {
+	var lastErr error
+	for range 100 {
+		id, err := readClientID(path)
+		if err == nil {
+			return id, nil
+		}
+		lastErr = err
+		time.Sleep(time.Millisecond)
+	}
+	return "", lastErr
 }
 
 func subscriptionRequestURL(raw string) (string, string, error) {
