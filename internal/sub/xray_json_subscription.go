@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	"github.com/AidarKhusainov/tunwarden/internal/profile"
 )
@@ -62,6 +63,9 @@ func ParseXrayJSONSubscription(content []byte) (Parsed, error) {
 }
 
 func parseXrayJSONObjectSubscription(content []byte) (Parsed, error) {
+	if err := rejectUnsupportedClientXrayJSONObject(content); err != nil {
+		return Parsed{}, err
+	}
 	local, err := profile.ImportLocalContent(content)
 	if err != nil {
 		return Parsed{}, fmt.Errorf("parse Xray JSON subscription: %w", err)
@@ -70,6 +74,64 @@ func parseXrayJSONObjectSubscription(content []byte) (Parsed, error) {
 		return Parsed{}, fmt.Errorf("unsupported Xray JSON subscription: detected local format %q", local.Format)
 	}
 	return parsedFromLocalXrayResult(local)
+}
+
+func rejectUnsupportedClientXrayJSONObject(content []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	decoder.UseNumber()
+	var object map[string]json.RawMessage
+	if err := decoder.Decode(&object); err != nil {
+		return fmt.Errorf("malformed Xray JSON subscription object: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("malformed Xray JSON subscription object: trailing data")
+	}
+	if message, ok := unsupportedClientProviderMessage(object); ok {
+		_ = message
+		return fmt.Errorf("unsupported Xray JSON subscription response: provider reports unsupported client")
+	}
+	return nil
+}
+
+func unsupportedClientProviderMessage(object map[string]json.RawMessage) (string, bool) {
+	for _, key := range []string{"remarks", "remark", "message", "error"} {
+		raw, ok := object[key]
+		if !ok {
+			continue
+		}
+		message, ok := rawJSONString(raw)
+		if ok && isUnsupportedClientProviderMessage(message) {
+			return message, true
+		}
+	}
+	return "", false
+}
+
+func rawJSONString(raw json.RawMessage) (string, bool) {
+	var value string
+	if err := json.Unmarshal(raw, &value); err == nil {
+		return value, true
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return "", false
+	}
+	for _, key := range []string{"message", "remarks", "remark", "error"} {
+		if nested, ok := object[key]; ok {
+			if value, ok := rawJSONString(nested); ok {
+				return value, true
+			}
+		}
+	}
+	return "", false
+}
+
+func isUnsupportedClientProviderMessage(message string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	return strings.Contains(normalized, "app not supported") ||
+		strings.Contains(normalized, "application not supported") ||
+		strings.Contains(normalized, "unsupported client") ||
+		strings.Contains(normalized, "client not supported")
 }
 
 func parseXrayJSONArraySubscription(content []byte) (Parsed, error) {
@@ -100,12 +162,7 @@ func parseXrayJSONArraySubscription(content []byte) (Parsed, error) {
 			continue
 		}
 
-		local, err := profile.ImportLocalContent(raw)
-		if err != nil {
-			parsed.Unsupported = append(parsed.Unsupported, Issue{Line: entry, Message: err.Error()})
-			continue
-		}
-		candidate, err := parsedFromLocalXrayResult(local)
+		candidate, err := parseXrayJSONObjectSubscription(raw)
 		if err != nil {
 			parsed.Unsupported = append(parsed.Unsupported, Issue{Line: entry, Message: err.Error()})
 			continue
