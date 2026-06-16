@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,8 @@ const (
 	clientIDFileName                = "client-id"
 	subscriptionClientIDPlaceholder = "{tunwarden-client-id}"
 )
+
+var errUnsupportedClientIDPlaceholder = errors.New("client identity placeholder must be the complete value of an HTTP query parameter")
 
 // DefaultClientIDPath returns the user-owned subscription client identity path.
 func DefaultClientIDPath() (string, error) {
@@ -36,37 +39,106 @@ func LoadOrCreateClientID(path string) (string, error) {
 		path = defaultPath
 	}
 
-	data, err := os.ReadFile(path)
+	id, err := readClientID(path)
 	if err == nil {
-		id := strings.TrimSpace(string(data))
-		if !validClientID(id) {
-			return "", fmt.Errorf("read subscription client identity %s: invalid client-id", path)
-		}
 		return id, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("read subscription client identity %s: %w", path, err)
+		return "", err
 	}
 
-	id, err := generateClientID()
+	id, err = generateClientID()
 	if err != nil {
 		return "", fmt.Errorf("generate subscription client identity: %w", err)
 	}
-	if err := writeClientID(path, id); err != nil {
+	if err := createClientID(path, id); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return readClientID(path)
+		}
 		return "", err
 	}
 	return id, nil
 }
 
-func subscriptionRequestURL(raw string) (string, error) {
-	if !strings.Contains(raw, subscriptionClientIDPlaceholder) {
-		return raw, nil
+func readClientID(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read subscription client identity %s: %w", path, err)
 	}
+	id := strings.TrimSpace(string(data))
+	if !validClientID(id) {
+		return "", fmt.Errorf("read subscription client identity %s: invalid client-id", path)
+	}
+	return id, nil
+}
+
+func subscriptionRequestURL(raw string) (string, string, error) {
+	if !strings.Contains(raw, subscriptionClientIDPlaceholder) {
+		return raw, "", nil
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", "", fmt.Errorf("parse subscription URL: %w", err)
+	}
+	if placeholderInUnsupportedURLPart(u) {
+		return "", "", errUnsupportedClientIDPlaceholder
+	}
+
+	query := u.Query()
+	replaced := false
+	for key, values := range query {
+		if strings.Contains(key, subscriptionClientIDPlaceholder) {
+			return "", "", errUnsupportedClientIDPlaceholder
+		}
+		for i, value := range values {
+			switch {
+			case value == subscriptionClientIDPlaceholder:
+				values[i] = ""
+				replaced = true
+			case strings.Contains(value, subscriptionClientIDPlaceholder):
+				return "", "", errUnsupportedClientIDPlaceholder
+			}
+		}
+		query[key] = values
+	}
+	if !replaced {
+		return "", "", errUnsupportedClientIDPlaceholder
+	}
+
 	id, err := LoadOrCreateClientID("")
 	if err != nil {
-		return "", fmt.Errorf("prepare subscription client identity: %w", err)
+		return "", "", fmt.Errorf("prepare subscription client identity: %w", err)
 	}
-	return strings.ReplaceAll(raw, subscriptionClientIDPlaceholder, id), nil
+	for key, values := range query {
+		for i, value := range values {
+			if value == "" {
+				values[i] = id
+			}
+		}
+		query[key] = values
+	}
+	u.RawQuery = query.Encode()
+	return u.String(), id, nil
+}
+
+func placeholderInUnsupportedURLPart(u *url.URL) bool {
+	if strings.Contains(u.Scheme, subscriptionClientIDPlaceholder) ||
+		strings.Contains(u.Opaque, subscriptionClientIDPlaceholder) ||
+		strings.Contains(u.Host, subscriptionClientIDPlaceholder) ||
+		strings.Contains(u.Path, subscriptionClientIDPlaceholder) ||
+		strings.Contains(u.RawPath, subscriptionClientIDPlaceholder) ||
+		strings.Contains(u.Fragment, subscriptionClientIDPlaceholder) {
+		return true
+	}
+	if u.User == nil {
+		return false
+	}
+	if strings.Contains(u.User.Username(), subscriptionClientIDPlaceholder) {
+		return true
+	}
+	password, ok := u.User.Password()
+	return ok && strings.Contains(password, subscriptionClientIDPlaceholder)
 }
 
 func generateClientID() (string, error) {
@@ -79,7 +151,7 @@ func generateClientID() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
-func writeClientID(path, id string) error {
+func createClientID(path, id string) error {
 	if !validClientID(id) {
 		return fmt.Errorf("write subscription client identity %s: invalid client-id", path)
 	}
@@ -88,31 +160,29 @@ func writeClientID(path, id string) error {
 		return fmt.Errorf("create subscription client identity directory: %w", err)
 	}
 
-	tmp, err := os.CreateTemp(dir, ".client-id-*.tmp")
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return fmt.Errorf("create temporary subscription client identity: %w", err)
+		return fmt.Errorf("create subscription client identity %s: %w", path, err)
 	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
+	success := false
+	defer func() {
+		if !success {
+			_ = os.Remove(path)
+		}
+	}()
 
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("secure temporary subscription client identity: %w", err)
+	if _, err := io.WriteString(file, id+"\n"); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("write subscription client identity %s: %w", path, err)
 	}
-	if _, err := io.WriteString(tmp, id+"\n"); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write temporary subscription client identity: %w", err)
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("sync subscription client identity %s: %w", path, err)
 	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("sync temporary subscription client identity: %w", err)
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close subscription client identity %s: %w", path, err)
 	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temporary subscription client identity: %w", err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("replace subscription client identity atomically: %w", err)
-	}
+	success = true
 	return nil
 }
 
