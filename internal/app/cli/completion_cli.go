@@ -36,8 +36,8 @@ func printCompletionHelp(w io.Writer) {
 
 Generate shell completion definitions for stdout. The command is read-only: it
 prints completion scripts and does not contact tunwardend, start Xray, mutate
-networking, or require root. Bash completion may read local profile and
-subscription IDs during interactive completion only.
+networking, or require root. Bash, zsh, and fish completion may read local
+profile and subscription IDs during interactive completion only.
 `)
 }
 
@@ -96,150 +96,100 @@ complete -o default -F _tunwarden tunwarden
 func printZshCompletion(w io.Writer) {
 	fmt.Fprintf(w, `#compdef tunwarden
 # zsh completion for tunwarden
+# static commands: %s
+# static connection modes: %s
+# static profile protocols: %s
 
 _tunwarden() {
-  local context state state_descr line
-  typeset -A opt_args
+  local runtime_output line value description plain
+  local -a runtime_lines plain_values described_values
+  local cursor=$((CURRENT - 1))
 
-  _arguments -C \
-    '1:command:->command' \
-    '2:subcommand:->subcommand' \
-    '*::argument:->argument'
+  runtime_output="$("${words[1]}" __complete zsh "$cursor" "${words[@]}" 2>/dev/null)" || return 0
+  runtime_lines=("${(@f)runtime_output}")
 
-  local command="${words[2]}"
-  local subcommand="${words[3]}"
-  local prev="${words[$((CURRENT - 1))]}"
+  for line in "${runtime_lines[@]}"; do
+    case "$line" in
+      :default-files)
+        _files
+        return
+        ;;
+      :no-files)
+        continue
+        ;;
+      :no-space)
+        continue
+        ;;
+      "")
+        continue
+        ;;
+    esac
 
-  case "$state" in
-    command)
-      _values 'command' %s
-      ;;
-    subcommand)
-      case "$command" in
-        profile)
-          _values 'profile subcommand' %s
-          ;;
-        subscription)
-          _values 'subscription subcommand' %s
-          ;;
-        completion)
-          _values 'shell' %s
-          ;;
-        help)
-          _values 'help topic' %s
-          ;;
-      esac
-      ;;
-    argument)
-      case "$prev" in
-        --mode)
-          _values 'mode' %s
-          return
-          ;;
-        --protocol)
-          _values 'protocol' %s
-          return
-          ;;
-      esac
-      case "$command $subcommand" in
-        'profile add')
-          _values 'profile add flag' --name --server --port --protocol
-          ;;
-        'profile list'|'profile show')
-          _values 'profile flag' --json
-          ;;
-        'profile delete')
-          _values 'profile delete flag' --yes
-          ;;
-        'subscription add')
-          _values 'subscription add flag' --name --url
-          ;;
-        'subscription list'|'subscription show')
-          _values 'subscription flag' --json
-          ;;
-      esac
-      case "$command" in
-        plan)
-          _values 'plan flag' --mode --json
-          ;;
-        connect)
-          _values 'connect flag' --mode
-          ;;
-        doctor)
-          _values 'doctor flag' --core --xray --json
-          ;;
-        logs)
-          _values 'logs flag' --follow -f --daemon --core --since
-          ;;
-        recover)
-          _values 'recover flag' --execute --yes --json
-          ;;
-      esac
-      ;;
-  esac
+    value="${line%%$'\t'*}"
+    if [[ "$line" == *$'\t'* ]]; then
+      description="${line#*$'\t'}"
+      described_values+=("${value}:${description}")
+    else
+      plain_values+=("$value")
+    fi
+  done
+
+  if (( ${#described_values[@]} > 0 )); then
+    for plain in "${plain_values[@]}"; do
+      described_values+=("$plain")
+    done
+    _describe -t tunwarden-completions 'tunwarden completion' described_values
+    return
+  fi
+
+  if (( ${#plain_values[@]} > 0 )); then
+    compadd -- "${plain_values[@]}"
+  fi
 }
 
 _tunwarden "$@"
-`, zshWords(completionTopLevelCommandNames()), zshWords(completionProfileCommandNames()), zshWords(completionSubscriptionCommandNames()), zshWords(completionShellNames()), zshWords(completionTopLevelCommandNames()), zshWords(completionConnectionModeNames()), zshWords(completionProfileProtocolNames()))
+`, completionWords(completionTopLevelCommandNames()), completionWords(completionConnectionModeNames()), completionWords(completionProfileProtocolNames()))
 }
 
 func printFishCompletion(w io.Writer) {
 	fmt.Fprintf(w, `# fish completion for tunwarden
+# static commands: %s
+# static connection modes: %s
+# static profile protocols: %s
 
-function __fish_tunwarden_needs_command
+function __fish_tunwarden_runtime
     set -l words (commandline -opc)
-    test (count $words) -le 1
+    set -l current (commandline -ct)
+
+    if test (count $words) -eq 0
+        set words tunwarden
+    else if test -n "$current"
+        if test "$words[-1]" != "$current"
+            set -a words "$current"
+        end
+    else
+        set -a words ""
+    end
+
+    set -l cursor (math (count $words) - 1)
+    command $words[1] __complete fish "$cursor" $words 2>/dev/null
 end
 
-function __fish_tunwarden_using_command
-    set -l words (commandline -opc)
-    test (count $words) -ge 2; and test $words[2] = $argv[1]
+function __fish_tunwarden_complete
+    for line in (__fish_tunwarden_runtime)
+        if not string match -q ':*' -- "$line"
+            printf '%%s\n' "$line"
+        end
+    end
 end
 
-function __fish_tunwarden_needs_subcommand
-    set -l words (commandline -opc)
-    test (count $words) -eq 2; and test $words[2] = $argv[1]
+function __fish_tunwarden_needs_files
+    __fish_tunwarden_runtime | string match -q ':default-files'
 end
 
-function __fish_tunwarden_using_subcommand
-    set -l words (commandline -opc)
-    test (count $words) -ge 3; and test $words[2] = $argv[1]; and test $words[3] = $argv[2]
-end
-
-complete -c tunwarden -f
-complete -c tunwarden -n '__fish_tunwarden_needs_command' -a '%s'
-complete -c tunwarden -n '__fish_tunwarden_needs_subcommand profile' -a '%s'
-complete -c tunwarden -n '__fish_tunwarden_needs_subcommand subscription' -a '%s'
-complete -c tunwarden -n '__fish_tunwarden_needs_subcommand completion' -a '%s'
-complete -c tunwarden -n '__fish_tunwarden_needs_subcommand help' -a '%s'
-
-complete -c tunwarden -n '__fish_tunwarden_using_subcommand profile add' -l name -x
-complete -c tunwarden -n '__fish_tunwarden_using_subcommand profile add' -l server -x
-complete -c tunwarden -n '__fish_tunwarden_using_subcommand profile add' -l port -x
-complete -c tunwarden -n '__fish_tunwarden_using_subcommand profile add' -l protocol -x -a '%s'
-complete -c tunwarden -n '__fish_tunwarden_using_subcommand profile list' -l json
-complete -c tunwarden -n '__fish_tunwarden_using_subcommand profile show' -l json
-complete -c tunwarden -n '__fish_tunwarden_using_subcommand profile delete' -l yes
-
-complete -c tunwarden -n '__fish_tunwarden_using_subcommand subscription add' -l name -x
-complete -c tunwarden -n '__fish_tunwarden_using_subcommand subscription add' -l url -x
-complete -c tunwarden -n '__fish_tunwarden_using_subcommand subscription list' -l json
-complete -c tunwarden -n '__fish_tunwarden_using_subcommand subscription show' -l json
-
-complete -c tunwarden -n '__fish_tunwarden_using_command plan' -l mode -x -a '%s'
-complete -c tunwarden -n '__fish_tunwarden_using_command plan' -l json
-complete -c tunwarden -n '__fish_tunwarden_using_command connect' -l mode -x -a '%s'
-complete -c tunwarden -n '__fish_tunwarden_using_command doctor' -l core
-complete -c tunwarden -n '__fish_tunwarden_using_command doctor' -l xray -x
-complete -c tunwarden -n '__fish_tunwarden_using_command doctor' -l json
-complete -c tunwarden -n '__fish_tunwarden_using_command logs' -l follow -s f
-complete -c tunwarden -n '__fish_tunwarden_using_command logs' -l daemon
-complete -c tunwarden -n '__fish_tunwarden_using_command logs' -l core
-complete -c tunwarden -n '__fish_tunwarden_using_command logs' -l since -x
-complete -c tunwarden -n '__fish_tunwarden_using_command recover' -l execute
-complete -c tunwarden -n '__fish_tunwarden_using_command recover' -l yes
-complete -c tunwarden -n '__fish_tunwarden_using_command recover' -l json
-`, completionWords(completionTopLevelCommandNames()), completionWords(completionProfileCommandNames()), completionWords(completionSubscriptionCommandNames()), completionWords(completionShellNames()), completionWords(completionTopLevelCommandNames()), completionWords(completionProfileProtocolNames()), completionWords(completionConnectionModeNames()), completionWords(completionConnectionModeNames()))
+complete -c tunwarden -f -a '(__fish_tunwarden_complete)'
+complete -c tunwarden -n '__fish_tunwarden_needs_files' -F
+`, completionWords(completionTopLevelCommandNames()), completionWords(completionConnectionModeNames()), completionWords(completionProfileProtocolNames()))
 }
 
 func completionWords(values []string) string {
