@@ -1,0 +1,82 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "dns": {
+    "servers": [
+      "1.1.1.1",
+      "8.8.8.8"
+    ]
+  },
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      {
+        "type": "field",
+        "ip": [
+          "geoip:private"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "domain": [
+          "geosite:category-ads-all"
+        ],
+        "outboundTag": "block"
+      }
+    ]
+  },
+  "outbounds": [
+    {
+      "protocol": "vless",
+      "tag": "fixture-vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "fixture-vless.example",
+            "port": 443,
+            "users": [
+              {
+                "id": "00000000-0000-0000-0000-000000000501",
+                "encryption": "none",
+                "flow": "xtls-rprx-vision"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "fixture-vless.example",
+          "fingerprint": "chrome",
+          "publicKey": "public-key",
+          "shortId": "abcd",
+          "spiderX": "/"
+        }
+      }
+    },
+    {
+      "protocol": "freedom",
+      "tag": "direct",
+      "settings": {}
+    },
+    {
+      "protocol": "blackhole",
+      "tag": "block",
+      "settings": {}
+    },
+    {
+      "protocol": "dns",
+      "tag": "dns-out",
+      "settings": {}
+    },
+    {
+      "protocol": "loopback",
+      "tag": "loopback",
+      "settings": {}
+    }
+  ]
+}

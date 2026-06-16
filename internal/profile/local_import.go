@@ -138,6 +138,9 @@ func importXrayJSON(content []byte) (LocalImportResult, error) {
 		case "":
 			result.Unsupported = append(result.Unsupported, LocalImportIssue{Entry: entry, Message: "outbound protocol is required"})
 		default:
+			if isIgnoredXrayServiceOutbound(protocol) {
+				continue
+			}
 			result.Unsupported = append(result.Unsupported, LocalImportIssue{Entry: entry, Message: fmt.Sprintf("unsupported outbound protocol %q", protocol)})
 		}
 	}
@@ -149,6 +152,15 @@ func importXrayJSON(content []byte) (LocalImportResult, error) {
 	}
 	sort.SliceStable(result.Profiles, func(i, j int) bool { return result.Profiles[i].ID < result.Profiles[j].ID })
 	return result, nil
+}
+
+func isIgnoredXrayServiceOutbound(protocol string) bool {
+	switch protocol {
+	case "freedom", "blackhole", "dns", "loopback":
+		return true
+	default:
+		return false
+	}
 }
 
 func importURIList(content []byte, format LocalImportFormat) (LocalImportResult, error) {

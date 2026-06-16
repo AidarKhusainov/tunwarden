@@ -16,7 +16,10 @@ Run before opening a pull request:
 
 ```bash
 gofmt -w .
+test -z "$(gofmt -l .)"
 go test ./...
+go vet ./...
+govulncheck ./...
 go run ./cmd/tunwarden version
 go run ./cmd/tunwarden doctor
 go run ./cmd/tunwarden recover
@@ -170,15 +173,35 @@ Use unit tests for:
 - exit code mapping,
 - JSON output shape.
 
-### Integration tests
+### Default integration tests
 
-Use Linux network namespaces where possible for:
+The default `go test ./...` suite must stay deterministic and must not require repository secrets, root privileges, public internet access, a real VPN provider, or mutation of the developer or CI host network.
 
-- route/rule planner execution,
-- nftables behavior,
-- TUN lifecycle,
-- rollback behavior,
-- stale state detection.
+Use `httptest.Server` integration tests for provider and subscription behavior:
+
+- HTTP subscription headers and generated client identity metadata,
+- provider-like Xray JSON responses,
+- unsupported-client provider responses,
+- redirect and error redaction behavior,
+- no mutation of profile/subscription state on failed fetch or parse.
+
+Use fixture-backed parser tests for subscription formats whose structure must remain stable. Xray JSON fixtures may include `log`, `dns`, `routing`, importable proxy outbounds, and non-profile service/routing outbounds.
+
+Use fake executors and deterministic daemon-package tests for non-root daemon lifecycle coverage:
+
+- generated runtime config creation and cleanup,
+- active and inactive lifecycle state through daemon-owned state,
+- TUN transaction apply, verify, rollback, and commit behavior,
+- TUN runtime config generation,
+- TUN route/TCP/DNS connectivity probes with fake probe functions.
+
+### Privileged and real-world tests
+
+The `v0.2 acceptance smoke` workflow is the supported real-world VPN smoke. It is gated by manual dispatch or an explicit pull-request label, uses repository secrets, starts the real Xray and tun2socks binaries, connects in TUN mode, verifies DNS/connectivity and public egress behavior, disconnects, and uploads sanitized diagnostics.
+
+A separate Docker or network-namespace VPN gate must not be added as an always-on PR requirement unless it accurately provides the Linux routing, DNS, nftables, systemd-resolved, process-supervision, and connectivity semantics that TUN mode verifies. Partial container tests that stub those host services belong in the default fake-daemon integration layer instead.
+
+Use a VM or systemd-capable host for service lifecycle assertions such as `systemctl status tunwardend`, runtime directory creation, journald behavior, and daemon startup under the packaged unit.
 
 ### Package tests
 
@@ -192,8 +215,6 @@ Use package inspection and local install/remove validation for:
 - version consistency between package metadata and `tunwarden version`,
 - same-version reinstall behavior,
 - dynamic linkage compatibility with the declared package dependency baseline.
-
-Use a VM or systemd-capable host for service lifecycle assertions such as `systemctl status tunwardend`, runtime directory creation, journald behavior, and daemon startup under the packaged unit.
 
 ### Manual tests
 

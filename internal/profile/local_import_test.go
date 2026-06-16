@@ -62,18 +62,42 @@ func TestImportLocalContentXrayJSONVLESS(t *testing.T) {
 	}
 }
 
-func TestImportLocalContentXrayJSONSkipsUnsupportedOutbound(t *testing.T) {
-	content := strings.Replace(localImportVLESSJSON, `"outbounds": [`, `"outbounds": [{"protocol":"freedom","tag":"direct"},`, 1)
+func TestImportLocalContentXrayJSONIgnoresServiceOutbounds(t *testing.T) {
+	content := strings.Replace(localImportVLESSJSON, `"outbounds": [`, `"outbounds": [
+    {"protocol":"freedom","tag":"direct"},
+    {"protocol":"blackhole","tag":"block"},
+    {"protocol":"dns","tag":"dns-out"},
+    {"protocol":"loopback","tag":"loopback"},`, 1)
 
 	result, err := ImportLocalContent([]byte(content))
 	if err != nil {
 		t.Fatalf("import mixed local Xray JSON: %v", err)
 	}
-	if len(result.Profiles) != 1 || len(result.Unsupported) != 1 {
-		t.Fatalf("expected one imported and one skipped entry, got %#v", result)
+	if len(result.Profiles) != 1 || len(result.Unsupported) != 0 {
+		t.Fatalf("expected one imported profile and no unsupported service outbounds, got %#v", result)
 	}
-	if !strings.Contains(result.Unsupported[0].Message, `unsupported outbound protocol "freedom"`) {
-		t.Fatalf("unexpected unsupported reason: %#v", result.Unsupported)
+	if result.Inspected != 5 {
+		t.Fatalf("expected all outbounds to be inspected, got %d", result.Inspected)
+	}
+}
+
+func TestImportLocalContentXrayJSONOnlyServiceOutboundsDoesNotReportUnsupportedProtocol(t *testing.T) {
+	_, err := ImportLocalContent([]byte(`{
+  "outbounds": [
+    {"protocol":"freedom","tag":"direct"},
+    {"protocol":"blackhole","tag":"block"},
+    {"protocol":"dns","tag":"dns-out"},
+    {"protocol":"loopback","tag":"loopback"}
+  ]
+}`))
+	if err == nil {
+		t.Fatal("expected service-only Xray JSON import to fail")
+	}
+	if !strings.Contains(err.Error(), "no supported importable outbounds") {
+		t.Fatalf("expected no importable outbounds error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "unsupported outbound protocol") {
+		t.Fatalf("service outbounds should not be reported as unsupported protocols: %v", err)
 	}
 }
 
