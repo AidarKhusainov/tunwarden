@@ -85,8 +85,12 @@ func subscriptionRequestURL(raw string) (string, string, error) {
 		return "", "", errUnsupportedClientIDPlaceholder
 	}
 
+	type replacement struct {
+		key   string
+		index int
+	}
 	query := u.Query()
-	replaced := false
+	replacements := []replacement{}
 	for key, values := range query {
 		if strings.Contains(key, subscriptionClientIDPlaceholder) {
 			return "", "", errUnsupportedClientIDPlaceholder
@@ -94,15 +98,13 @@ func subscriptionRequestURL(raw string) (string, string, error) {
 		for i, value := range values {
 			switch {
 			case value == subscriptionClientIDPlaceholder:
-				values[i] = ""
-				replaced = true
+				replacements = append(replacements, replacement{key: key, index: i})
 			case strings.Contains(value, subscriptionClientIDPlaceholder):
 				return "", "", errUnsupportedClientIDPlaceholder
 			}
 		}
-		query[key] = values
 	}
-	if !replaced {
+	if len(replacements) == 0 {
 		return "", "", errUnsupportedClientIDPlaceholder
 	}
 
@@ -110,13 +112,8 @@ func subscriptionRequestURL(raw string) (string, string, error) {
 	if err != nil {
 		return "", "", fmt.Errorf("prepare subscription client identity: %w", err)
 	}
-	for key, values := range query {
-		for i, value := range values {
-			if value == "" {
-				values[i] = id
-			}
-		}
-		query[key] = values
+	for _, replacement := range replacements {
+		query[replacement.key][replacement.index] = id
 	}
 	u.RawQuery = query.Encode()
 	return u.String(), id, nil
