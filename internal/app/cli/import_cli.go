@@ -181,16 +181,15 @@ func runSubscriptionImport(ctx context.Context, sourceURL string, stdout io.Writ
 			return rollbackProfilesAndSubscription(err)
 		}
 	}
+	source.Format = format
 	source.ProfileIDs = profileIDs(parsed.Profiles)
 	source.LastUpdatedAt = time.Now().UTC()
 	if err := subscriptionStore.Update(source); err != nil {
 		return rollbackProfilesAndSubscription(err)
 	}
 
-	resultSource := source
-	resultSource.Format = format
 	result := sub.UpdateResult{
-		Subscription: resultSource,
+		Subscription: source,
 		Imported:     diff.Imported,
 		Updated:      diff.Updated,
 		Unchanged:    diff.Unchanged,
