@@ -127,7 +127,7 @@ func TestCLIConnectStatusDisconnectWithDaemonAndFakeXray(t *testing.T) {
 	if err := runWithOptions(context.Background(), []string{"recover", "--execute", "--yes"}, &recoverOut, opts); err != nil {
 		t.Fatalf("recover after clean disconnect failed: %v", err)
 	}
-	if got := recoverOut.String(); !strings.Contains(got, "Recovery completed") && !strings.Contains(got, "No TunWarden-owned stale state") {
+	if got := recoverOut.String(); !strings.Contains(got, "TunWarden recovery") || !strings.Contains(got, "No TunWarden-owned recovery candidates found") {
 		t.Fatalf("unexpected recover output after clean disconnect: %q", got)
 	}
 }
