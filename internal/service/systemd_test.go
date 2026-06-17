@@ -31,6 +31,20 @@ func TestSystemdUnitDocumentsSocketAccessModel(t *testing.T) {
 	}
 }
 
+func TestSystemdUnitDoesNotBlockFutureTunDeviceWork(t *testing.T) {
+	content := readSystemdUnit(t)
+
+	for _, forbidden := range []string{
+		"Private" + "Devices=yes",
+		"Protect" + "KernelTunables=yes",
+		"Restrict" + "AddressFamilies=",
+	} {
+		if strings.Contains(content, forbidden) {
+			t.Fatalf("systemd unit contains %q, which would need explicit validation before future TUN/nftables work:\n%s", forbidden, content)
+		}
+	}
+}
+
 func readSystemdUnit(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join("..", "..", "packaging", "systemd", "tunwardend.service")
