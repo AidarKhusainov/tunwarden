@@ -23,15 +23,17 @@ RestartSec=2s
 # daemon runtime contract.
 User=tunwarden
 Group=tunwarden
-UMask=0007
+UMask=0077
 Environment=TUNWARDEN_SERVICE=systemd
 
-# systemd owns the packaged runtime path. The daemon still defaults to the same
-# /run/tunwarden path, so the CLI can reach /run/tunwarden/tunwardend.sock.
+# systemd owns the packaged runtime path. Group execute on /run/tunwarden lets
+# tunwarden group members reach /run/tunwarden/tunwardend.sock without listing
+# daemon-private runtime state. Generated configs, transactions, and persistent
+# daemon state stay private unless a later contract explicitly changes that.
 RuntimeDirectory=tunwarden
-RuntimeDirectoryMode=0750
+RuntimeDirectoryMode=0710
 StateDirectory=tunwarden
-StateDirectoryMode=0750
+StateDirectoryMode=0700
 
 NoNewPrivileges=yes
 CapabilityBoundingSet=
