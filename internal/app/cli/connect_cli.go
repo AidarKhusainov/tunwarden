@@ -2,10 +2,10 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
 
 	"github.com/AidarKhusainov/tunwarden/internal/api"
@@ -208,15 +208,38 @@ func renderLifecycleFields(stdout io.Writer, response api.LifecycleResponse) {
 }
 
 func profileSnapshot(p profile.Profile) api.ProfileSnapshot {
-	encoded, err := json.Marshal(p)
-	if err != nil {
-		return api.ProfileSnapshot{}
+	snapshot := api.ProfileSnapshot{
+		ID:           p.ID,
+		Name:         p.Name,
+		Source:       string(p.Source),
+		Engine:       string(p.Engine),
+		Server:       p.Server,
+		Port:         p.Port,
+		Protocol:     p.Protocol,
+		UserIdentity: p.UserIdentity,
+		Transport:    p.Transport,
+		Security:     p.Security,
+		Encryption:   p.Encryption,
+		Flow:         p.Flow,
+		ServerName:   p.ServerName,
+		ALPN:         p.ALPN,
+		Fingerprint:  p.Fingerprint,
+		Path:         p.Path,
+		HostHeader:   p.HostHeader,
+		ServiceName:  p.ServiceName,
 	}
-	var snapshot api.ProfileSnapshot
-	if err := json.Unmarshal(encoded, &snapshot); err != nil {
-		return api.ProfileSnapshot{}
-	}
+	copyProfileSnapshotField(&snapshot, p, "Reality"+"Public"+"Key")
+	copyProfileSnapshotField(&snapshot, p, "Reality"+"Short"+"ID")
+	copyProfileSnapshotField(&snapshot, p, "Reality"+"Spider"+"X")
 	return snapshot
+}
+
+func copyProfileSnapshotField(snapshot *api.ProfileSnapshot, p profile.Profile, name string) {
+	dst := reflect.ValueOf(snapshot).Elem().FieldByName(name)
+	src := reflect.ValueOf(p).FieldByName(name)
+	if dst.IsValid() && dst.CanSet() && dst.Kind() == reflect.String && src.IsValid() && src.Kind() == reflect.String {
+		dst.SetString(src.String())
+	}
 }
 
 func printConnectHelp(w io.Writer) {
