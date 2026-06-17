@@ -46,6 +46,8 @@ Dynamic completion candidates keep the command argument value as the stable ID. 
 
 Dynamic completion reads only the local user-owned profile and subscription stores needed for those ID suggestions. Missing, unreadable, or invalid local state must produce no dynamic candidates and no completion-time error output.
 
+If the hidden runtime completion command is executed with effective UID `0` and `SUDO_USER` set, dynamic profile/subscription ID completion must fail before opening local stores. Shell adapters redirect runtime completion errors away from the interactive prompt, so users should see no dynamic ID candidates from accidental `sudo` completion paths. Running the hidden command directly must produce the same actionable non-sudo guidance as other user-state commands.
+
 Dynamic completion must not contact `tunwardend`, open the daemon socket, start Xray, fetch subscription URLs, inspect runtime transaction state, read generated core configs, mutate local state, mutate Linux networking, or require root.
 
 File-path positions keep shell default file completion. This includes local path positions for `tunwarden import`.
