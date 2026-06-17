@@ -14,7 +14,7 @@ Usage:
   tunwarden profile <add|import|list|show|delete>
   tunwarden subscription <add|list|show|update>
   tunwarden plan --mode proxy-only|tun <profile-id>
-  tunwarden connect [--mode proxy-only|tun] <profile-ref>
+  tunwarden connect [--mode proxy-only|tun] <profile-id>
   tunwarden disconnect
   tunwarden status
   tunwarden doctor
