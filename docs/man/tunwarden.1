@@ -381,6 +381,138 @@ testing.
 Standard XDG base directory variables used for user-owned TunWarden state.
 .SH SECURITY
 TunWarden keeps user state, daemon runtime state, and system networking state
-separate. User-owned profile/subscription commands must not require root.
-Privileged networking mutation must go through the daemon transaction model and
-must leave rollback and recovery metadata.
+separate. The CLI parses user intent, renders output, and sends daemon API
+requests; it must not directly mutate privileged Linux networking state.
+.PP
+Proxy-only mode must not mutate TUN devices, routes, policy rules, DNS,
+nftables, or firewall state. Recovery without
+.B --execute
+is read-only. Recovery execution is explicit and daemon-owned.
+.PP
+The
+.B completion
+command is read-only and static. It must not contact the daemon, read user
+state, print secrets, or require root.
+.PP
+Profile validation is read-only. It must not contact the daemon, start Xray,
+write runtime config, require root, or mutate Linux networking state.
+.PP
+Local and subscription imports parse supported content into normalized profiles
+only. They must not execute or persist raw Xray JSON as source of truth or
+runtime configuration.
+.PP
+Subscription delete mutates only user-owned local TunWarden state. It must not
+start the daemon, start Xray, fetch subscription URLs, require root, or mutate
+Linux networking state.
+.PP
+Output, JSON, diagnostics, plans, recovery reports, and logs must redact
+subscription URLs, share URIs, generated core config contents, private keys,
+passwords, authorization headers, provider tokens, and secret-looking query
+parameters.
+.SH EXAMPLES
+.TP
+Show local help:
+.EX
+tunwarden help
+tunwarden help connect
+.EE
+.TP
+Generate shell completion definitions:
+.EX
+tunwarden completion bash
+tunwarden completion zsh
+tunwarden completion fish
+.EE
+.TP
+Import and inspect a profile without connecting:
+.EX
+tunwarden profile import 'vless://...'
+tunwarden profile list
+tunwarden profile show my-profile
+.EE
+.TP
+Validate a stored profile before planning or connecting:
+.EX
+tunwarden profile validate my-profile
+tunwarden profile validate my-profile --mode tun --json
+.EE
+.TP
+Import a local Xray JSON or URI-list file without connecting:
+.EX
+tunwarden import ./profiles.json
+tunwarden import ./profiles.txt
+tunwarden profile list
+.EE
+.TP
+Import and inspect a subscription without connecting:
+.EX
+tunwarden import https://example.com/subscription
+tunwarden subscription list
+tunwarden profile list
+.EE
+.TP
+Refresh an explicit subscription source:
+.EX
+tunwarden subscription add --name personal --url https://example.com/subscription
+tunwarden subscription update personal
+tunwarden subscription show personal
+.EE
+.TP
+Delete a subscription and its owned imported profiles:
+.EX
+tunwarden subscription delete personal --yes
+.EE
+.TP
+Delete only subscription metadata and keep imported profiles:
+.EX
+tunwarden subscription delete personal --yes --keep-profiles
+.EE
+.TP
+Inspect a safe proxy-only plan:
+.EX
+tunwarden plan --mode proxy-only my-profile
+.EE
+.TP
+Start and stop proxy-only lifecycle through the daemon:
+.EX
+tunwarden connect --mode proxy-only my-profile
+tunwarden status
+tunwarden disconnect
+.EE
+.TP
+Read daemon logs:
+.EX
+tunwarden logs --daemon --since "1 hour ago"
+tunwarden logs --follow --core
+.EE
+.TP
+Inspect recovery candidates without changing the host:
+.EX
+tunwarden recover
+.EE
+.SH DIAGNOSTICS
+Use
+.B tunwarden status
+to inspect active daemon and runtime state,
+.B tunwarden doctor
+to explain environment and health checks,
+.B tunwarden logs
+to inspect journald output, and
+.B tunwarden recover
+to inspect or explicitly clean up stale TunWarden-owned volatile state.
+.PP
+When daemon socket access fails with permission denied in a packaged install,
+check membership in the
+.B tunwarden
+group and the mode of
+.IR /run/tunwarden/tunwardend.sock .
+.SH SEE ALSO
+.BR tunwardend (8),
+.BR systemctl (1),
+.BR journalctl (1),
+.BR systemd.unit (5)
+.PP
+Canonical project documentation is installed in the repository under
+.I docs/
+and starts with
+.IR docs/README.md .
