@@ -78,6 +78,35 @@ type xrayVLESSSettings struct {
 	Level      int    `json:"level"`
 }
 
+// ValidateXrayProxyOnlyProfile checks whether a normalized profile can produce a
+// supported proxy-only Xray config without writing runtime state.
+func ValidateXrayProxyOnlyProfile(p profile.Profile) error {
+	return validateXrayVLESSProfile(p, "proxy-only")
+}
+
+// ValidateXrayTunProfile checks whether a normalized profile can produce a
+// supported TUN-mode Xray config without writing runtime state.
+func ValidateXrayTunProfile(p profile.Profile) error {
+	return validateXrayVLESSProfile(p, "TUN-mode")
+}
+
+func validateXrayVLESSProfile(p profile.Profile, modeName string) error {
+	if p.Engine != profile.EngineXray {
+		return fmt.Errorf("%s Xray config requires engine %q, got %q", modeName, profile.EngineXray, p.Engine)
+	}
+	if strings.ToLower(p.Protocol) != "vless" {
+		return fmt.Errorf("%s Xray config supports VLESS profiles only, got %q", modeName, p.Protocol)
+	}
+	if strings.TrimSpace(p.UserIdentity) == "" {
+		return fmt.Errorf("%s Xray config requires VLESS user_identity", modeName)
+	}
+	if encryption := strings.ToLower(vlessEncryption(p)); encryption != "none" {
+		return fmt.Errorf("unsupported %s VLESS encryption %q", modeName, p.Encryption)
+	}
+	_, err := vlessStreamSettings(modeName, p)
+	return err
+}
+
 // GenerateXrayProxyOnlyConfig builds deterministic Xray JSON for a proxy-only plan.
 func GenerateXrayProxyOnlyConfig(p profile.Profile, opts XrayProxyOnlyConfigOptions) ([]byte, error) {
 	if opts.SOCKSListen == "" {
@@ -92,20 +121,11 @@ func GenerateXrayProxyOnlyConfig(p profile.Profile, opts XrayProxyOnlyConfigOpti
 	if opts.HTTPPort == 0 {
 		return nil, fmt.Errorf("proxy-only Xray config requires an HTTP listen port")
 	}
-	if p.Engine != profile.EngineXray {
-		return nil, fmt.Errorf("proxy-only Xray config requires engine %q, got %q", profile.EngineXray, p.Engine)
-	}
-	if strings.ToLower(p.Protocol) != "vless" {
-		return nil, fmt.Errorf("proxy-only Xray config supports VLESS profiles only, got %q", p.Protocol)
-	}
-	if strings.TrimSpace(p.UserIdentity) == "" {
-		return nil, fmt.Errorf("proxy-only Xray config requires VLESS user_identity")
-	}
-	if encryption := strings.ToLower(vlessEncryption(p)); encryption != "none" {
-		return nil, fmt.Errorf("unsupported proxy-only VLESS encryption %q", p.Encryption)
+	if err := ValidateXrayProxyOnlyProfile(p); err != nil {
+		return nil, err
 	}
 
-	streamSettings, err := vlessStreamSettings(p)
+	streamSettings, err := vlessStreamSettings("proxy-only", p)
 	if err != nil {
 		return nil, err
 	}
@@ -160,17 +180,17 @@ func vlessEncryption(p profile.Profile) string {
 	return encryption
 }
 
-func vlessStreamSettings(p profile.Profile) (map[string]any, error) {
-	network, err := canonicalVLESSTransport(p.Transport)
+func vlessStreamSettings(modeName string, p profile.Profile) (map[string]any, error) {
+	network, err := canonicalVLESSTransport(modeName, p.Transport)
 	if err != nil {
 		return nil, err
 	}
-	security, err := canonicalVLESSSecurity(p.Security)
+	security, err := canonicalVLESSSecurity(modeName, p.Security)
 	if err != nil {
 		return nil, err
 	}
 	if security == "reality" && network != "raw" && network != "grpc" {
-		return nil, fmt.Errorf("unsupported proxy-only VLESS transport/security combination: security %q is not compatible with transport %q", security, network)
+		return nil, fmt.Errorf("unsupported %s VLESS transport/security combination: security %q is not compatible with transport %q", modeName, security, network)
 	}
 
 	settings := map[string]any{
@@ -187,7 +207,7 @@ func vlessStreamSettings(p profile.Profile) (map[string]any, error) {
 			settings["tlsSettings"] = tlsSettings
 		}
 	case "reality":
-		realitySettings, err := realitySettings(p)
+		realitySettings, err := realitySettings(modeName, p)
 		if err != nil {
 			return nil, err
 		}
@@ -197,7 +217,7 @@ func vlessStreamSettings(p profile.Profile) (map[string]any, error) {
 	return settings, nil
 }
 
-func canonicalVLESSTransport(transport string) (string, error) {
+func canonicalVLESSTransport(modeName string, transport string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(transport)) {
 	case "", "tcp", "raw":
 		return "raw", nil
@@ -208,13 +228,13 @@ func canonicalVLESSTransport(transport string) (string, error) {
 	case "httpupgrade":
 		return "httpupgrade", nil
 	case "xhttp", "quic", "kcp", "mkcp":
-		return "", fmt.Errorf("unsupported proxy-only VLESS transport %q for generated Xray config", transport)
+		return "", fmt.Errorf("unsupported %s VLESS transport %q for generated Xray config", modeName, transport)
 	default:
-		return "", fmt.Errorf("unsupported proxy-only VLESS transport %q", transport)
+		return "", fmt.Errorf("unsupported %s VLESS transport %q", modeName, transport)
 	}
 }
 
-func canonicalVLESSSecurity(security string) (string, error) {
+func canonicalVLESSSecurity(modeName string, security string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(security)) {
 	case "", "none":
 		return "none", nil
@@ -223,7 +243,7 @@ func canonicalVLESSSecurity(security string) (string, error) {
 	case "reality":
 		return "reality", nil
 	default:
-		return "", fmt.Errorf("unsupported proxy-only VLESS security %q", security)
+		return "", fmt.Errorf("unsupported %s VLESS security %q", modeName, security)
 	}
 }
 
@@ -266,12 +286,12 @@ func tlsSettings(p profile.Profile) map[string]any {
 	return settings
 }
 
-func realitySettings(p profile.Profile) (map[string]any, error) {
+func realitySettings(modeName string, p profile.Profile) (map[string]any, error) {
 	if strings.TrimSpace(p.ServerName) == "" {
-		return nil, fmt.Errorf("proxy-only Xray config requires server_name for Reality security")
+		return nil, fmt.Errorf("%s Xray config requires server_name for Reality security", modeName)
 	}
 	if strings.TrimSpace(p.RealityPublicKey) == "" {
-		return nil, fmt.Errorf("proxy-only Xray config requires reality_public_key for Reality security")
+		return nil, fmt.Errorf("%s Xray config requires reality_public_key for Reality security", modeName)
 	}
 	settings := map[string]any{
 		"serverName": strings.TrimSpace(p.ServerName),
