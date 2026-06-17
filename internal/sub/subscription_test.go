@@ -19,12 +19,29 @@ func TestNewSourceUsesExplicitNameBeforeFallback(t *testing.T) {
 }
 
 func TestNewSourceUsesSafeFallbackWithoutRawURL(t *testing.T) {
-	source := NewSource("", "https://provider.example/subscriptions/personal?token=secret")
+	source := NewSource("", "https://provider.example/servers/personal?token=secret")
 	if source.ID != "provider.example-personal" || source.Name != "provider.example personal" {
 		t.Fatalf("expected safe host/path fallback, got %#v", source)
 	}
 	if strings.Contains(source.Name, "token") || strings.Contains(source.Name, "https://") || strings.Contains(source.Name, "?") {
 		t.Fatalf("fallback subscription name leaked raw URL data: %#v", source)
+	}
+}
+
+func TestNewSourceFallbackRejectsTokenLikeSubscriptionPathBase(t *testing.T) {
+	source := NewSource("", "https://sub.example.com/sub3cr1pt1on3/38gQEgxEZLrRtZJH")
+	if source.Name != "sub.example.com" || source.ID != "sub.example.com" {
+		t.Fatalf("expected host-only fallback for token-like subscription path, got %#v", source)
+	}
+	if strings.Contains(source.ID, "38gQEgxEZLrRtZJH") || strings.Contains(source.Name, "38gQEgxEZLrRtZJH") {
+		t.Fatalf("fallback subscription identity leaked token-like path segment: %#v", source)
+	}
+}
+
+func TestNewSourceFallbackRejectsUUIDPathBase(t *testing.T) {
+	source := NewSource("", "https://provider.example/servers/00000000-0000-4000-8000-000000000001")
+	if source.Name != "provider.example" || source.ID != "provider.example" {
+		t.Fatalf("expected host-only fallback for UUID-like path base, got %#v", source)
 	}
 }
 
