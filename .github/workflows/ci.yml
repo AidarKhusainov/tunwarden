@@ -95,6 +95,22 @@ jobs:
           grep -F './usr/share/man/man1/tunwarden.1.gz' /tmp/tunwarden-package-contents.txt
           grep -F './usr/share/man/man8/tunwardend.8.gz' /tmp/tunwarden-package-contents.txt
 
+      - name: Validate packaged daemon access contract
+        run: |
+          set -eu
+          dpkg-deb --fsys-tarfile "${DEV_DEB}" | tar -xOf - ./usr/lib/systemd/system/tunwardend.service > /tmp/tunwardend.service
+          dpkg-deb --fsys-tarfile "${DEV_DEB}" | tar -xOf - ./usr/lib/sysusers.d/tunwarden.conf > /tmp/tunwarden.sysusers
+          grep -F 'u tunwarden ' /tmp/tunwarden.sysusers
+          grep -F 'u tunwarden-xray ' /tmp/tunwarden.sysusers
+          grep -F 'User=tunwarden' /tmp/tunwardend.service
+          grep -F 'Group=tunwarden' /tmp/tunwardend.service
+          grep -F 'UMask=0077' /tmp/tunwardend.service
+          grep -F 'RuntimeDirectory=tunwarden' /tmp/tunwardend.service
+          grep -F 'RuntimeDirectoryMode=0710' /tmp/tunwardend.service
+          grep -F 'StateDirectory=tunwarden' /tmp/tunwardend.service
+          grep -F 'StateDirectoryMode=0700' /tmp/tunwardend.service
+          ! grep -R -E 'systemctl[[:space:]]+(start|enable)[[:space:]]+tunwardend|deb-systemd-invoke[[:space:]]+start[[:space:]]+tunwardend' packaging/debian
+
       - name: Validate generated shell completions
         run: |
           go run ./cmd/tunwarden completion bash > /tmp/tunwarden.bash

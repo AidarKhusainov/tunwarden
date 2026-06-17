@@ -35,8 +35,8 @@ Documentation describes user-visible behavior, safety invariants, filesystem lay
 | Document | Purpose |
 | --- | --- |
 | [Product requirements](./product-requirements.md) | Product problem, target users, goals, functional requirements, and non-functional requirements. |
-| [Architecture](./architecture.md) | CLI/daemon boundary, state model, transaction model, planner/executor split, and engine abstraction. |
-| [State and security requirements](./state-and-security.md) | State layout, JSON compatibility, redaction, confirmation, systemd hardening, and core process safety. |
+| [Architecture](./architecture.md) | CLI/daemon boundary, daemon-mediated access model, state model, transaction model, planner/executor split, and engine abstraction. |
+| [State and security requirements](./state-and-security.md) | State layout, JSON compatibility, redaction, confirmation, systemd hardening, packaged daemon socket access, and core process safety. |
 | [Networking and reliability requirements](./networking-reliability.md) | TUN, routing, DNS, firewall, NetworkManager, health, rollback, and recovery invariants. |
 | [System snapshot model](./system-snapshot.md) | Read-only host snapshot inputs for planning and diagnostics. |
 | [nftables Firewall Executor](./nftables-firewall-executor.md) | TunWarden-owned nftables apply, verify, rollback, and cleanup boundary. |
@@ -49,7 +49,7 @@ Documentation describes user-visible behavior, safety invariants, filesystem lay
 
 | Document | Purpose |
 | --- | --- |
-| [Debian package contract](./debian-package.md) | Local `.deb` layout, package metadata, install/remove behavior, and validation gates. |
+| [Debian package contract](./debian-package.md) | Local `.deb` layout, package metadata, install/remove behavior, access contract, and validation gates. |
 | [Release workflow](./release.md) | GitHub Release automation, artifacts, version mapping, permissions, and safety boundary. |
 | [Release gates](./release-gates.md) | Reusable release-gate policy and evidence rules. |
 | [Roadmap](./roadmap.md) | Sequencing constraints and deferrals. It is not a repository status log. |
@@ -66,7 +66,8 @@ Documentation describes user-visible behavior, safety invariants, filesystem lay
 ## Canonical ownership
 
 - CLI behavior is owned by [CLI contract](./cli.md).
-- Filesystem layout, output redaction, confirmation behavior, systemd hardening, and core process safety are owned by [State and security requirements](./state-and-security.md).
+- CLI/daemon separation and daemon-mediated access are owned by [Architecture](./architecture.md).
+- Filesystem layout, output redaction, confirmation behavior, systemd hardening, packaged daemon socket access, and core process safety are owned by [State and security requirements](./state-and-security.md).
 - Linux networking invariants are owned by [Networking and reliability requirements](./networking-reliability.md).
-- Package layout and lifecycle are owned by [Debian package contract](./debian-package.md).
+- Package layout, package lifecycle, and package validation boundaries are owned by [Debian package contract](./debian-package.md).
 - Package dependency direction is owned by [Package boundaries](./package-boundaries.md).

@@ -251,15 +251,18 @@ Packaged baseline service behavior:
 
 - `packaging/sysusers.d/tunwarden.conf` creates the dedicated unprivileged `tunwarden` daemon service identity and the dedicated `tunwarden-xray` proxy-core child identity.
 - `packaging/systemd/tunwardend.service` starts `tunwardend` as `tunwarden:tunwarden` for the packaged proxy-only baseline.
+- The packaged unit sets `UMask=0077`; daemon runtime files are private by default, and the daemon-created control socket is explicitly opened to mode `0660`.
 - In the default packaged proxy-only path, Xray child processes inherit the same unprivileged `tunwarden:tunwarden` service identity.
 - If a UID 0 daemon deployment is used for proxy-only mode, `tunwardend` must start Xray under the dedicated `tunwarden-xray:tunwarden-xray` execution identity instead of letting the child inherit UID 0.
 - For the UID 0 daemon path, generated Xray runtime config is owned by `root:tunwarden-xray`, the generated config directory is mode `0750`, and the generated config file is mode `0640`. This is the documented private equivalent to `0600`: only the daemon/root owner and the dedicated Xray child group can read the generated config.
 - The packaged baseline unit grants no ambient or bounding capabilities.
 - Proxy-only mode must not grant `CAP_NET_ADMIN`, `CAP_NET_RAW`, broad file capabilities, or ambient capabilities to the daemon or Xray child.
 - The dedicated `tunwarden` group is the packaged socket access boundary for CLI commands that use the daemon.
-- `RuntimeDirectory=tunwarden` with `RuntimeDirectoryMode=0750` keeps `/run/tunwarden` accessible only to the service identity and the `tunwarden` group.
+- `RuntimeDirectory=tunwarden` with `RuntimeDirectoryMode=0710` lets the `tunwarden` group traverse `/run/tunwarden` to reach the daemon socket, but does not let group members list daemon-private runtime state.
+- Only `/run/tunwarden/tunwardend.sock` is intentionally exposed to `tunwarden` group members for packaged CLI access.
+- Generated configs under `/run/tunwarden/generated`, transaction files under `/run/tunwarden/transactions`, lock files, and other daemon runtime children remain daemon-private unless a later contract explicitly changes them.
 - The daemon itself applies socket mode `0660` to `/run/tunwarden/tunwardend.sock`.
-- `StateDirectory=tunwarden` reserves `/var/lib/tunwarden` for future daemon-owned persistent state, but the current baseline does not write persistent daemon state yet.
+- `StateDirectory=tunwarden` with `StateDirectoryMode=0700` reserves `/var/lib/tunwarden` for daemon-owned persistent state without exposing it to the CLI access group.
 - `StandardOutput=journal` and `StandardError=journal` make daemon logs visible through `journalctl -u tunwardend`.
 
 Current hardening baseline:
@@ -267,6 +270,7 @@ Current hardening baseline:
 ```ini
 User=tunwarden
 Group=tunwarden
+UMask=0077
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
@@ -278,9 +282,9 @@ RestrictSUIDSGID=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 RuntimeDirectory=tunwarden
-RuntimeDirectoryMode=0750
+RuntimeDirectoryMode=0710
 StateDirectory=tunwarden
-StateDirectoryMode=0750
+StateDirectoryMode=0700
 ```
 
 Privilege status for the current milestone:

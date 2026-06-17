@@ -55,6 +55,8 @@ sudo apt install ./dist/tunwarden_0.0.0~dev-1_amd64.deb
 
 The package installs binaries, systemd/sysusers files, shell completions, manual pages, and project documentation under packaged filesystem locations. It must not ship runtime state, generated core configs, user state, `/run/tunwarden`, or `/usr/local` files.
 
+Packaged daemon access is group-mediated through the `tunwarden` group and the local `/run/tunwarden/tunwardend.sock` socket. The canonical access, ownership, and package lifecycle contracts are [State and security requirements](docs/state-and-security.md), [Architecture](docs/architecture.md), and [Debian package contract](docs/debian-package.md).
+
 ## Basic workflow
 
 ```bash
@@ -95,10 +97,10 @@ Start with [Documentation](docs/README.md).
 Primary references:
 
 - [CLI contract](docs/cli.md) for command names, flags, exit codes, and output contracts;
-- [Architecture](docs/architecture.md) for the CLI/daemon split and transaction model;
-- [State and security requirements](docs/state-and-security.md) for state layout, redaction, confirmation, systemd hardening, and core process safety;
+- [Architecture](docs/architecture.md) for the CLI/daemon split, daemon-mediated access, and transaction model;
+- [State and security requirements](docs/state-and-security.md) for state layout, redaction, confirmation, systemd hardening, daemon socket access, and core process safety;
 - [Networking and reliability requirements](docs/networking-reliability.md) for TUN, routing, DNS, firewall, recovery, and reliability invariants;
-- [Debian package contract](docs/debian-package.md) for package layout and lifecycle;
+- [Debian package contract](docs/debian-package.md) for package layout, lifecycle, and package validation boundaries;
 - [Development guide](docs/development.md) for local checks and contribution rules;
 - [tunwarden(1)](docs/man/tunwarden.1) and [tunwardend(8)](docs/man/tunwardend.8) for local manual pages.
 

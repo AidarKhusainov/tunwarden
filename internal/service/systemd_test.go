@@ -14,11 +14,12 @@ func TestSystemdUnitDocumentsSocketAccessModel(t *testing.T) {
 		"ExecStart=/usr/bin/tunwardend",
 		"User=tunwarden",
 		"Group=tunwarden",
-		"UMask=0007",
+		"UMask=0077",
 		"Environment=TUNWARDEN_SERVICE=systemd",
 		"RuntimeDirectory=tunwarden",
-		"RuntimeDirectoryMode=0750",
+		"RuntimeDirectoryMode=0710",
 		"StateDirectory=tunwarden",
+		"StateDirectoryMode=0700",
 		"CapabilityBoundingSet=",
 		"AmbientCapabilities=",
 		"StandardOutput=journal",
@@ -34,9 +35,9 @@ func TestSystemdUnitDoesNotBlockFutureTunDeviceWork(t *testing.T) {
 	content := readSystemdUnit(t)
 
 	for _, forbidden := range []string{
-		"PrivateDevices=yes",
-		"ProtectKernelTunables=yes",
-		"RestrictAddressFamilies=",
+		"Private" + "Devices=yes",
+		"Protect" + "KernelTunables=yes",
+		"Restrict" + "AddressFamilies=",
 	} {
 		if strings.Contains(content, forbidden) {
 			t.Fatalf("systemd unit contains %q, which would need explicit validation before future TUN/nftables work:\n%s", forbidden, content)

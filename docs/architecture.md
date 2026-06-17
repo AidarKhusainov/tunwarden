@@ -2,7 +2,7 @@
 
 ## 1. Architectural goal
 
-TunWarden must separate unprivileged user interaction from privileged Linux networking operations.
+TunWarden must separate unprivileged user interaction from daemon-owned Linux networking and runtime operations.
 
 The architecture must make high-impact operations explicit, observable, reversible, and testable.
 
@@ -21,11 +21,11 @@ The current foundation TUN work implements read-only planning, transaction-state
 | unprivileged user     |
 +-----------+-----------+
             |
-            | Unix socket / D-Bus API
+            | local Unix socket API
             v
 +-----------------------+
 | tunwardend            |
-| privileged daemon     |
+| daemon service        |
 +-----------+-----------+
             |
             +----------------------------+
@@ -61,7 +61,7 @@ Responsibilities:
 
 ### 3.2 Daemon
 
-The daemon must run under systemd and own privileged runtime behavior.
+The daemon must run under systemd for packaged deployments and own runtime behavior that must not live in the CLI. The current packaged proxy-only baseline is intentionally unprivileged; future Linux networking mutation remains daemon-owned and must be introduced with an explicit privilege contract.
 
 Responsibilities:
 
@@ -72,7 +72,7 @@ Responsibilities:
 - handle recovery;
 - expose a restricted local API.
 
-The daemon should be the only long-lived owner of privileged mutable state.
+The daemon should be the only long-lived owner of privileged mutable state. Ordinary users reach the packaged daemon through the local Unix socket and the `tunwarden` group access boundary, not by running normal CLI workflows through elevated user-state commands. Runtime state, transaction files, generated configs, and future privileged networking state remain daemon-owned even when a user can access the daemon socket.
 
 ### 3.3 Core process
 
@@ -125,6 +125,8 @@ user command: tunwarden
 IPC: Unix socket or D-Bus
 optional authorization: polkit
 ```
+
+The implemented packaged IPC is the local Unix socket `/run/tunwarden/tunwardend.sock`. Packaged ordinary-user access is group-mediated through the dedicated `tunwarden` group. That group is an access boundary for the daemon control socket only; it must not make generated runtime configs, transaction state, daemon locks, persistent daemon state, or host networking state user-owned. Future polkit integration may replace or augment group access, but the normal CLI privilege model must remain daemon-mediated rather than direct elevated CLI mutation.
 
 The daemon API must be intentionally small.
 

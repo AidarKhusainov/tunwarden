@@ -42,15 +42,18 @@ TUNWARDEN_RUNTIME_DIR=/tmp/tunwarden-dev go run ./cmd/tunwarden disconnect
 
 For the manual systemd service in `packaging/systemd/tunwardend.service`, the packaged access model is:
 
-- systemd creates `/run/tunwarden` with `RuntimeDirectory=tunwarden` and `RuntimeDirectoryMode=0750`;
+- systemd creates `/run/tunwarden` with `RuntimeDirectory=tunwarden` and `RuntimeDirectoryMode=0710`; this allows `tunwarden` group traversal to the socket without allowing directory listing of daemon-private runtime state;
+- systemd reserves `/var/lib/tunwarden` with `StateDirectory=tunwarden` and `StateDirectoryMode=0700` for daemon-private persistent state;
 - `packaging/sysusers.d/tunwarden.conf` declares the unprivileged `tunwarden` daemon service identity and the dedicated `tunwarden-xray` proxy-core child identity for packaged installs;
 - in the default packaged non-root path, `tunwardend` runs as `tunwarden:tunwarden` because v0.1 proxy-only lifecycle does not require root;
+- the unit sets `UMask=0077` so daemon runtime files are private by default;
 - in the default packaged non-root path, Xray child processes inherit the same unprivileged `tunwarden:tunwarden` service identity;
 - in a UID 0 daemon path, proxy-only Xray must be started as `tunwarden-xray:tunwarden-xray` with supplementary groups disabled instead of inheriting UID 0;
 - in a UID 0 daemon path, generated Xray runtime config remains private by using ownership `root:tunwarden-xray`, generated directory mode `0750`, and generated config file mode `0640`;
 - the current unit grants no ambient or bounding capabilities;
 - proxy-only mode does not grant `CAP_NET_ADMIN`, `CAP_NET_RAW`, broad file capabilities, or ambient capabilities to the daemon or Xray child;
 - the daemon creates `/run/tunwarden/tunwardend.sock` and applies socket mode `0660`;
+- only `/run/tunwarden/tunwardend.sock` is intentionally exposed to users through the `tunwarden` group; generated configs, transaction files, locks, and daemon persistent state remain daemon-private;
 - users that should run CLI commands against the daemon need access through the `tunwarden` group.
 
 This keeps CLI commands non-root while avoiding a world-writable daemon socket. If the user does not have socket access, daemon-backed `status` and `doctor` may be unavailable and the CLI keeps the documented conservative local fallback behavior. Daemon-required lifecycle commands such as `connect` and `disconnect` fail clearly when the daemon is unavailable or inaccessible.
@@ -233,7 +236,7 @@ On startup, `tunwardend`:
 6. applies the socket mode;
 7. serves status, doctor, connect, and disconnect endpoints.
 
-When started by the repository systemd unit, systemd creates the runtime directory before daemon startup, owns it for `tunwarden:tunwarden`, and captures daemon stdout/stderr in journald.
+When started by the repository systemd unit, systemd creates the runtime directory before daemon startup, owns it for `tunwarden:tunwarden`, gives the `tunwarden` group execute-only traversal to the control socket, and captures daemon stdout/stderr in journald.
 
 During proxy-only connect, `tunwardend`:
 
@@ -279,7 +282,7 @@ sudo install -m 0755 ./bin/tunwardend /usr/local/bin/tunwardend
 sudo install -m 0644 packaging/sysusers.d/tunwarden.conf /usr/lib/sysusers.d/tunwarden.conf
 sudo systemd-sysusers /usr/lib/sysusers.d/tunwarden.conf
 sudo usermod -aG tunwarden "$USER"
-# Start a new login session before running tunwarden status so group membership is active.
+newgrp tunwarden
 
 sudo install -m 0644 packaging/systemd/tunwardend.service /etc/systemd/system/tunwardend.service
 sudo systemd-analyze verify /etc/systemd/system/tunwardend.service
@@ -287,6 +290,7 @@ sudo systemctl daemon-reload
 sudo systemctl start tunwardend
 systemctl status tunwardend --no-pager
 tunwarden status
+tunwarden doctor
 journalctl -u tunwardend -n 50 --no-pager
 sudo systemctl stop tunwardend
 ```
