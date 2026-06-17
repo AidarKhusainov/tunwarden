@@ -365,7 +365,11 @@ func profileIDCandidates(opts options) []completionCandidate {
 }
 
 func subscriptionIDCandidates(opts options) []completionCandidate {
-	store, err := sub.NewStore(opts.subscriptionStorePath)
+	storePath, err := resolvedSubscriptionStorePath(opts)
+	if err != nil {
+		return nil
+	}
+	store, err := sub.NewStore(storePath)
 	if err != nil {
 		return nil
 	}
