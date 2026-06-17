@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 	"strings"
 
 	"github.com/AidarKhusainov/tunwarden/internal/api"
 	"github.com/AidarKhusainov/tunwarden/internal/client"
+	"github.com/AidarKhusainov/tunwarden/internal/engine"
 	"github.com/AidarKhusainov/tunwarden/internal/network/planner"
 	"github.com/AidarKhusainov/tunwarden/internal/profile"
 	"github.com/AidarKhusainov/tunwarden/internal/render"
@@ -115,36 +115,14 @@ func validateConnectProfile(p profile.Profile, mode string) error {
 	}
 	switch mode {
 	case planner.ModeProxyOnly:
-		return validateXrayVLESSConnectProfile(p, "proxy-only")
+		_, err := engine.GenerateXrayProxyOnlyConfig(p, engine.DefaultXrayProxyOnlyConfigOptions())
+		return err
 	case planner.ModeTun:
-		return validateXrayVLESSConnectProfile(p, "TUN-mode")
+		_, err := engine.GenerateXrayTunConfig(p, engine.DefaultXrayTunConfigOptions())
+		return err
 	default:
 		return usageError("unsupported connect mode %q", mode)
 	}
-}
-
-func validateXrayVLESSConnectProfile(p profile.Profile, modeName string) error {
-	if p.Engine != profile.EngineXray {
-		return fmt.Errorf("%s connect requires engine %q, got %q", modeName, profile.EngineXray, p.Engine)
-	}
-	if strings.ToLower(strings.TrimSpace(p.Protocol)) != "vless" {
-		return fmt.Errorf("%s connect supports VLESS profiles only, got %q", modeName, p.Protocol)
-	}
-	if strings.TrimSpace(p.UserIdentity) == "" {
-		return fmt.Errorf("%s connect requires VLESS user_identity", modeName)
-	}
-	if encryption := connectVLESSEncryption(p); encryption != "none" {
-		return fmt.Errorf("unsupported %s VLESS encryption %q", modeName, p.Encryption)
-	}
-	return nil
-}
-
-func connectVLESSEncryption(p profile.Profile) string {
-	encryption := strings.ToLower(strings.TrimSpace(p.Encryption))
-	if encryption == "" {
-		return "none"
-	}
-	return encryption
 }
 
 func runConnect(ctx context.Context, p profile.Profile, mode string, opts options) (api.LifecycleResponse, error) {
@@ -208,37 +186,28 @@ func renderLifecycleFields(stdout io.Writer, response api.LifecycleResponse) {
 }
 
 func profileSnapshot(p profile.Profile) api.ProfileSnapshot {
-	snapshot := api.ProfileSnapshot{
-		ID:           p.ID,
-		Name:         p.Name,
-		Source:       string(p.Source),
-		Engine:       string(p.Engine),
-		Server:       p.Server,
-		Port:         p.Port,
-		Protocol:     p.Protocol,
-		UserIdentity: p.UserIdentity,
-		Transport:    p.Transport,
-		Security:     p.Security,
-		Encryption:   p.Encryption,
-		Flow:         p.Flow,
-		ServerName:   p.ServerName,
-		ALPN:         p.ALPN,
-		Fingerprint:  p.Fingerprint,
-		Path:         p.Path,
-		HostHeader:   p.HostHeader,
-		ServiceName:  p.ServiceName,
-	}
-	copyProfileSnapshotField(&snapshot, p, "Reality"+"Public"+"Key")
-	copyProfileSnapshotField(&snapshot, p, "Reality"+"Short"+"ID")
-	copyProfileSnapshotField(&snapshot, p, "Reality"+"Spider"+"X")
-	return snapshot
-}
-
-func copyProfileSnapshotField(snapshot *api.ProfileSnapshot, p profile.Profile, name string) {
-	dst := reflect.ValueOf(snapshot).Elem().FieldByName(name)
-	src := reflect.ValueOf(p).FieldByName(name)
-	if dst.IsValid() && dst.CanSet() && dst.Kind() == reflect.String && src.IsValid() && src.Kind() == reflect.String {
-		dst.SetString(src.String())
+	return api.ProfileSnapshot{
+		ID:               p.ID,
+		Name:             p.Name,
+		Source:           string(p.Source),
+		Engine:           string(p.Engine),
+		Server:           p.Server,
+		Port:             p.Port,
+		Protocol:         p.Protocol,
+		UserIdentity:     p.UserIdentity,
+		Transport:        p.Transport,
+		Security:         p.Security,
+		Encryption:       p.Encryption,
+		Flow:             p.Flow,
+		ServerName:       p.ServerName,
+		ALPN:             p.ALPN,
+		Fingerprint:      p.Fingerprint,
+		Path:             p.Path,
+		HostHeader:       p.HostHeader,
+		ServiceName:      p.ServiceName,
+		RealityPublicKey: p.RealityPublicKey,
+		RealityShortID:   p.RealityShortID,
+		RealitySpiderX:   p.RealitySpiderX,
 	}
 }
 
