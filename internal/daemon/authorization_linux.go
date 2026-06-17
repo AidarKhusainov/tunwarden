@@ -29,5 +29,10 @@ func peerSubjectFromConn(conn net.Conn) (PeerSubject, bool) {
 	if controlErr != nil || peerErr != nil || subject.PID <= 0 {
 		return PeerSubject{}, false
 	}
+	startTime, err := readPeerProcessStartTime(subject.PID)
+	if err != nil {
+		return PeerSubject{}, false
+	}
+	subject.StartTime = startTime
 	return subject, true
 }
