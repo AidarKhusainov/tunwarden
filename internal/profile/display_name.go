@@ -82,21 +82,39 @@ func StableImportedProfileIDBase(protocol, host string, port uint16) string {
 }
 
 func DeduplicateDisplayNames(profiles []Profile) {
-	seen := map[string]int{}
+	usedFinalNames := map[string]struct{}{}
+	nextSuffixByBase := map[string]int{}
 	for i := range profiles {
 		base := strings.TrimSpace(profiles[i].Name)
 		if base == "" {
 			base = FallbackProfileDisplayName(profiles[i].Protocol, profiles[i].Server, profiles[i].Port)
 		}
-		key := strings.ToLower(base)
-		seen[key]++
-		if seen[key] == 1 {
-			profiles[i].Name = base
-			continue
+		baseKey := displayNameKey(base)
+		candidate := base
+		if _, used := usedFinalNames[displayNameKey(candidate)]; used {
+			next := nextSuffixByBase[baseKey]
+			if next < 2 {
+				next = 2
+			}
+			for {
+				suffix := " (" + strconv.Itoa(next) + ")"
+				candidate = truncateRunes(base, MaxDisplayNameRunes-utf8.RuneCountInString(suffix)) + suffix
+				next++
+				if _, used := usedFinalNames[displayNameKey(candidate)]; !used {
+					nextSuffixByBase[baseKey] = next
+					break
+				}
+			}
+		} else if nextSuffixByBase[baseKey] == 0 {
+			nextSuffixByBase[baseKey] = 2
 		}
-		suffix := " (" + strconv.Itoa(seen[key]) + ")"
-		profiles[i].Name = truncateRunes(base, MaxDisplayNameRunes-utf8.RuneCountInString(suffix)) + suffix
+		profiles[i].Name = candidate
+		usedFinalNames[displayNameKey(candidate)] = struct{}{}
 	}
+}
+
+func displayNameKey(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
 }
 
 func truncateRunes(value string, max int) string {
