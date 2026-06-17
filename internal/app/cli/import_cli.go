@@ -138,6 +138,9 @@ func runSubscriptionImport(ctx context.Context, sourceURL string, stdout io.Writ
 	if err != nil {
 		return err
 	}
+	providerName, providerNameWarnings := sub.ProviderSubscriptionDisplayName(format, content)
+	parsed.Warnings = append(parsed.Warnings, providerNameWarnings...)
+	source = sub.RefreshProviderDisplayName(source, providerName)
 
 	subscriptionSnapshot, subscriptionExisted, err := snapshotFile(subscriptionStore.Path())
 	if err != nil {
