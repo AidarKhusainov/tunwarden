@@ -43,9 +43,9 @@ func TestRunCLISudoGuardRejectsUserStateCommandsBeforeStoreAccess(t *testing.T) 
 			wantShape: "tunwarden plan --mode <mode> <profile-id>",
 		},
 		{
-			name:      "connect redacts profile ref",
+			name:      "connect redacts profile id",
 			args:      []string{"connect", "--mode", "proxy-only", "profile-opaquevalue"},
-			wantShape: "tunwarden connect [--mode proxy-only|tun] <profile-ref>",
+			wantShape: "tunwarden connect [--mode proxy-only|tun] <profile-id>",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
