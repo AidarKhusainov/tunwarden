@@ -60,6 +60,16 @@ func TestRunCLIConnectRejectsUnsupportedProfileBeforeDaemon(t *testing.T) {
 			wantMessage: "requires reality_public_key",
 		},
 		{
+			name: "tun unsupported engine",
+			mode: planner.ModeTun,
+			mutate: func(p profile.Profile) profile.Profile {
+				p.ID = "tun-amneziawg-profile"
+				p.Engine = profile.EngineAmneziaWG
+				return p
+			},
+			wantMessage: "TUN-mode Xray config requires engine",
+		},
+		{
 			name: "tun unsupported transport",
 			mode: planner.ModeTun,
 			mutate: func(p profile.Profile) profile.Profile {
