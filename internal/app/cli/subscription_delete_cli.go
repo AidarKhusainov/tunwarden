@@ -82,7 +82,7 @@ func confirmSubscriptionDelete(stdout io.Writer, opts options, source sub.Source
 	if keepProfiles {
 		action = "keep"
 	}
-	fmt.Fprintf(stdout, "Delete subscription %s and %s %d imported profile(s)? Type yes to continue: ", render.Redact(source.ID), action, len(source.ProfileIDs))
+	fmt.Fprintf(stdout, "Delete subscription %s and %s %d imported profiles? Type yes to continue: ", render.Redact(source.ID), action, len(source.ProfileIDs))
 	reader := opts.stdin
 	if reader == nil {
 		reader = os.Stdin
