@@ -115,11 +115,9 @@ func validateConnectProfile(p profile.Profile, mode string) error {
 	}
 	switch mode {
 	case planner.ModeProxyOnly:
-		_, err := engine.GenerateXrayProxyOnlyConfig(p, engine.DefaultXrayProxyOnlyConfigOptions())
-		return err
+		return engine.ValidateXrayProxyOnlyProfile(p)
 	case planner.ModeTun:
-		_, err := engine.GenerateXrayTunConfig(p, engine.DefaultXrayTunConfigOptions())
-		return err
+		return engine.ValidateXrayTunProfile(p)
 	default:
 		return usageError("unsupported connect mode %q", mode)
 	}
