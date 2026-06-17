@@ -13,7 +13,7 @@ Initial package validation targets:
 
 `arm64` is supported by the packaging script when the Go toolchain and build host can produce the target binary, but `arm64` must not block the first package acceptance gate.
 
-Container validation is acceptable for package metadata, file layout, AppStream metadata, and basic install/remove checks. Full service lifecycle validation, including `systemctl status tunwardend`, must be done on a VM or host where systemd is PID 1.
+Container validation is acceptable for package metadata, file layout, AppStream metadata, packaged declarative service/sysusers contract, and basic install/remove checks. Full service lifecycle validation, including `systemctl status tunwardend`, systemd-created runtime directory metadata, and runtime socket ownership/mode, must be done on a VM or host where systemd is PID 1.
 
 ## Package toolchain
 
@@ -126,7 +126,8 @@ Package installation:
 - installs the AppStream MetaInfo file;
 - installs the systemd unit;
 - installs the sysusers configuration;
-- creates the package service identities through `systemd-sysusers` when that command is available;
+- creates or declares the `tunwarden` daemon service user and `tunwarden` socket access group through `systemd-sysusers` when that command is available;
+- creates or declares the dedicated `tunwarden-xray` proxy-core child identity through `systemd-sysusers` when that command is available;
 - records systemd unit state through Debian systemd helper tools when available;
 - does not start `tunwardend.service`;
 - does not enable `tunwardend.service`;
@@ -152,6 +153,17 @@ The packaged unit uses the packaged daemon path:
 ExecStart=/usr/bin/tunwardend
 ```
 
+Users who should access the packaged daemon from the ordinary CLI need one-time membership in the `tunwarden` group and a refreshed login/session group set before using daemon-backed commands:
+
+```bash
+sudo usermod -aG tunwarden "$USER"
+newgrp tunwarden
+tunwarden status
+tunwarden doctor
+```
+
+This group-mediated access applies to the daemon socket only. It must not make user profile state, generated runtime configs, transaction files, daemon locks, or daemon persistent state group-readable.
+
 ## State ownership and lifecycle
 
 The package lifecycle distinguishes these state categories.
@@ -159,9 +171,11 @@ The package lifecycle distinguishes these state categories.
 | Category | Location | Owner | Package behavior |
 | --- | --- | --- | --- |
 | Packaged files | `/usr/bin`, `/usr/lib/systemd/system`, `/usr/lib/sysusers.d`, `/usr/share/bash-completion`, `/usr/share/zsh`, `/usr/share/fish`, `/usr/share/metainfo`, `/usr/share/man`, `/usr/share/doc/tunwarden` | Debian package manager | Installed, upgraded, and removed by `dpkg`/`apt`. |
-| Daemon runtime state | `/run/tunwarden` | `tunwardend` through systemd `RuntimeDirectory=` | Volatile; created when the service starts; not shipped in the package. |
-| Generated runtime configs | `/run/tunwarden/generated` | `tunwardend` | Runtime output only; not shipped in the package and not persistent source of truth. |
-| Daemon persistent state | `/var/lib/tunwarden` | systemd `StateDirectory=` and daemon | Reserved for daemon-owned persistent state; not shipped as packaged files. |
+| Daemon runtime state | `/run/tunwarden` | `tunwardend` through systemd `RuntimeDirectory=` | Volatile; created when the service starts with packaged mode `0710`; not shipped in the package. |
+| Daemon control socket | `/run/tunwarden/tunwardend.sock` | `tunwardend` | Volatile local API socket; daemon-created with mode `0660`; the only runtime child intentionally exposed to `tunwarden` group members. |
+| Generated runtime configs | `/run/tunwarden/generated` | `tunwardend` | Runtime output only; not shipped in the package, not persistent source of truth, and not exposed through the socket access group. |
+| Daemon transaction state | `/run/tunwarden/transactions` | `tunwardend` | Runtime transaction/recovery state only; not shipped in the package and not exposed through the socket access group. |
+| Daemon persistent state | `/var/lib/tunwarden` | systemd `StateDirectory=` and daemon | Reserved for daemon-owned persistent state with packaged mode `0700`; not shipped as packaged files. |
 | User intent/state | `$XDG_CONFIG_HOME/tunwarden`, `$XDG_STATE_HOME/tunwarden`, `$XDG_CACHE_HOME/tunwarden` | invoking user | Not owned, modified, or removed by package lifecycle scripts. |
 
 ### Fresh install
@@ -195,6 +209,15 @@ dpkg-deb --info dist/tunwarden_0.0.0~dev-1_amd64.deb
 dpkg-deb --contents dist/tunwarden_0.0.0~dev-1_amd64.deb
 dpkg-deb --contents dist/tunwarden_0.0.0~dev-1_amd64.deb | grep -F './usr/share/metainfo/io.github.aidarkhusainov.tunwarden.metainfo.xml'
 ```
+
+Packaged daemon access contract inspection:
+
+```bash
+dpkg-deb --fsys-tarfile dist/tunwarden_0.0.0~dev-1_amd64.deb | tar -xOf - ./usr/lib/systemd/system/tunwardend.service
+dpkg-deb --fsys-tarfile dist/tunwarden_0.0.0~dev-1_amd64.deb | tar -xOf - ./usr/lib/sysusers.d/tunwarden.conf
+```
+
+The CI package gate validates the declarative packaged contract: sysusers identities, service `User=`/`Group=`, `UMask=`, `RuntimeDirectoryMode=`, `StateDirectoryMode=`, and the absence of package maintainer hooks that automatically start or enable `tunwardend.service`.
 
 AppStream metadata validation:
 
@@ -242,6 +265,7 @@ Container validation can check:
 - package metadata;
 - package contents;
 - AppStream MetaInfo validation;
+- packaged declarative systemd/sysusers access contract;
 - local install/remove mechanics;
 - absence of `/usr/local`, `/run`, `/var/run`, user home, and generated runtime config packaged paths;
 - binary, shell completion, AppStream metadata, and man page presence.
@@ -252,6 +276,9 @@ Container validation is not sufficient for:
 - daemon startup under the packaged unit;
 - journald integration;
 - service runtime directory creation through systemd;
+- runtime `/run/tunwarden` ownership/mode as created by systemd;
+- runtime `/run/tunwarden/tunwardend.sock` ownership/mode as created by the daemon inside the systemd runtime directory;
+- group membership propagation across real login sessions;
 - any real networking lifecycle.
 
 Those checks require a VM or systemd-capable host.
