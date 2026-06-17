@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/url"
@@ -99,7 +98,7 @@ func printLocalImportResult(stdout io.Writer, result profile.LocalImportResult) 
 	if len(result.Profiles) > 0 {
 		fmt.Fprintln(stdout, "Imported profiles:")
 		for _, p := range result.Profiles {
-			fmt.Fprintf(stdout, "- %s\n", render.Redact(p.ID))
+			fmt.Fprintf(stdout, "- %s %s\n", render.Redact(p.ID), render.Redact(p.Name))
 		}
 	}
 	if len(result.Unsupported) > 0 {
@@ -130,7 +129,7 @@ func runSubscriptionImport(ctx context.Context, sourceURL string, stdout io.Writ
 		return err
 	}
 
-	source := sub.NewSource(importedSubscriptionName(sourceURL), sourceURL)
+	source := sub.NewSource("", sourceURL)
 	content, err := sub.FetchSource(ctx, source)
 	if err != nil {
 		return err
@@ -202,13 +201,10 @@ func runSubscriptionImport(ctx context.Context, sourceURL string, stdout io.Writ
 	return nil
 }
 
-func importedSubscriptionName(rawURL string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(rawURL)))
-	return fmt.Sprintf("imported subscription %x", sum[:4])
-}
-
 func printSubscriptionImportResult(stdout io.Writer, result sub.UpdateResult) {
-	fmt.Fprintf(stdout, "Subscription imported: %s\n", render.Redact(result.Subscription.ID))
+	out := subscriptionForOutput(result.Subscription)
+	fmt.Fprintf(stdout, "Subscription imported: %s\n", out.ID)
+	fmt.Fprintf(stdout, "Name: %s\n", out.Name)
 	fmt.Fprintf(stdout, "Format: %s\n", result.Subscription.Format)
 	fmt.Fprintf(stdout, "Imported: %d\n", result.Imported)
 	fmt.Fprintf(stdout, "Updated: %d\n", result.Updated)
