@@ -9,7 +9,6 @@ import (
 
 	"github.com/AidarKhusainov/tunwarden/internal/api"
 	"github.com/AidarKhusainov/tunwarden/internal/client"
-	"github.com/AidarKhusainov/tunwarden/internal/engine"
 	"github.com/AidarKhusainov/tunwarden/internal/network/planner"
 	"github.com/AidarKhusainov/tunwarden/internal/profile"
 	"github.com/AidarKhusainov/tunwarden/internal/render"
@@ -113,14 +112,10 @@ func validateConnectProfile(p profile.Profile, mode string) error {
 	if err := profile.Validate(p); err != nil {
 		return err
 	}
-	switch mode {
-	case planner.ModeProxyOnly:
-		return engine.ValidateXrayProxyOnlyProfile(p)
-	case planner.ModeTun:
-		return engine.ValidateXrayTunProfile(p)
-	default:
-		return usageError("unsupported connect mode %q", mode)
+	if err := planner.ValidateXrayConnectProfile(p, mode); err != nil {
+		return err
 	}
+	return nil
 }
 
 func runConnect(ctx context.Context, p profile.Profile, mode string, opts options) (api.LifecycleResponse, error) {
