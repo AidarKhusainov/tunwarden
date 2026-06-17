@@ -31,9 +31,12 @@ func runConnectCommand(ctx context.Context, args []string, stdout io.Writer, opt
 	if err != nil {
 		return err
 	}
-	p, err := store.Get(parsed.profileID)
+	p, err := store.Get(parsed.profileRef)
 	if err != nil {
 		return profileCommandError(err)
+	}
+	if err := validateConnectProfile(p, parsed.mode); err != nil {
+		return err
 	}
 
 	response, err := runConnect(ctx, p, parsed.mode, opts)
@@ -65,8 +68,8 @@ func runDisconnectCommand(ctx context.Context, args []string, stdout io.Writer, 
 }
 
 type connectArgs struct {
-	mode      string
-	profileID string
+	mode       string
+	profileRef string
 }
 
 func parseConnectArgs(args []string) (connectArgs, error) {
@@ -88,10 +91,10 @@ func parseConnectArgs(args []string) (connectArgs, error) {
 			if strings.HasPrefix(arg, "-") {
 				return parsed, usageError("unsupported connect argument %q", arg)
 			}
-			if parsed.profileID != "" {
+			if parsed.profileRef != "" {
 				return parsed, usageError("connect accepts exactly one profile id")
 			}
-			parsed.profileID = arg
+			parsed.profileRef = arg
 		}
 	}
 	switch parsed.mode {
@@ -99,10 +102,20 @@ func parseConnectArgs(args []string) (connectArgs, error) {
 	default:
 		return parsed, usageError("unsupported connect mode %q", parsed.mode)
 	}
-	if parsed.profileID == "" {
+	if parsed.profileRef == "" {
 		return parsed, usageError("connect requires a profile id")
 	}
 	return parsed, nil
+}
+
+func validateConnectProfile(p profile.Profile, mode string) error {
+	if err := profile.Validate(p); err != nil {
+		return err
+	}
+	if err := planner.ValidateXrayConnectProfile(p, mode); err != nil {
+		return err
+	}
+	return nil
 }
 
 func runConnect(ctx context.Context, p profile.Profile, mode string, opts options) (api.LifecycleResponse, error) {
@@ -196,8 +209,7 @@ func printConnectHelp(w io.Writer) {
   tunwarden connect [--mode proxy-only|tun] <profile-id>
 
 Start the stored profile through the daemon-managed lifecycle. The default mode
-is proxy-only. TUN mode requires a daemon process with CAP_NET_ADMIN-equivalent
-privileges.
+is proxy-only. TUN mode requires daemon networking privileges.
 `)
 }
 
