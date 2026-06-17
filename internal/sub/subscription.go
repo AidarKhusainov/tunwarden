@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	pathpkg "path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -23,6 +25,8 @@ const (
 	subscriptionUserAgent    = "TunWarden"
 	subscriptionClientHeader = "x-hwid"
 )
+
+var subscriptionUUIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // Format identifies a supported or planned subscription source format.
 type Format string
@@ -127,10 +131,7 @@ func fallbackSubscriptionDisplayName(sourceURL string) string {
 	candidate := "subscription"
 	if u, err := url.Parse(strings.TrimSpace(sourceURL)); err == nil {
 		host := strings.TrimSpace(u.Hostname())
-		base := strings.TrimSpace(filepath.Base(u.Path))
-		if base == "." || base == string(filepath.Separator) {
-			base = ""
-		}
+		base := safeHumanPathBase(u.Path)
 		switch {
 		case host != "" && base != "":
 			candidate = host + " " + base
@@ -144,6 +145,143 @@ func fallbackSubscriptionDisplayName(sourceURL string) string {
 		return name
 	}
 	return "subscription"
+}
+
+func safeHumanPathBase(rawPath string) string {
+	rawPath = strings.TrimSpace(rawPath)
+	if rawPath == "" || rawPath == "/" {
+		return ""
+	}
+	if suspiciousSubscriptionPathContext(rawPath) {
+		return ""
+	}
+	base, err := url.PathUnescape(pathpkg.Base(rawPath))
+	if err != nil {
+		return ""
+	}
+	base = strings.TrimSpace(base)
+	if base == "" || base == "." || base == "/" {
+		return ""
+	}
+	if unsafeSubscriptionPathBase(base) {
+		return ""
+	}
+	name, ok := profile.SanitizeDisplayName(base)
+	if !ok {
+		return ""
+	}
+	return name
+}
+
+func suspiciousSubscriptionPathContext(rawPath string) bool {
+	dir := pathpkg.Dir(rawPath)
+	if dir == "." || dir == "/" {
+		return false
+	}
+	for _, segment := range strings.Split(dir, "/") {
+		segment = normalizeSubscriptionPathContextSegment(segment)
+		switch {
+		case segment == "sub",
+			segment == "subs",
+			segment == "subscription",
+			segment == "subscriptions",
+			segment == "subscribe",
+			segment == "invite",
+			segment == "link",
+			segment == "token",
+			segment == "key":
+			return true
+		case strings.HasPrefix(segment, "sub") && len(segment) >= len("sub")+4:
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeSubscriptionPathContextSegment(segment string) string {
+	segment = strings.ToLower(strings.TrimSpace(segment))
+	replacer := strings.NewReplacer(
+		"0", "o",
+		"1", "i",
+		"3", "e",
+		"4", "a",
+		"5", "s",
+		"7", "t",
+		"-", "",
+		"_", "",
+		".", "",
+	)
+	return replacer.Replace(segment)
+}
+
+func unsafeSubscriptionPathBase(base string) bool {
+	trimmed := strings.TrimSpace(base)
+	lower := strings.ToLower(trimmed)
+	return subscriptionUUIDPattern.MatchString(trimmed) ||
+		looksSubscriptionSecretLike(lower) ||
+		looksSubscriptionPathTokenLike(trimmed) ||
+		looksNumericOrHashLike(lower)
+}
+
+func looksSubscriptionSecretLike(value string) bool {
+	for _, marker := range []string{"token", "password", "passwd", "secret", "private", "authorization", "api_key", "apikey"} {
+		if strings.Contains(value, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksSubscriptionPathTokenLike(value string) bool {
+	if len(value) < 12 || strings.ContainsAny(value, " -_") {
+		return false
+	}
+	hasLower, hasUpper, hasDigit := false, false, false
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			hasLower = true
+		case r >= 'A' && r <= 'Z':
+			hasUpper = true
+		case r >= '0' && r <= '9':
+			hasDigit = true
+		default:
+			return false
+		}
+	}
+	return hasLower && hasUpper && hasDigit
+}
+
+func looksNumericOrHashLike(value string) bool {
+	if len(value) >= 6 && allDigits(value) {
+		return true
+	}
+	return len(value) >= 8 && allHex(value)
+}
+
+func allDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func allHex(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r >= '0' && r <= '9' || r >= 'a' && r <= 'f' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func ValidateSource(source Source) error {
