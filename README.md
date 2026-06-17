@@ -4,6 +4,8 @@ TunWarden is a Linux-first CLI VPN/proxy client for Xray-compatible profiles and
 
 It is built for technical users who want networking changes to be explicit, inspectable, reversible, and recoverable. The `tunwarden` CLI owns profile and subscription intent. The `tunwardend` daemon owns runtime lifecycle and daemon state.
 
+Run `tunwarden` as the normal user for profile, subscription, import, plan, connect, and shell-completion workflows. Do not run user-state workflows through `sudo tunwarden`; privileged runtime changes are delegated to `tunwardend`.
+
 ## Scope
 
 TunWarden targets Linux systems with standard networking and service-management tools:
