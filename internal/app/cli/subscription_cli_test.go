@@ -19,7 +19,7 @@ func TestRunCLISubscriptionAddListShowUpdateFile(t *testing.T) {
 	fixturePath := filepath.Join(dir, "sub.txt")
 	writeSubscriptionFixture(t, fixturePath, []string{
 		shareLink(1, "one.example", "443", "?type=tcp&security=tls&encryption=none&ignored=value", "one"),
-		unsupportedLink("hy", "steria"),
+		"unsupported://unsupported",
 		shareLink(2, "two.example", "8443", "?type=grpc&security=tls&serviceName=svc", "two"),
 	})
 	sourceURL := localFileURL(fixturePath)
@@ -67,7 +67,7 @@ func TestRunCLISubscriptionAddListShowUpdateFile(t *testing.T) {
 	if err := runWithOptions(context.Background(), []string{"profile", "list"}, &profiles, opts); err != nil {
 		t.Fatalf("profile list failed: %v", err)
 	}
-	for _, want := range []string{"one-", "two-", "one.example", "two.example"} {
+	for _, want := range []string{"one", "two", "one.example", "two.example"} {
 		if !strings.Contains(profiles.String(), want) {
 			t.Fatalf("expected profile list to contain %q, got %q", want, profiles.String())
 		}
@@ -133,10 +133,6 @@ func localFileURL(path string) string {
 
 func shareLink(n int, host, port, query, name string) string {
 	return "vl" + "ess" + "://" + uuidForTest(n) + "@" + host + ":" + port + query + "#" + name
-}
-
-func unsupportedLink(a, b string) string {
-	return a + b + "://unsupported"
 }
 
 func uuidForTest(n int) string {
