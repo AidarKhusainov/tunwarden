@@ -43,20 +43,11 @@ func GenerateXrayTunConfig(p profile.Profile, opts XrayTunConfigOptions) ([]byte
 	if opts.SOCKSPort == 0 {
 		return nil, fmt.Errorf("TUN-mode Xray config requires a SOCKS listen port")
 	}
-	if p.Engine != profile.EngineXray {
-		return nil, fmt.Errorf("TUN-mode Xray config requires engine %q, got %q", profile.EngineXray, p.Engine)
-	}
-	if strings.ToLower(p.Protocol) != "vless" {
-		return nil, fmt.Errorf("TUN-mode Xray config supports VLESS profiles only, got %q", p.Protocol)
-	}
-	if strings.TrimSpace(p.UserIdentity) == "" {
-		return nil, fmt.Errorf("TUN-mode Xray config requires VLESS user_identity")
-	}
-	if encryption := strings.ToLower(vlessEncryption(p)); encryption != "none" {
-		return nil, fmt.Errorf("unsupported TUN-mode VLESS encryption %q", p.Encryption)
+	if err := ValidateXrayTunProfile(p); err != nil {
+		return nil, err
 	}
 
-	streamSettings, err := vlessStreamSettings(p)
+	streamSettings, err := vlessStreamSettings("TUN-mode", p)
 	if err != nil {
 		return nil, err
 	}
