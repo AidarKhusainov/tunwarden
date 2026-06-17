@@ -108,7 +108,7 @@ func sudoGuardCommandShape(command string, args []string) string {
 	case "plan":
 		return "tunwarden plan --mode <mode> <profile-id>"
 	case "connect":
-		return "tunwarden connect [--mode proxy-only|tun] <profile-id>"
+		return "tunwarden connect [--mode proxy-only|tun] <profile-ref>"
 	default:
 		return "tunwarden <command>"
 	}
