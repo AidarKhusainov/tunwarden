@@ -180,16 +180,29 @@ func TestPolkitAuthorizerBuildsOperationSpecificPkcheckRequest(t *testing.T) {
 		},
 	}
 
-	err := authorizer.Authorize(context.Background(), ActionConnectTun, PeerSubject{PID: 4242, UID: 1000, GID: 1000})
+	err := authorizer.Authorize(context.Background(), ActionConnectTun, PeerSubject{PID: 4242, UID: 1000, GID: 1000, StartTime: 987654321})
 	if err != nil {
 		t.Fatalf("Authorize returned error: %v", err)
 	}
 	if gotCommand != "/usr/bin/pkcheck" {
 		t.Fatalf("command = %q, want /usr/bin/pkcheck", gotCommand)
 	}
-	wantArgs := []string{"--action-id", string(ActionConnectTun), "--process", "4242", "--allow-user-interaction"}
+	wantArgs := []string{"--action-id", string(ActionConnectTun), "--process", "4242,987654321,1000", "--allow-user-interaction"}
 	if strings.Join(gotArgs, "\x00") != strings.Join(wantArgs, "\x00") {
 		t.Fatalf("args = %#v, want %#v", gotArgs, wantArgs)
+	}
+}
+
+func TestPolkitAuthorizerRejectsMissingPeerStartTime(t *testing.T) {
+	authorizer := PolkitAuthorizer{
+		lookupPath: func(string) (string, error) {
+			return "/usr/bin/pkcheck", nil
+		},
+	}
+
+	err := authorizer.Authorize(context.Background(), ActionConnectTun, PeerSubject{PID: 4242, UID: 1000, GID: 1000})
+	if !errors.Is(err, ErrAuthorizationUnavailable) {
+		t.Fatalf("Authorize error = %v, want ErrAuthorizationUnavailable", err)
 	}
 }
 
@@ -200,7 +213,7 @@ func TestPolkitAuthorizerReportsLookupFailureAsUnavailable(t *testing.T) {
 		},
 	}
 
-	err := authorizer.Authorize(context.Background(), ActionConnectTun, PeerSubject{PID: 4242, UID: 1000, GID: 1000})
+	err := authorizer.Authorize(context.Background(), ActionConnectTun, PeerSubject{PID: 4242, UID: 1000, GID: 1000, StartTime: 987654321})
 	if !errors.Is(err, ErrAuthorizationUnavailable) {
 		t.Fatalf("Authorize error = %v, want ErrAuthorizationUnavailable", err)
 	}
@@ -208,7 +221,7 @@ func TestPolkitAuthorizerReportsLookupFailureAsUnavailable(t *testing.T) {
 
 func authorizedRequest(method, path, body string) *http.Request {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	ctx := contextWithPeerSubject(req.Context(), PeerSubject{PID: 4242, UID: 1000, GID: 1000})
+	ctx := contextWithPeerSubject(req.Context(), PeerSubject{PID: 4242, UID: 1000, GID: 1000, StartTime: 987654321})
 	return req.WithContext(ctx)
 }
 
