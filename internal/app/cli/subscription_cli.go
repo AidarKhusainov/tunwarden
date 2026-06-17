@@ -68,7 +68,9 @@ func runSubscriptionAdd(store sub.Store, args []string, stdout io.Writer) error 
 	if err := store.Add(source); err != nil {
 		return subscriptionCommandError(err)
 	}
-	fmt.Fprintf(stdout, "Subscription added: %s\n", render.Redact(source.ID))
+	out := subscriptionForOutput(source)
+	fmt.Fprintf(stdout, "Subscription added: %s\n", out.ID)
+	fmt.Fprintf(stdout, "Name: %s\n", out.Name)
 	return nil
 }
 
@@ -306,7 +308,9 @@ func subscriptionForOutput(source sub.Source) subscriptionOutput {
 }
 
 func printSubscriptionUpdateResult(stdout io.Writer, result sub.UpdateResult) {
-	fmt.Fprintf(stdout, "Subscription updated: %s\n", render.Redact(result.Subscription.ID))
+	out := subscriptionForOutput(result.Subscription)
+	fmt.Fprintf(stdout, "Subscription updated: %s\n", out.ID)
+	fmt.Fprintf(stdout, "Name: %s\n", out.Name)
 	fmt.Fprintf(stdout, "Format: %s\n", result.Subscription.Format)
 	fmt.Fprintf(stdout, "Imported: %d\n", result.Imported)
 	fmt.Fprintf(stdout, "Updated: %d\n", result.Updated)
@@ -375,7 +379,7 @@ func resolvedSubscriptionStorePath(opts options) (string, error) {
 
 func printSubscriptionHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage:
-  tunwarden subscription add --name <name> --url <file-or-http-url>
+  tunwarden subscription add [--name <name>] --url <file-or-http-url>
   tunwarden subscription update <subscription-id>
   tunwarden subscription list [--json]
   tunwarden subscription show <subscription-id> [--json]
