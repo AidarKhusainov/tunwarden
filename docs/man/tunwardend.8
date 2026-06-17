@@ -52,7 +52,14 @@ Users that run
 against the packaged daemon need access to the daemon socket, normally through
 the
 .B tunwarden
-group. Start a new login session after changing group membership.
+group. Apply the one-time group membership and refresh the current shell or
+start a new login session before verifying access:
+.EX
+sudo usermod -aG tunwarden "$USER"
+newgrp tunwarden
+tunwarden status
+tunwarden doctor
+.EE
 .SH FILES
 .TP
 .I /usr/bin/tunwardend
@@ -68,23 +75,33 @@ the default packaged daemon path.
 Daemon runtime directory. Packaged systemd units create it with
 .B RuntimeDirectory=tunwarden
 and mode
-.BR 0750 .
+.BR 0710 .
+The group execute bit lets members of the
+.B tunwarden
+group traverse to the control socket without listing daemon-private runtime
+state.
 .TP
 .I /run/tunwarden/tunwardend.sock
 Local daemon API socket. The daemon applies socket mode
 .BR 0660 .
+Only this control socket is exposed to the
+.B tunwarden
+group by the package/runtime contract.
 .TP
 .I /run/tunwarden/generated/
 Daemon-owned generated runtime configuration directory. Generated Xray config
-files are volatile runtime output, not persistent source of truth.
+files are volatile runtime output, not persistent source of truth, and are not
+made group-readable through the daemon socket access group.
 .TP
 .I /run/tunwarden/transactions/
 Volatile transaction state used by status, diagnostics, rollback, disconnect,
-and recovery paths.
+and recovery paths. Transaction files remain daemon-private state.
 .TP
 .I /var/lib/tunwarden/
 Reserved daemon state directory created by
-.BR StateDirectory=tunwarden .
+.BR StateDirectory=tunwarden
+with mode
+.BR 0700 .
 The current packaged baseline does not use it as profile or subscription
 source of truth.
 .TP
@@ -178,11 +195,18 @@ journalctl -u tunwardend -n 50 --no-pager
 .B Permission denied when using tunwarden status or doctor
 Check that the user belongs to the
 .B tunwarden
-group and that the socket exists with restrictive group access:
+group and that the socket exists with restrictive group access. Normal CLI
+workflows use this group access model now, or a future polkit authorization
+flow when that contract exists.
 .EX
 id
+getent group tunwarden
 ls -ld /run/tunwarden
 ls -l /run/tunwarden/tunwardend.sock
+sudo usermod -aG tunwarden "$USER"
+newgrp tunwarden
+tunwarden status
+tunwarden doctor
 .EE
 .TP
 .B Socket path exists but daemon cannot start
@@ -214,6 +238,7 @@ sudo install -m 0644 packaging/sysusers.d/tunwarden.conf \
   /usr/lib/sysusers.d/tunwarden.conf
 sudo systemd-sysusers /usr/lib/sysusers.d/tunwarden.conf
 sudo usermod -aG tunwarden "$USER"
+newgrp tunwarden
 sudo install -m 0644 packaging/systemd/tunwardend.service \
   /etc/systemd/system/tunwardend.service
 sudo systemd-analyze verify /etc/systemd/system/tunwardend.service
@@ -225,6 +250,7 @@ Verify daemon-backed inactive state:
 .EX
 systemctl status tunwardend --no-pager
 tunwarden status
+tunwarden doctor
 journalctl -u tunwardend -n 50 --no-pager
 .EE
 .TP
