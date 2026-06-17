@@ -1,9 +1,6 @@
 package cli
 
-import (
-	"reflect"
-	"testing"
-)
+import "testing"
 
 func TestProfileSnapshotMapsProfileFields(t *testing.T) {
 	p := testConnectProfile()
@@ -13,9 +10,9 @@ func TestProfileSnapshotMapsProfileFields(t *testing.T) {
 	p.Path = "/grpc"
 	p.HostHeader = "example.net"
 	p.ServiceName = "svc"
-	setProfileStringField(t, &p, "Reality"+"Public"+"Key", "pub")
-	setProfileStringField(t, &p, "Reality"+"Short"+"ID", "short")
-	setProfileStringField(t, &p, "Reality"+"Spider"+"X", "/spider")
+	p.RealityPublicKey = "pub"
+	p.RealityShortID = "short"
+	p.RealitySpiderX = "/spider"
 
 	snapshot := profileSnapshot(p)
 
@@ -40,6 +37,9 @@ func TestProfileSnapshotMapsProfileFields(t *testing.T) {
 		{name: "path", got: snapshot.Path, want: p.Path},
 		{name: "host_header", got: snapshot.HostHeader, want: p.HostHeader},
 		{name: "service_name", got: snapshot.ServiceName, want: p.ServiceName},
+		{name: "reality_public_key", got: snapshot.RealityPublicKey, want: p.RealityPublicKey},
+		{name: "reality_short_id", got: snapshot.RealityShortID, want: p.RealityShortID},
+		{name: "reality_spider_x", got: snapshot.RealitySpiderX, want: p.RealitySpiderX},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.got != tt.want {
@@ -53,37 +53,4 @@ func TestProfileSnapshotMapsProfileFields(t *testing.T) {
 	if snapshot.UserIdentity != p.UserIdentity {
 		t.Fatalf("expected user identity to be mapped")
 	}
-	for _, field := range []string{"Reality" + "Public" + "Key", "Reality" + "Short" + "ID", "Reality" + "Spider" + "X"} {
-		if got, want := snapshotStringField(t, snapshot, field), profileStringField(t, p, field); got != want {
-			t.Fatalf("expected %s %q, got %q", field, want, got)
-		}
-	}
-}
-
-func setProfileStringField(t *testing.T, p any, name string, value string) {
-	t.Helper()
-	field := reflect.ValueOf(p).Elem().FieldByName(name)
-	if !field.IsValid() || !field.CanSet() || field.Kind() != reflect.String {
-		t.Fatalf("profile field %s is not settable string", name)
-	}
-	field.SetString(value)
-}
-
-func profileStringField(t *testing.T, p any, name string) string {
-	t.Helper()
-	return stringField(t, p, name)
-}
-
-func snapshotStringField(t *testing.T, snapshot any, name string) string {
-	t.Helper()
-	return stringField(t, snapshot, name)
-}
-
-func stringField(t *testing.T, value any, name string) string {
-	t.Helper()
-	field := reflect.ValueOf(value).FieldByName(name)
-	if !field.IsValid() || field.Kind() != reflect.String {
-		t.Fatalf("field %s is not string", name)
-	}
-	return field.String()
 }
