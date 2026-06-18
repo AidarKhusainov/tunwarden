@@ -67,7 +67,7 @@ func TestCollectWithRunnerBuildsReadOnlySnapshot(t *testing.T) {
 	if s.DNS.Mode != "systemd-resolved" || s.NetworkManager.State != "connected" {
 		t.Fatalf("unexpected DNS/NM snapshot: %#v %#v", s.DNS, s.NetworkManager)
 	}
-	if s.Nftables.Availability.Status != StatusDetected || s.Nftables.podlazTable.Status != StatusMissing {
+	if s.Nftables.Availability.Status != StatusDetected || s.Nftables.PodlazTable.Status != StatusMissing {
 		t.Fatalf("unexpected nftables snapshot: %#v", s.Nftables)
 	}
 	if len(s.StaleResources) != 0 {
