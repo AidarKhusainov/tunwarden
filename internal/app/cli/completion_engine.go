@@ -192,6 +192,7 @@ func completionRegistry() *completionCommand {
 			{Name: "import"},
 			{Name: "list", Flags: []completionFlag{longBoolFlag("--json")}},
 			{Name: "show", Flags: []completionFlag{longBoolFlag("--json")}, Dynamic: completionDynamicProfileIDs},
+			{Name: "validate", Flags: []completionFlag{longEnumFlag("--mode", modes), longBoolFlag("--json")}, Dynamic: completionDynamicProfileIDs},
 			{Name: "delete", Flags: []completionFlag{longBoolFlag("--yes")}, Dynamic: completionDynamicProfileIDs},
 		}},
 		{Name: "subscription", Children: []*completionCommand{
@@ -269,18 +270,54 @@ func mustCompletionCommand(path ...string) *completionCommand {
 	return node
 }
 
-func childNames(node *completionCommand) []string {
-	out := make([]string, len(node.Children))
-	for i, child := range node.Children {
-		out[i] = child.Name
+func childNames(command *completionCommand) []string {
+	names := make([]string, 0, len(command.Children))
+	for _, child := range command.Children {
+		names = append(names, child.Name)
 	}
-	return out
+	return names
+}
+
+func (c *completionCommand) child(name string) *completionCommand {
+	for _, child := range c.Children {
+		if child.Name == name {
+			return child
+		}
+	}
+	return nil
+}
+
+func (c *completionCommand) findFlag(name string) (completionFlag, bool) {
+	for _, flag := range c.Flags {
+		if flag.Name == name || flag.Shorthand == name {
+			return flag, true
+		}
+	}
+	return completionFlag{}, false
+}
+
+func (f completionFlag) canonicalName() string {
+	if f.Name != "" {
+		return f.Name
+	}
+	return f.Shorthand
+}
+
+func completionWordAt(words []string, cursor int) string {
+	if cursor < len(words) {
+		return words[cursor]
+	}
+	return ""
+}
+
+func noFileCompletion(candidates []completionCandidate) completionResult {
+	return completionResult{Candidates: candidates, Directives: []completionDirective{completionDirectiveNoFiles}}
 }
 
 func commandCandidates(commands []*completionCommand) []completionCandidate {
-	candidates := make([]completionCandidate, len(commands))
-	for i, command := range commands {
-		candidates[i] = completionCandidate{Value: command.Name}
+	candidates := make([]completionCandidate, 0, len(commands))
+	for _, command := range commands {
+		candidates = append(candidates, completionCandidate{Value: command.Name})
 	}
 	return candidates
 }
@@ -293,7 +330,9 @@ func flagCandidates(flags []completionFlag, used map[string]struct{}) []completi
 				continue
 			}
 		}
-		candidates = append(candidates, completionCandidate{Value: flag.Name})
+		if flag.Name != "" {
+			candidates = append(candidates, completionCandidate{Value: flag.Name})
+		}
 		if flag.Shorthand != "" {
 			candidates = append(candidates, completionCandidate{Value: flag.Shorthand})
 		}
@@ -301,14 +340,10 @@ func flagCandidates(flags []completionFlag, used map[string]struct{}) []completi
 	return candidates
 }
 
-func valueCandidates(values []string, prefixParts ...string) []completionCandidate {
-	prefix := ""
-	if len(prefixParts) > 0 {
-		prefix = prefixParts[0]
-	}
-	candidates := make([]completionCandidate, len(values))
-	for i, value := range values {
-		candidates[i] = completionCandidate{Value: prefix + value}
+func valueCandidates(values []string, prefix string) []completionCandidate {
+	candidates := make([]completionCandidate, 0, len(values))
+	for _, value := range values {
+		candidates = append(candidates, completionCandidate{Value: prefix + value})
 	}
 	return candidates
 }
@@ -324,7 +359,7 @@ func profileIDCandidates(opts options) []completionCandidate {
 	}
 	candidates := make([]completionCandidate, 0, len(profiles))
 	for _, p := range profiles {
-		candidates = append(candidates, completionCandidate{Value: p.ID, Description: render.Redact(p.Name)})
+		candidates = append(candidates, completionCandidate{Value: render.Redact(p.ID), Description: render.Redact(p.Name)})
 	}
 	return candidates
 }
@@ -344,53 +379,19 @@ func subscriptionIDCandidates(opts options) []completionCandidate {
 	}
 	candidates := make([]completionCandidate, 0, len(sources))
 	for _, source := range sources {
-		candidates = append(candidates, completionCandidate{Value: source.ID, Description: render.Redact(source.Name)})
+		candidates = append(candidates, completionCandidate{Value: render.Redact(source.ID), Description: render.Redact(source.Name)})
 	}
 	return candidates
 }
 
-func noFileCompletion(candidates []completionCandidate) completionResult {
-	return completionResult{Candidates: candidates, Directives: []completionDirective{completionDirectiveNoFiles}}
+func splitFlagToken(word string) (string, string, bool) {
+	name, value, ok := strings.Cut(word, "=")
+	return name, value, ok
 }
 
-func completionWordAt(words []string, index int) string {
-	if index < 0 || index >= len(words) {
-		return ""
-	}
-	return words[index]
-}
-
-func (c *completionCommand) child(name string) *completionCommand {
-	for _, child := range c.Children {
-		if child.Name == name {
-			return child
-		}
-	}
-	return nil
-}
-
-func (c *completionCommand) findFlag(token string) (completionFlag, bool) {
-	for _, flag := range c.Flags {
-		if token == flag.Name || token == flag.Shorthand {
-			return flag, true
-		}
-	}
-	return completionFlag{}, false
-}
-
-func (f completionFlag) canonicalName() string {
-	return f.Name
-}
-
-func splitFlagToken(token string) (name string, value string, hasInlineValue bool) {
-	name, value, hasInlineValue = strings.Cut(token, "=")
-	return name, value, hasInlineValue
-}
-
-func inlineFlagValue(current string) (flagName string, prefix string, ok bool) {
-	if !strings.HasPrefix(current, "--") {
+func inlineFlagValue(word string) (string, string, bool) {
+	if !strings.HasPrefix(word, "--") {
 		return "", "", false
 	}
-	flagName, prefix, ok = strings.Cut(current, "=")
-	return flagName, prefix, ok
+	return splitFlagToken(word)
 }

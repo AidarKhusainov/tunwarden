@@ -141,6 +141,21 @@ List stored profiles.
 .B profile show <profile-id> [--json]
 Show a stored profile with sensitive fields redacted.
 .TP
+.B profile validate <profile-id> [--mode proxy-only|tun] [--json]
+Validate a stored profile without starting Xray, contacting the daemon,
+requiring root, writing runtime config, or mutating TUN, routes, DNS, nftables,
+or firewall state. The default validation mode is
+.BR proxy-only .
+With
+.BR "--mode tun" ,
+the same stored profile is checked against the TUN-mode Xray renderability
+rules. A stored profile that cannot be rendered for the selected mode/backend
+returns exit status 3. JSON output uses
+.B schema_version
+and includes the redacted profile, selected mode, backend, and
+.B valid
+boolean.
+.TP
 .B profile delete <profile-id> --yes
 Delete a stored profile. Destructive state-removal commands require explicit
 confirmation in non-interactive and JSON contexts.
@@ -249,7 +264,8 @@ Execute recovery cleanup through the daemon. This flag is intentionally
 long-only and must be combined with explicit confirmation where required.
 .TP
 .B --mode proxy-only|tun
-Select the connection or planning mode. The default connection mode is
+Select the connection, planning, or profile-validation mode. The default
+connection and validation mode is
 .BR proxy-only .
 .TP
 .B --follow, -f
@@ -284,7 +300,10 @@ output.
 .TP
 .B 3
 A diagnostic command completed but found unhealthy state or incomplete
-visibility.
+visibility. For
+.BR "profile validate" ,
+this means the stored profile was found but cannot be rendered for the selected
+mode/backend.
 .TP
 .B 4
 Permission or authorization failure.
@@ -311,6 +330,10 @@ JSON output is available only for commands with an implemented JSON contract.
 Implemented JSON output includes a
 .B schema_version
 field. Human and JSON output must apply the same redaction policy.
+.PP
+.B profile validate --json
+prints the common JSON envelope plus the redacted profile, selected mode,
+selected backend, and a boolean validation result.
 .SH FILES
 .TP
 .I $XDG_CONFIG_HOME/tunwarden/
@@ -371,6 +394,9 @@ The
 command is read-only and static. It must not contact the daemon, read user
 state, print secrets, or require root.
 .PP
+Profile validation is read-only. It must not contact the daemon, start Xray,
+write runtime config, require root, or mutate Linux networking state.
+.PP
 Local and subscription imports parse supported content into normalized profiles
 only. They must not execute or persist raw Xray JSON as source of truth or
 runtime configuration.
@@ -403,6 +429,12 @@ Import and inspect a profile without connecting:
 tunwarden profile import 'vless://...'
 tunwarden profile list
 tunwarden profile show my-profile
+.EE
+.TP
+Validate a stored profile before planning or connecting:
+.EX
+tunwarden profile validate my-profile
+tunwarden profile validate my-profile --mode tun --json
 .EE
 .TP
 Import a local Xray JSON or URI-list file without connecting:
