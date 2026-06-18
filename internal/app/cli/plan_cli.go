@@ -137,7 +137,7 @@ func renderTunPlan(w io.Writer, p planner.TunPlan) {
 	fmt.Fprintf(w, "DNS mode: %s (%s)\n", render.Redact(s.DNS.Mode), renderFinding(s.DNS.Resolved))
 	fmt.Fprintf(w, "NetworkManager: %s\n", renderNetworkManager(s.NetworkManager))
 	fmt.Fprintf(w, "nftables: %s\n", renderFinding(s.Nftables.Availability))
-	fmt.Fprintf(w, "podlaz nftables table: %s\n", renderFinding(s.Nftables.podlazTable))
+	fmt.Fprintf(w, "podlaz nftables table: %s\n", renderFinding(s.Nftables.PodlazTable))
 	fmt.Fprintf(w, "IPv4 assumption: %s\nIPv6 assumption: %s\n", renderFinding(s.IPv4), renderFinding(s.IPv6))
 	fmt.Fprintln(w, "podlaz TUN devices:")
 	for _, d := range s.TunDevices {
@@ -297,7 +297,7 @@ func killSwitchPlanJSON(p planner.TunKillSwitchPlan) map[string]any {
 }
 
 func snapshotForJSON(s netsnapshot.Snapshot) map[string]any {
-	return map[string]any{"os": render.Redact(s.OS), "default_ipv4_route": routeForJSON(s.DefaultIPv4), "default_ipv6_route": routeForJSON(s.DefaultIPv6), "server_route": routeForJSON(s.ServerRoute), "dns": map[string]any{"mode": render.Redact(s.DNS.Mode), "systemd_resolved": findingForJSON(s.DNS.Resolved)}, "network_manager": map[string]any{"finding": findingForJSON(s.NetworkManager.Finding), "state": render.Redact(s.NetworkManager.State)}, "nftables": map[string]any{"availability": findingForJSON(s.Nftables.Availability), "podlaz_table": findingForJSON(s.Nftables.podlazTable)}, "tun_devices": tunDevicesForJSON(s.TunDevices), "ipv4": findingForJSON(s.IPv4), "ipv6": findingForJSON(s.IPv6), "stale_resources": staleResourcesForJSON(s.StaleResources)}
+	return map[string]any{"os": render.Redact(s.OS), "default_ipv4_route": routeForJSON(s.DefaultIPv4), "default_ipv6_route": routeForJSON(s.DefaultIPv6), "server_route": routeForJSON(s.ServerRoute), "dns": map[string]any{"mode": render.Redact(s.DNS.Mode), "systemd_resolved": findingForJSON(s.DNS.Resolved)}, "network_manager": map[string]any{"finding": findingForJSON(s.NetworkManager.Finding), "state": render.Redact(s.NetworkManager.State)}, "nftables": map[string]any{"availability": findingForJSON(s.Nftables.Availability), "podlaz_table": findingForJSON(s.Nftables.PodlazTable)}, "tun_devices": tunDevicesForJSON(s.TunDevices), "ipv4": findingForJSON(s.IPv4), "ipv6": findingForJSON(s.IPv6), "stale_resources": staleResourcesForJSON(s.StaleResources)}
 }
 func routeForJSON(r netsnapshot.Route) map[string]any {
 	return map[string]any{"status": string(r.Status), "family": render.Redact(r.Family), "destination": render.Redact(r.Destination), "interface": render.Redact(r.Interface), "gateway": render.Redact(r.Gateway), "raw": render.Redact(r.Raw), "detail": render.Redact(r.Detail)}
