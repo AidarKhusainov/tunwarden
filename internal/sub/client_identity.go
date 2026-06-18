@@ -14,7 +14,7 @@ import (
 
 const (
 	clientIDFileName                = "client-id"
-	subscriptionClientIDPlaceholder = "{tunwarden-client-id}"
+	subscriptionClientIDPlaceholder = "{podlaz-client-id}"
 )
 
 var errUnsupportedClientIDPlaceholder = errors.New("client identity placeholder must be the complete value of an HTTP query parameter")
@@ -28,7 +28,7 @@ func DefaultClientIDPath() (string, error) {
 	return filepath.Join(filepath.Dir(storePath), clientIDFileName), nil
 }
 
-// LoadOrCreateClientID returns the stable TunWarden subscription client identity.
+// LoadOrCreateClientID returns the stable podlaz subscription client identity.
 // The identity is generated randomly and stored under user-owned XDG state; raw
 // hardware identifiers are never read.
 func LoadOrCreateClientID(path string) (string, error) {

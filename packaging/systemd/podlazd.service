@@ -1,0 +1,12 @@
+[Unit]
+Description=podlaz daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/podlazd
+Restart=on-failure
+RestartSec=2s
+User=podlaz
+Group=podlaz
+UMask=0077

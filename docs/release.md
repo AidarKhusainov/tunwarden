@@ -1,6 +1,6 @@
 # Release workflow
 
-This document defines TunWarden's GitHub Release automation contract.
+This document defines podlaz's GitHub Release automation contract.
 
 The release workflow publishes versioned GitHub Release artifacts only. Public apt repository publication and package repository signing remain out of scope for this workflow.
 
@@ -30,19 +30,19 @@ For a tag such as `v0.1.3`:
 | Value | Mapping |
 | --- | --- |
 | Git tag | `v0.1.3` |
-| Binary version shown by `tunwarden version` | `0.1.3` |
+| Binary version shown by `podlaz version` | `0.1.3` |
 | Debian package version | `0.1.3-1` |
-| Binary tarball | `tunwarden_0.1.3_linux_amd64.tar.gz` |
-| Debian package | `tunwarden_0.1.3-1_amd64.deb` |
-| Checksums | `tunwarden_0.1.3_checksums.txt` |
+| Binary tarball | `podlaz_0.1.3_linux_amd64.tar.gz` |
+| Debian package | `podlaz_0.1.3-1_amd64.deb` |
+| Checksums | `podlaz_0.1.3_checksums.txt` |
 
-The workflow passes the full Debian package version to the package build script as `TUNWARDEN_DEB_VERSION`. The package manifest sets `version_schema: none` so nFPM preserves the Debian package version string exactly instead of treating the `-1` suffix as a semantic-version prerelease and normalizing it into a tilde-qualified Debian version.
+The workflow passes the full Debian package version to the package build script as `PODLAZ_DEB_VERSION`. The package manifest sets `version_schema: none` so nFPM preserves the Debian package version string exactly instead of treating the `-1` suffix as a semantic-version prerelease and normalizing it into a tilde-qualified Debian version.
 
 ## Artifacts
 
 The release workflow publishes:
 
-- a Linux `amd64` binary tarball containing `tunwarden` and `tunwardend`;
+- a Linux `amd64` binary tarball containing `podlaz` and `podlazd`;
 - a local installable Debian package for `amd64`;
 - a SHA-256 checksum file covering every downloadable artifact produced by the workflow.
 
@@ -52,7 +52,7 @@ The release workflow publishes:
 
 Before publication, the workflow runs regular Go checks, vulnerability scanning, package build, package metadata inspection, package content inspection, package linting, local package installation, version validation, and manual page rendering validation.
 
-Package install validation also checks that the package does not start `tunwardend` and that the host route table is unchanged by package installation.
+Package install validation also checks that the package does not start `podlazd` and that the host route table is unchanged by package installation.
 
 Systemd lifecycle assertions that require systemd as PID 1 remain VM or systemd-capable host validation work and are not claimed by the container-backed release workflow.
 
@@ -90,6 +90,6 @@ The release workflow must not:
 - create a public apt repository;
 - sign repository metadata;
 - add broad installer scripts;
-- enable or start `tunwardend.service` during package installation;
+- enable or start `podlazd.service` during package installation;
 - start a VPN tunnel;
 - mutate TUN devices, routes, DNS, nftables, firewall rules, or host resolver files.
