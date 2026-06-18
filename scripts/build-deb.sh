@@ -9,14 +9,14 @@ function deb_arch_to_goarch() {
   esac
 }
 
-binary_version="${TUNWARDEN_VERSION:-0.0.0~dev}"
-package_version="${TUNWARDEN_DEB_VERSION:-${binary_version}-1}"
-arch="${TUNWARDEN_DEB_ARCH:-amd64}"
-out_dir="${TUNWARDEN_DIST_DIR:-dist}"
+binary_version="${PODLAZ_VERSION:-0.0.0~dev}"
+package_version="${PODLAZ_DEB_VERSION:-${binary_version}-1}"
+arch="${PODLAZ_DEB_ARCH:-amd64}"
+out_dir="${PODLAZ_DIST_DIR:-dist}"
 root_dir="${out_dir}/package-root"
-config=".nfpm.tunwarden.yaml"
-version_package="github.com/AidarKhusainov/tunwarden/internal/app/cli.version"
-package="${out_dir}/tunwarden_${package_version}_${arch}.deb"
+config=".nfpm.podlaz.yaml"
+version_package="github.com/AidarKhusainov/podlaz/internal/app/cli.version"
+package="${out_dir}/podlaz_${package_version}_linux_${arch}.deb"
 
 case "${arch}" in
   amd64|arm64) ;;
