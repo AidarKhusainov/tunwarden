@@ -16,6 +16,8 @@ out_dir="${PODLAZ_DIST_DIR:-dist}"
 root_dir="${out_dir}/package-root"
 config=".nfpm.podlaz.yaml"
 version_package="github.com/AidarKhusainov/podlaz/internal/app/cli.version"
+commit_package="github.com/AidarKhusainov/podlaz/internal/app/cli.commit"
+built_package="github.com/AidarKhusainov/podlaz/internal/app/cli.built"
 package="${out_dir}/podlaz_${package_version}_linux_${arch}.deb"
 
 case "${arch}" in
@@ -58,13 +60,14 @@ mkdir -p \
   "${root_dir}/usr/share/bash-completion/completions" \
   "${root_dir}/usr/share/zsh/vendor-completions" \
   "${root_dir}/usr/share/fish/vendor_completions.d" \
-  "${root_dir}/usr/share/metainfo" \
   "${root_dir}/usr/share/polkit-1/actions" \
   "${root_dir}/usr/share/man/man1" \
   "${root_dir}/usr/share/man/man8" \
   "${root_dir}/usr/share/doc/podlaz"
 
-ldflags="-s -w -X ${version_package}=${binary_version}"
+commit="${PODLAZ_COMMIT:-unknown}"
+built="${PODLAZ_BUILT:-unknown}"
+ldflags="-s -w -X ${version_package}=${binary_version} -X ${commit_package}=${commit} -X '${built_package}=${built}'"
 CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "${ldflags}" -o "${root_dir}/usr/bin/podlaz" ./cmd/podlaz
 CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "${ldflags}" -o "${root_dir}/usr/bin/podlazd" ./cmd/podlazd
 
@@ -78,7 +81,6 @@ chmod 0644 \
 
 install -m 0644 packaging/systemd/podlazd.service "${root_dir}/usr/lib/systemd/system/podlazd.service"
 install -m 0644 packaging/sysusers.d/podlaz.conf "${root_dir}/usr/lib/sysusers.d/podlaz.conf"
-install -m 0644 packaging/linux/io.github.aidarkhusainov.podlaz.metainfo.xml "${root_dir}/usr/share/metainfo/io.github.aidarkhusainov.podlaz.metainfo.xml"
 install -m 0644 packaging/polkit-1/actions/io.github.aidarkhusainov.podlaz.policy "${root_dir}/usr/share/polkit-1/actions/io.github.aidarkhusainov.podlaz.policy"
 gzip -9n -c docs/man/podlaz.1 > "${root_dir}/usr/share/man/man1/podlaz.1.gz"
 gzip -9n -c docs/man/podlazd.8 > "${root_dir}/usr/share/man/man8/podlazd.8.gz"
