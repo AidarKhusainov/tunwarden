@@ -2,4 +2,10 @@
 
 A quiet way through.
 
-podlaz manages Xray-compatible profiles through a CLI and a service process.
+podlaz manages profiles through a CLI and a service process.
+
+## Features
+
+- Profile management.
+- Explicit and inspectable lifecycle behavior.
+- CLI-first workflow.
