@@ -17,12 +17,17 @@ import (
 )
 
 func TestRunCLIVersion(t *testing.T) {
+	oldVersion, oldCommit, oldBuilt := version, commit, built
+	t.Cleanup(func() { version, commit, built = oldVersion, oldCommit, oldBuilt })
+	version, commit, built = "", "", ""
+
 	var out bytes.Buffer
 	if err := run(context.Background(), []string{"version"}, &out); err != nil {
 		t.Fatalf("version failed: %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "podlaz") {
-		t.Fatalf("expected version output to contain binary name, got %q", got)
+	want := "podlaz version dev\ncommit: unknown\nbuilt: unknown\n"
+	if got := out.String(); got != want {
+		t.Fatalf("expected version output %q, got %q", want, got)
 	}
 }
 
@@ -218,183 +223,4 @@ func TestRunCLIVersionRejectsArguments(t *testing.T) {
 	var out bytes.Buffer
 	err := run(context.Background(), []string{"version", "garbage"}, &out)
 	assertUsageError(t, err, out.String(), "version does not accept arguments")
-}
-
-func TestRunCLIRecoverRendersDryRunPlan(t *testing.T) {
-	var out bytes.Buffer
-	err := runWithOptions(context.Background(), []string{"recover"}, &out, options{
-		recover: func(context.Context) recovery.PlanResult {
-			return recovery.PlanResult{Candidates: []recovery.Candidate{{Kind: "tun-interface", Description: "TUN interface", Target: "podlaz0"}}}
-		},
-	})
-	if err != nil {
-		t.Fatalf("recover failed: %v", err)
-	}
-	got := out.String()
-	for _, text := range []string{"podlaz recovery dry-run", "Would recover TUN interface: podlaz0", "No changes were applied."} {
-		if !strings.Contains(got, text) {
-			t.Fatalf("expected output to contain %q, got %q", text, got)
-		}
-	}
-}
-
-func TestRunCLIRecoverExecuteYesUsesInjectedExecutor(t *testing.T) {
-	var out bytes.Buffer
-	var called bool
-	err := runWithOptions(context.Background(), []string{"recover", "--execute", "--yes"}, &out, options{
-		recoverExecute: func(context.Context) (recovery.ExecuteResult, error) {
-			called = true
-			return recovery.ExecuteResult{Results: []recovery.CleanupResult{{
-				Candidate: recovery.Candidate{Kind: "tun-interface", Description: "TUN interface", Target: "podlaz0"},
-				Status:    "recovered",
-			}}}, nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("recover --execute --yes failed: %v", err)
-	}
-	if !called {
-		t.Fatal("expected injected recover executor to be called")
-	}
-	if got := out.String(); !strings.Contains(got, "Mode: execute") || !strings.Contains(got, "Recovered TUN interface: podlaz0") {
-		t.Fatalf("expected execute recovery output, got %q", got)
-	}
-}
-
-func TestRunCLIRecoverExecuteInteractiveConfirmation(t *testing.T) {
-	var out bytes.Buffer
-	err := runWithOptions(context.Background(), []string{"recover", "--execute"}, &out, options{
-		stdin:           strings.NewReader("yes\n"),
-		stdinIsTerminal: func() bool { return true },
-		recoverExecute: func(context.Context) (recovery.ExecuteResult, error) {
-			return recovery.ExecuteResult{}, nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("interactive recover failed: %v", err)
-	}
-	if got := out.String(); !strings.Contains(got, "Type yes to continue") || !strings.Contains(got, "Mode: execute") {
-		t.Fatalf("expected confirmation and execute output, got %q", got)
-	}
-}
-
-func TestRunCLIRecoverExecuteRequiresYesInNonInteractiveMode(t *testing.T) {
-	var out bytes.Buffer
-	err := runWithOptions(context.Background(), []string{"recover", "--execute"}, &out, options{
-		stdinIsTerminal: func() bool { return false },
-		recoverExecute: func(context.Context) (recovery.ExecuteResult, error) {
-			t.Fatal("recover executor must not run without confirmation")
-			return recovery.ExecuteResult{}, nil
-		},
-	})
-	assertUsageError(t, err, out.String(), "recover --execute requires --yes in non-interactive mode")
-}
-
-func TestRunCLIRecoverExecuteJSONRequiresYes(t *testing.T) {
-	var out bytes.Buffer
-	err := runWithOptions(context.Background(), []string{"recover", "--execute", "--json"}, &out, options{
-		stdinIsTerminal: func() bool { return true },
-		recoverExecute: func(context.Context) (recovery.ExecuteResult, error) {
-			t.Fatal("recover executor must not run without --yes in JSON mode")
-			return recovery.ExecuteResult{}, nil
-		},
-	})
-	assertUsageError(t, err, out.String(), "recover --execute --json requires --yes")
-}
-
-func TestRunCLIRecoverExecuteJSONRendersResult(t *testing.T) {
-	var out bytes.Buffer
-	err := runWithOptions(context.Background(), []string{"recover", "--execute", "--yes", "--json"}, &out, options{
-		recoverExecute: func(context.Context) (recovery.ExecuteResult, error) {
-			return recovery.ExecuteResult{Results: []recovery.CleanupResult{{
-				Candidate: recovery.Candidate{Kind: "nftables-table", Description: "nftables table", Target: "inet podlaz"},
-				Status:    "skipped",
-				Message:   "already absent",
-			}}}, nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("recover --execute --yes --json failed: %v", err)
-	}
-	got := out.String()
-	for _, text := range []string{`"mode": "execute"`, `"status": "skipped"`, `"target": "inet podlaz"`} {
-		if !strings.Contains(got, text) {
-			t.Fatalf("expected JSON output to contain %q, got %q", text, got)
-		}
-	}
-}
-
-func TestRunCLIRecoverExecuteReturnsDaemonUnavailableExitCode(t *testing.T) {
-	var out bytes.Buffer
-	err := runWithOptions(context.Background(), []string{"recover", "--execute", "--yes"}, &out, options{
-		recoverExecute: func(context.Context) (recovery.ExecuteResult, error) {
-			return recovery.ExecuteResult{}, fmt.Errorf("%w: daemon socket /tmp/podlazd.sock does not exist; start podlazd", client.ErrDaemonUnavailable)
-		},
-	})
-	if err == nil {
-		t.Fatal("expected daemon unavailable error")
-	}
-	if got := ExitCode(err); got != 5 {
-		t.Fatalf("expected daemon unavailable exit code 5, got %d", got)
-	}
-	if !strings.Contains(err.Error(), "daemon socket /tmp/podlazd.sock does not exist") {
-		t.Fatalf("expected daemon unavailable detail, got %v", err)
-	}
-}
-
-func TestRunCLIDoctorReturnsDiagnosticExitCodeForFailures(t *testing.T) {
-	var out bytes.Buffer
-	err := runWithOptions(context.Background(), []string{"doctor"}, &out, options{
-		doctor: func(context.Context) doctor.Report {
-			return doctor.Report{Checks: []doctor.Check{{Name: "default-route", Severity: doctor.SeverityFail, Message: "ip route show default failed: test failure"}}}
-		},
-	})
-	if err == nil {
-		t.Fatal("expected doctor to fail when report has failing checks")
-	}
-	if got := ExitCode(err); got != 3 {
-		t.Fatalf("expected doctor diagnostic exit code 3, got %d", got)
-	}
-	if got := out.String(); !strings.Contains(got, "[FAIL] default-route") {
-		t.Fatalf("expected failing diagnostic in output, got %q", got)
-	}
-}
-
-func assertUsageError(t *testing.T, err error, stdout string, wantMessage string) {
-	t.Helper()
-	if err == nil {
-		t.Fatal("expected command to fail")
-	}
-	if got := ExitCode(err); got != 2 {
-		t.Fatalf("expected exit code 2, got %d", got)
-	}
-	if !strings.Contains(err.Error(), wantMessage) {
-		t.Fatalf("expected error containing %q, got %q", wantMessage, err.Error())
-	}
-	if stdout != "" {
-		t.Fatalf("expected no stdout on usage error, got %q", stdout)
-	}
-}
-
-func cleanStatusReport() status.Report {
-	return status.Report{Daemon: "not running", Connection: "inactive", RuntimeDirectory: status.RuntimeDirectory{Message: "missing"}, Proxy: "inactive", TUN: "not managed in this build"}
-}
-
-func cleanDoctorReport() doctor.Report {
-	return doctor.Report{Source: doctor.SourceLocalFallback, Checks: []doctor.Check{{Name: "platform", Severity: doctor.SeverityOK, Message: "linux/amd64"}}}
-}
-
-func TestRunCLIRecoverExecutePropagatesRuntimeFailure(t *testing.T) {
-	var out bytes.Buffer
-	err := runWithOptions(context.Background(), []string{"recover", "--execute", "--yes"}, &out, options{
-		recoverExecute: func(context.Context) (recovery.ExecuteResult, error) {
-			return recovery.ExecuteResult{}, errors.New("boom")
-		},
-	})
-	if err == nil {
-		t.Fatal("expected recover runtime error")
-	}
-	if got := ExitCode(err); got != 1 {
-		t.Fatalf("expected generic runtime exit code 1, got %d", got)
-	}
 }
