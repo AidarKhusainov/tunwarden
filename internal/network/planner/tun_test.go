@@ -258,12 +258,3 @@ func fakeDesktopWithoutResolved() snapshot.Snapshot {
 	s.DNS = snapshot.DNS{Mode: "unknown", Resolved: snapshot.Finding{Status: snapshot.StatusMissing, Summary: "resolvectl not found"}}
 	return s
 }
-
-func fakeDesktopWithoutNftables() snapshot.Snapshot {
-	s := snapshot.FakeResolvedDesktop()
-	s.Nftables = snapshot.Nftables{
-		Availability:   snapshot.Finding{Status: snapshot.StatusMissing, Summary: "nft not found"},
-		podlazTable: snapshot.Finding{Status: snapshot.StatusMissing, Summary: "podlaz nftables table not inspected because nft is unavailable"},
-	}
-	return s
-}
