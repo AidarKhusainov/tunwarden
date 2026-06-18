@@ -130,7 +130,7 @@ func markUnsupported(s *Snapshot, tunNames []string) {
 	s.NetworkManager = NetworkManager{Finding: findingWithDetail(StatusUnsupported, "NetworkManager is not inspected on this platform", detail)}
 	s.Nftables = Nftables{
 		Availability: findingWithDetail(StatusUnsupported, "nftables is not inspected on this platform", detail),
-		podlazTable:  findingWithDetail(StatusUnsupported, "podlaz nftables table is not inspected on this platform", detail),
+		PodlazTable:  findingWithDetail(StatusUnsupported, "podlaz nftables table is not inspected on this platform", detail),
 	}
 	s.TunDevices = make([]TunDevice, 0, len(tunNames))
 	for _, name := range tunNames {
@@ -294,7 +294,7 @@ func nftables(ctx context.Context, runner CommandRunner) Nftables {
 	if !ok {
 		return Nftables{
 			Availability: finding(StatusMissing, "nft not found"),
-			podlazTable:  finding(StatusMissing, "podlaz nftables table not inspected because nft is unavailable"),
+			PodlazTable:  finding(StatusMissing, "podlaz nftables table not inspected because nft is unavailable"),
 		}
 	}
 	result, err := runCommand(ctx, runner, path, "list", "tables")
@@ -302,7 +302,7 @@ func nftables(ctx context.Context, runner CommandRunner) Nftables {
 		detail := commandFailureMessage(result, err)
 		return Nftables{
 			Availability: findingWithDetail(StatusUnknown, "nftables table listing unavailable", detail),
-			podlazTable:  findingWithDetail(StatusUnknown, "podlaz nftables table state unknown", detail),
+			PodlazTable:  findingWithDetail(StatusUnknown, "podlaz nftables table state unknown", detail),
 		}
 	}
 	availability := finding(StatusDetected, "nftables table listing available")
@@ -310,12 +310,12 @@ func nftables(ctx context.Context, runner CommandRunner) Nftables {
 	if strings.Contains(result.Stdout, tableLine) {
 		return Nftables{
 			Availability: availability,
-			podlazTable:  finding(StatusDetected, "podlaz nftables table exists"),
+			PodlazTable:  finding(StatusDetected, "podlaz nftables table exists"),
 		}
 	}
 	return Nftables{
 		Availability: availability,
-		podlazTable:  finding(StatusMissing, "podlaz nftables table not found"),
+		PodlazTable:  finding(StatusMissing, "podlaz nftables table not found"),
 	}
 }
 
@@ -350,7 +350,7 @@ func staleResources(s Snapshot) []StaleResource {
 			stale = append(stale, StaleResource{Kind: "tun-device", Name: dev.Name, Status: StatusDetected, Detail: dev.Raw})
 		}
 	}
-	if s.Nftables.podlazTable.Status == StatusDetected {
+	if s.Nftables.PodlazTable.Status == StatusDetected {
 		stale = append(stale, StaleResource{Kind: "nftables-table", Name: DefaultNFTFamily + " " + DefaultNFTTable, Status: StatusDetected})
 	}
 	return stale
