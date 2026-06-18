@@ -18,6 +18,7 @@ const (
 )
 
 var errUnsupportedClientIDPlaceholder = errors.New("client identity placeholder must be the complete value of an HTTP query parameter")
+var errInvalidClientID = errors.New("invalid client-id")
 
 // DefaultClientIDPath returns the user-owned subscription client identity path.
 func DefaultClientIDPath() (string, error) {
@@ -44,6 +45,9 @@ func LoadOrCreateClientID(path string) (string, error) {
 	if err == nil {
 		return id, nil
 	}
+	if errors.Is(err, errInvalidClientID) {
+		return readClientIDAfterConcurrentCreate(path)
+	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return "", err
 	}
@@ -68,7 +72,7 @@ func readClientID(path string) (string, error) {
 	}
 	id := strings.TrimSpace(string(data))
 	if !validClientID(id) {
-		return "", fmt.Errorf("read subscription client identity %s: invalid client-id", path)
+		return "", fmt.Errorf("read subscription client identity %s: %w", path, errInvalidClientID)
 	}
 	return id, nil
 }
@@ -81,6 +85,9 @@ func readClientIDAfterConcurrentCreate(path string) (string, error) {
 			return id, nil
 		}
 		lastErr = err
+		if !errors.Is(err, errInvalidClientID) && !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
 		time.Sleep(time.Millisecond)
 	}
 	return "", lastErr
