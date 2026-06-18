@@ -1,0 +1,177 @@
+name: Rebrand bot
+
+on:
+  push:
+    branches:
+      - issue-122-podlaz-rebrand
+
+permissions:
+  contents: write
+
+jobs:
+  rebrand:
+    if: ${{ !contains(github.event.head_commit.message, '[rebrand-bot]') }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: issue-122-podlaz-rebrand
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+          cache: true
+
+      - name: Apply podlaz rebrand
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import os
+          import re
+          import shutil
+          import subprocess
+          
+          root = Path('.')
+          
+          def run(*args: str) -> None:
+              subprocess.run(args, check=True)
+          
+          def exists(path: str) -> bool:
+              return (root / path).exists()
+          
+          def git_mv(src: str, dst: str) -> None:
+              if exists(src):
+                  Path(dst).parent.mkdir(parents=True, exist_ok=True)
+                  run('git', 'mv', src, dst)
+          
+          def git_rm(path: str) -> None:
+              if exists(path):
+                  run('git', 'rm', '-f', path)
+          
+          renames = [
+              ('cmd/tunwarden', 'cmd/podlaz'),
+              ('cmd/tunwardend', 'cmd/podlazd'),
+              ('docs/man/tunwarden.1', 'docs/man/podlaz.1'),
+              ('docs/man/tunwardend.8', 'docs/man/podlazd.8'),
+              ('packaging/debian/tunwarden.manpages', 'packaging/debian/podlaz.manpages'),
+              ('packaging/polkit-1/actions/io.github.aidarkhusainov.tunwarden.policy', 'packaging/polkit-1/actions/io.github.aidarkhusainov.podlaz.policy'),
+              ('packaging/systemd/tunwardend.service', 'packaging/systemd/podlazd.service'),
+              ('packaging/sysusers.d/tunwarden.conf', 'packaging/sysusers.d/podlaz.conf'),
+          ]
+          for src, dst in renames:
+              git_mv(src, dst)
+          
+          for obsolete in [
+              'packaging/linux/io.github.aidarkhusainov.tunwarden.metainfo.xml',
+              'packaging/linux/io.github.aidarkhusainov.podlaz.metainfo.xml',
+          ]:
+              git_rm(obsolete)
+          
+          replacements = [
+              ('github.com/AidarKhusainov/tunwarden', 'github.com/AidarKhusainov/podlaz'),
+              ('https://github.com/AidarKhusainov/tunwarden', 'https://github.com/AidarKhusainov/podlaz'),
+              ('io.github.aidarkhusainov.tunwarden', 'io.github.aidarkhusainov.podlaz'),
+              ('TunWarden', 'Podlaz'),
+              ('TUNWARDEN', 'PODLAZ'),
+              ('tunwarden-xray', 'podlaz-xray'),
+              ('tunwardend', 'podlazd'),
+              ('tunwarden', 'podlaz'),
+          ]
+          
+          tracked = subprocess.check_output(['git', 'ls-files'], text=True).splitlines()
+          for name in tracked:
+              path = Path(name)
+              if not path.exists() or path.is_dir():
+                  continue
+              if path.suffix.lower() in {'.png', '.jpg', '.jpeg', '.gif', '.ico', '.pdf', '.gz', '.zip', '.deb'}:
+                  continue
+              try:
+                  text = path.read_text(encoding='utf-8')
+              except UnicodeDecodeError:
+                  continue
+              original = text
+              for old, new in replacements:
+                  text = text.replace(old, new)
+              if text != original:
+                  path.write_text(text, encoding='utf-8')
+          
+          # README intro and tagline contract.
+          readme = Path('README.md')
+          if readme.exists():
+              text = readme.read_text(encoding='utf-8')
+              text = re.sub(r'(?s)^# .*?\n\n', '# podlaz — Linux VPN client\n\nA quiet way through.\n\n', text, count=1)
+              text = re.sub(r'(?m)^podlaz is .*$', 'podlaz is a Linux VPN client with profile management and a privileged daemon.', text, count=1)
+              readme.write_text(text, encoding='utf-8')
+          
+          # Package description contract and no AppStream wording.
+          nfpm = Path('packaging/nfpm.yaml')
+          if nfpm.exists():
+              text = nfpm.read_text(encoding='utf-8')
+              text = re.sub(
+                  r'description: \|-\n(?:  .*\n)+(?=\n?depends:)',
+                  'description: |-\n  Linux VPN client for Xray-compatible profiles.\n  podlaz makes VPN and proxy profile lifecycle behavior explicit,\n  inspectable, and recoverable through a CLI and a privileged daemon.\n\n',
+                  text,
+                  count=1,
+              )
+              nfpm.write_text(text, encoding='utf-8')
+          
+          # Debian artifact name contract includes platform.
+          build = Path('scripts/build-deb.sh')
+          if build.exists():
+              text = build.read_text(encoding='utf-8')
+              text = text.replace('podlaz_${package_version}_${arch}.deb', 'podlaz_${package_version}_linux_${arch}.deb')
+              text = text.replace('${out_dir}"/podlaz_*_"${arch}".deb', '${out_dir}"/podlaz_*_"${arch}".deb "${out_dir}"/podlaz_*_linux_"${arch}".deb')
+              build.write_text(text, encoding='utf-8')
+          
+          # Remove AppStream validation/package checks and update dev artifact path.
+          ci = Path('.github/workflows/ci.yml')
+          if ci.exists():
+              text = ci.read_text(encoding='utf-8')
+              text = text.replace('dist/podlaz_0.0.0~dev-1_amd64.deb', 'dist/podlaz_0.0.0~dev-1_linux_amd64.deb')
+              text = text.replace('appstream dpkg file', 'dpkg file')
+              text = re.sub(r'\n\s+- name: Validate AppStream metadata\n\s+run: appstreamcli validate --no-net .*\n', '\n', text)
+              text = re.sub(r'\n\s*grep -F .*metainfo.*\n', '\n', text)
+              text = re.sub(r'\n\s*test -f .*metainfo.*\n', '\n', text)
+              text = re.sub(r'\n\s*appstreamcli validate --no-net .*\n', '\n', text)
+              ci.write_text(text, encoding='utf-8')
+          
+          rel = Path('.github/workflows/release.yml')
+          if rel.exists():
+              text = rel.read_text(encoding='utf-8')
+              text = text.replace('dist/podlaz_${DEB_FILE_VERSION}_amd64.deb', 'dist/podlaz_${DEB_FILE_VERSION}_linux_amd64.deb')
+              text = text.replace('podlaz_${DEB_FILE_VERSION}_amd64.deb', 'podlaz_${DEB_FILE_VERSION}_linux_amd64.deb')
+              text = text.replace('podlaz_${{ needs.resolve.outputs.deb_file_version }}_amd64.deb', 'podlaz_${{ needs.resolve.outputs.deb_file_version }}_linux_amd64.deb')
+              text = text.replace('podlaz_${VERSION}_checksums.txt', 'SHA256SUMS')
+              text = text.replace('podlaz-release-artifacts-${{ needs.resolve.outputs.version }}', 'podlaz-release-artifacts-${{ needs.resolve.outputs.version }}')
+              text = re.sub(r'\n\s*grep -F .*metainfo.*\n', '\n', text)
+              text = re.sub(r'\n\s*test -f .*metainfo.*\n', '\n', text)
+              text = re.sub(r'\n\s*appstreamcli validate --no-net .*\n', '\n', text)
+              rel.write_text(text, encoding='utf-8')
+          
+          # Remove this temporary workflow before committing the real PR changes.
+          workflow = Path('.github/workflows/rebrand-bot.yml')
+          if workflow.exists():
+              workflow.unlink()
+              run('git', 'rm', '-f', '.github/workflows/rebrand-bot.yml')
+          PY
+
+          gofmt -w $(find . -name '*.go' -type f)
+
+      - name: Commit rebrand result
+        run: |
+          set -euo pipefail
+          git config user.name "chatgpt-rebrand-bot"
+          git config user.email "19706697+AidarKhusainov@users.noreply.github.com"
+          git status --short
+          if git diff --quiet --cached && git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git add -A
+          git commit -m "Rebrand project to podlaz [rebrand-bot]"
+          git push origin HEAD:issue-122-podlaz-rebrand
