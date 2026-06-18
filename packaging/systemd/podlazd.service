@@ -9,3 +9,4 @@ Restart=on-failure
 RestartSec=2s
 User=podlaz
 Group=podlaz
+UMask=0077
