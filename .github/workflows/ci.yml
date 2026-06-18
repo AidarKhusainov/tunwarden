@@ -33,7 +33,17 @@ jobs:
           fi
 
       - name: Go test
-        run: go test ./...
+        run: |
+          set -o pipefail
+          go test ./... 2>&1 | tee /tmp/podlaz-go-test.txt
+
+      - name: Upload Go test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: podlaz-go-test-diagnostics
+          path: /tmp/podlaz-go-test.txt
+          if-no-files-found: ignore
 
       - name: Go vet
         run: go vet ./...
@@ -68,7 +78,17 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Build Debian package
-        run: bash scripts/build-deb.sh
+        run: |
+          set -o pipefail
+          bash scripts/build-deb.sh 2>&1 | tee /tmp/podlaz-build-deb.txt
+
+      - name: Upload package build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: podlaz-build-deb-diagnostics
+          path: /tmp/podlaz-build-deb.txt
+          if-no-files-found: ignore
 
       - name: Inspect package metadata
         run: dpkg-deb --info "${DEV_DEB}"
