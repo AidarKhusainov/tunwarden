@@ -6,7 +6,9 @@ import (
 )
 
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, `podlaz - Linux-first safe TUN VPN client
+	fmt.Fprint(w, `podlaz - Linux VPN client.
+
+podlaz is a Linux VPN client with profile management and daemon-controlled runtime operations.
 
 Usage:
   podlaz version
@@ -29,7 +31,7 @@ func printVersionHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage:
   podlaz version
 
-Print the podlaz CLI version.
+Print the podlaz CLI version, source commit, and build date.
 `)
 }
 
