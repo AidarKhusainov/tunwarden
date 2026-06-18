@@ -67,7 +67,7 @@ mkdir -p \
 
 commit="${PODLAZ_COMMIT:-unknown}"
 built="${PODLAZ_BUILT:-unknown}"
-ldflags="-s -w -X ${version_package}=${binary_version} -X ${commit_package}=${commit} -X '${built_package}=${built}'"
+ldflags="-s -w -X ${version_package}=${binary_version} -X ${commit_package}=${commit} -X ${built_package}=${built}"
 CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "${ldflags}" -o "${root_dir}/usr/bin/podlaz" ./cmd/podlaz
 CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "${ldflags}" -o "${root_dir}/usr/bin/podlazd" ./cmd/podlazd
 
