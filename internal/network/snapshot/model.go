@@ -49,8 +49,8 @@ type NetworkManager struct {
 
 // Nftables describes nftables availability and podlaz-owned table presence.
 type Nftables struct {
-	Availability   Finding `json:"availability"`
-	podlazTable Finding `json:"podlaz_table"`
+	Availability Finding `json:"availability"`
+	podlazTable  Finding `json:"podlaz_table"`
 }
 
 // TunDevice describes a known podlaz TUN interface name.
