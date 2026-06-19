@@ -130,15 +130,16 @@ func runSubscriptionImport(ctx context.Context, sourceURL string, stdout io.Writ
 	}
 
 	source := sub.NewSource("", sourceURL)
-	content, err := sub.FetchSource(ctx, source)
+	fetchResult, err := sub.FetchSourceWithMetadata(ctx, source)
 	if err != nil {
 		return err
 	}
+	content := fetchResult.Content
 	format, parsed, err := sub.ParseSubscriptionContent(content)
 	if err != nil {
 		return err
 	}
-	providerName, providerNameWarnings := sub.ProviderSubscriptionDisplayName(format, content)
+	providerName, providerNameWarnings := sub.ProviderSubscriptionDisplayNameFromMetadata(format, content, fetchResult.Header)
 	parsed.Warnings = append(parsed.Warnings, providerNameWarnings...)
 	source = sub.RefreshProviderDisplayName(source, providerName)
 
