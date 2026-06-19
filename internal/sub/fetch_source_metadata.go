@@ -23,6 +23,10 @@ type FetchResult struct {
 // provider-supplied response metadata. file:// URLs have no response headers;
 // HTTP(S) response headers are cloned after a successful status response.
 func FetchSourceWithMetadata(ctx context.Context, source Source) (FetchResult, error) {
+	return fetchSource(ctx, source)
+}
+
+func fetchSource(ctx context.Context, source Source) (FetchResult, error) {
 	if err := ValidateSource(source); err != nil {
 		return FetchResult{}, err
 	}
@@ -42,41 +46,45 @@ func FetchSourceWithMetadata(ctx context.Context, source Source) (FetchResult, e
 		}
 		return FetchResult{Content: data}, nil
 	case "http", "https":
-		requestURL, clientID, err := subscriptionRequestURL(source.URL)
-		if err != nil {
-			return FetchResult{}, fmt.Errorf("fetch subscription %s: %w", source.ID, err)
-		}
-		if clientID == "" {
-			clientID, err = LoadOrCreateClientID("")
-			if err != nil {
-				return FetchResult{}, fmt.Errorf("fetch subscription %s: prepare subscription client identity: %w", source.ID, err)
-			}
-		}
-
-		client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: sameOriginRedirectPolicy}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
-		if err != nil {
-			return FetchResult{}, fetchSubscriptionError(source.ID, err, clientID)
-		}
-		req.Header.Set("User-Agent", subscriptionUserAgent)
-		req.Header.Set(subscriptionClientHeader, clientID)
-		res, err := client.Do(req)
-		if err != nil {
-			return FetchResult{}, fetchSubscriptionError(source.ID, err, clientID)
-		}
-		defer res.Body.Close()
-		if res.StatusCode < 200 || res.StatusCode >= 300 {
-			return FetchResult{}, fmt.Errorf("fetch subscription %s: unexpected HTTP status %d", source.ID, res.StatusCode)
-		}
-		data, err := io.ReadAll(io.LimitReader(res.Body, 4*1024*1024+1))
-		if err != nil {
-			return FetchResult{}, fmt.Errorf("read subscription %s response: %w", source.ID, err)
-		}
-		if len(data) > 4*1024*1024 {
-			return FetchResult{}, fmt.Errorf("read subscription %s response: content exceeds 4 MiB limit", source.ID)
-		}
-		return FetchResult{Content: data, Header: res.Header.Clone()}, nil
+		return fetchHTTPSource(ctx, source)
 	default:
 		return FetchResult{}, fmt.Errorf("unsupported subscription URL scheme %q", u.Scheme)
 	}
+}
+
+func fetchHTTPSource(ctx context.Context, source Source) (FetchResult, error) {
+	requestURL, clientID, err := subscriptionRequestURL(source.URL)
+	if err != nil {
+		return FetchResult{}, fmt.Errorf("fetch subscription %s: %w", source.ID, err)
+	}
+	if clientID == "" {
+		clientID, err = LoadOrCreateClientID("")
+		if err != nil {
+			return FetchResult{}, fmt.Errorf("fetch subscription %s: prepare subscription client identity: %w", source.ID, err)
+		}
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: sameOriginRedirectPolicy}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return FetchResult{}, fetchSubscriptionError(source.ID, err, clientID)
+	}
+	req.Header.Set("User-Agent", subscriptionUserAgent)
+	req.Header.Set(subscriptionClientHeader, clientID)
+	res, err := client.Do(req)
+	if err != nil {
+		return FetchResult{}, fetchSubscriptionError(source.ID, err, clientID)
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return FetchResult{}, fmt.Errorf("fetch subscription %s: unexpected HTTP status %d", source.ID, res.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(res.Body, 4*1024*1024+1))
+	if err != nil {
+		return FetchResult{}, fmt.Errorf("read subscription %s response: %w", source.ID, err)
+	}
+	if len(data) > 4*1024*1024 {
+		return FetchResult{}, fmt.Errorf("read subscription %s response: content exceeds 4 MiB limit", source.ID)
+	}
+	return FetchResult{Content: data, Header: res.Header.Clone()}, nil
 }
