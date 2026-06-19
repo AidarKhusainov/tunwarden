@@ -133,15 +133,16 @@ func runSubscriptionUpdate(ctx context.Context, store sub.Store, profileStore pr
 	if err != nil {
 		return subscriptionCommandError(err)
 	}
-	content, err := sub.FetchSource(ctx, source)
+	fetchResult, err := sub.FetchSourceWithMetadata(ctx, source)
 	if err != nil {
 		return err
 	}
+	content := fetchResult.Content
 	format, parsed, err := sub.ParseSubscriptionContent(content)
 	if err != nil {
 		return err
 	}
-	providerName, providerNameWarnings := sub.ProviderSubscriptionDisplayName(format, content)
+	providerName, providerNameWarnings := sub.ProviderSubscriptionDisplayNameFromMetadata(format, content, fetchResult.Header)
 	parsed.Warnings = append(parsed.Warnings, providerNameWarnings...)
 	source = sub.RefreshProviderDisplayName(source, providerName)
 	profileSnapshot, profileExisted, err := snapshotFile(profileStore.Path())
