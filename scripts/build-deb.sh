@@ -18,6 +18,12 @@ function quote_go_ldflag_assignment() {
   printf "'%s'" "${assignment}"
 }
 
+function generate_completion() {
+  local shell="$1"
+  local target="$2"
+  env -u GOOS -u GOARCH -u CC -u CXX CGO_ENABLED=1 go run ./cmd/podlaz completion "${shell}" > "${target}"
+}
+
 binary_version="${PODLAZ_VERSION:-0.0.0~dev}"
 package_version="${PODLAZ_DEB_VERSION:-${binary_version}-1}"
 arch="${PODLAZ_DEB_ARCH:-amd64}"
@@ -83,9 +89,9 @@ ldflags="-s -w -X ${version_assignment} -X ${commit_assignment} -X ${built_assig
 CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "${ldflags}" -o "${root_dir}/usr/bin/podlaz" ./cmd/podlaz
 CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "${ldflags}" -o "${root_dir}/usr/bin/podlazd" ./cmd/podlazd
 
-"${root_dir}/usr/bin/podlaz" completion bash > "${root_dir}/usr/share/bash-completion/completions/podlaz"
-"${root_dir}/usr/bin/podlaz" completion zsh > "${root_dir}/usr/share/zsh/vendor-completions/_podlaz"
-"${root_dir}/usr/bin/podlaz" completion fish > "${root_dir}/usr/share/fish/vendor_completions.d/podlaz.fish"
+generate_completion bash "${root_dir}/usr/share/bash-completion/completions/podlaz"
+generate_completion zsh "${root_dir}/usr/share/zsh/vendor-completions/_podlaz"
+generate_completion fish "${root_dir}/usr/share/fish/vendor_completions.d/podlaz.fish"
 chmod 0644 \
   "${root_dir}/usr/share/bash-completion/completions/podlaz" \
   "${root_dir}/usr/share/zsh/vendor-completions/_podlaz" \
