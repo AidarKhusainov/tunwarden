@@ -2,6 +2,7 @@ package sub
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,21 +12,32 @@ import (
 	"time"
 )
 
-// FetchResult contains subscription response bytes plus safe response metadata
-// that can be used for provider display-name detection.
+// FetchResult contains subscription response bytes plus response metadata that
+// can be used for safe provider display-name detection.
 type FetchResult struct {
 	Content []byte
 	Header  http.Header
+}
+
+// FetchSource reads subscription content. file:// URLs are handled locally; http
+// and https URLs use a bounded GET and do not start any network processes or
+// mutate host networking state.
+func FetchSource(ctx context.Context, source Source) ([]byte, error) {
+	result, err := fetchSource(ctx, source)
+	if err != nil {
+		return nil, err
+	}
+	return result.Content, nil
 }
 
 // FetchSourceWithMetadata reads subscription content and preserves bounded,
 // provider-supplied response metadata. file:// URLs have no response headers;
 // HTTP(S) response headers are cloned after a successful status response.
 func FetchSourceWithMetadata(ctx context.Context, source Source) (FetchResult, error) {
-	return fetchSourceWithResult(ctx, source)
+	return fetchSource(ctx, source)
 }
 
-func fetchSourceWithResult(ctx context.Context, source Source) (FetchResult, error) {
+func fetchSource(ctx context.Context, source Source) (FetchResult, error) {
 	if err := ValidateSource(source); err != nil {
 		return FetchResult{}, err
 	}
@@ -45,13 +57,13 @@ func fetchSourceWithResult(ctx context.Context, source Source) (FetchResult, err
 		}
 		return FetchResult{Content: data}, nil
 	case "http", "https":
-		return fetchHTTPSourceWithResult(ctx, source)
+		return fetchHTTPSource(ctx, source)
 	default:
 		return FetchResult{}, fmt.Errorf("unsupported subscription URL scheme %q", u.Scheme)
 	}
 }
 
-func fetchHTTPSourceWithResult(ctx context.Context, source Source) (FetchResult, error) {
+func fetchHTTPSource(ctx context.Context, source Source) (FetchResult, error) {
 	requestURL, clientID, err := subscriptionRequestURL(source.URL)
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("fetch subscription %s: %w", source.ID, err)
@@ -86,4 +98,31 @@ func fetchHTTPSourceWithResult(ctx context.Context, source Source) (FetchResult,
 		return FetchResult{}, fmt.Errorf("read subscription %s response: content exceeds 4 MiB limit", source.ID)
 	}
 	return FetchResult{Content: data, Header: res.Header.Clone()}, nil
+}
+
+func fetchSubscriptionError(sourceID string, err error, clientID string) error {
+	if clientID == "" {
+		return fmt.Errorf("fetch subscription %s: %w", sourceID, err)
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Err != nil {
+		cause := strings.ReplaceAll(urlErr.Err.Error(), clientID, "REDACTED")
+		return fmt.Errorf("fetch subscription %s: %s redacted subscription URL: %s", sourceID, urlErr.Op, cause)
+	}
+	message := strings.ReplaceAll(err.Error(), clientID, "REDACTED")
+	return fmt.Errorf("fetch subscription %s: %s", sourceID, message)
+}
+
+func sameOriginRedirectPolicy(req *http.Request, via []*http.Request) error {
+	if len(via) > 3 {
+		return fmt.Errorf("stopped after 3 redirects")
+	}
+	if len(via) == 0 {
+		return nil
+	}
+	previous := via[len(via)-1].URL
+	if !strings.EqualFold(req.URL.Scheme, previous.Scheme) || !strings.EqualFold(req.URL.Host, previous.Host) {
+		return fmt.Errorf("refusing cross-origin subscription redirect from %s://%s to %s://%s", previous.Scheme, previous.Host, req.URL.Scheme, req.URL.Host)
+	}
+	return nil
 }
