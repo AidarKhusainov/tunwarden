@@ -59,6 +59,8 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       DEV_DEB: dist/podlaz_0.0.0~dev-1_linux_amd64.deb
+      CI_PODLAZ_COMMIT: ci-test
+      CI_PODLAZ_BUILT: Jun 19 2026
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -80,14 +82,20 @@ jobs:
       - name: Build Debian package
         run: |
           set -o pipefail
-          bash scripts/build-deb.sh 2>&1 | tee /tmp/podlaz-build-deb.txt
+          PODLAZ_COMMIT="${CI_PODLAZ_COMMIT}" PODLAZ_BUILT="${CI_PODLAZ_BUILT}" bash scripts/build-deb.sh 2>&1 | tee /tmp/podlaz-build-deb.txt
+          dist/package-root/usr/bin/podlaz version | tee /tmp/podlaz-built-version.txt
+          grep -Fx 'podlaz version 0.0.0~dev' /tmp/podlaz-built-version.txt
+          grep -Fx "commit: ${CI_PODLAZ_COMMIT}" /tmp/podlaz-built-version.txt
+          grep -Fx "built: ${CI_PODLAZ_BUILT}" /tmp/podlaz-built-version.txt
 
       - name: Upload package build diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: podlaz-build-deb-diagnostics
-          path: /tmp/podlaz-build-deb.txt
+          path: |
+            /tmp/podlaz-build-deb.txt
+            /tmp/podlaz-built-version.txt
           if-no-files-found: ignore
 
       - name: Inspect package metadata
@@ -175,8 +183,8 @@ jobs:
           dpkg -L podlaz
           podlaz version | tee /tmp/podlaz-version.txt
           grep -Fx 'podlaz version 0.0.0~dev' /tmp/podlaz-version.txt
-          grep -Fx 'commit: unknown' /tmp/podlaz-version.txt
-          grep -Fx 'built: unknown' /tmp/podlaz-version.txt
+          grep -Fx "commit: ${CI_PODLAZ_COMMIT}" /tmp/podlaz-version.txt
+          grep -Fx "built: ${CI_PODLAZ_BUILT}" /tmp/podlaz-version.txt
           test -x /usr/bin/podlaz
           test -x /usr/bin/podlazd
           test -f /usr/lib/systemd/system/podlazd.service
@@ -205,8 +213,8 @@ jobs:
           sudo apt install -y --reinstall "./${DEV_DEB}"
           podlaz version | tee /tmp/podlaz-version-reinstall.txt
           grep -Fx 'podlaz version 0.0.0~dev' /tmp/podlaz-version-reinstall.txt
-          grep -Fx 'commit: unknown' /tmp/podlaz-version-reinstall.txt
-          grep -Fx 'built: unknown' /tmp/podlaz-version-reinstall.txt
+          grep -Fx "commit: ${CI_PODLAZ_COMMIT}" /tmp/podlaz-version-reinstall.txt
+          grep -Fx "built: ${CI_PODLAZ_BUILT}" /tmp/podlaz-version-reinstall.txt
           test -f /usr/share/bash-completion/completions/podlaz
           test -f /usr/share/zsh/vendor-completions/_podlaz
           test -f /usr/share/fish/vendor_completions.d/podlaz.fish

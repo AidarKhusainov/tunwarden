@@ -92,7 +92,7 @@ jobs:
         run: |
           set -euo pipefail
           commit_sha="$(git rev-parse HEAD)"
-          built_date="$(git show -s --format=%cd --date=format:'%b %-d %Y' HEAD)"
+          built_date="$(git show -s --format=%cd --date=format:'%Y-%m-%d' HEAD)"
           echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
           echo "built_date=$built_date" >> "$GITHUB_OUTPUT"
 
