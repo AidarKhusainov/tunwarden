@@ -81,7 +81,7 @@ func runSubscriptionDelete(store sub.Store, profileStore profile.Store, args []s
 	fmt.Fprintf(stdout, "Subscription deleted: %s\n", render.Redact(source.ID))
 	fmt.Fprintf(stdout, "Profiles removed: %d\n", removedProfiles)
 	if matchingProfiles > 0 {
-		fmt.Fprintf(stdout, "Profiles with matching servers were left untouched: %d\n", matchingProfiles)
+		fmt.Fprintf(stdout, "Orphan/manual profiles with matching servers were left untouched: %d\n", matchingProfiles)
 	}
 	return nil
 }
