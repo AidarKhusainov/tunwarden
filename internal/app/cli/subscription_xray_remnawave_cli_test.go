@@ -10,11 +10,11 @@ import (
 	"testing"
 )
 
-func TestRunCLIImportHTTPXrayJSONSubscriptionShowsRemnawaveDisplayNames(t *testing.T) {
+func TestRunCLIImportHTTPXrayJSONSubscriptionShowsUnicodeDisplayNames(t *testing.T) {
 	entries := []string{
-		cliXrayJSONSubscriptionWithRemarks(uuidForTest(801), "nyc1.censor-amoroso.com", "USA"),
-		cliXrayJSONSubscriptionWithRemarks(uuidForTest(802), "fin1.censor-amoroso.com", "FINLAND"),
-		cliXrayJSONSubscriptionWithRemarks(uuidForTest(803), "nld1.censor-amoroso.com", "Netherlands"),
+		cliXrayJSONSubscriptionWithRemarks(uuidForTest(801), "node-a.example", "Юникод-А"),
+		cliXrayJSONSubscriptionWithRemarks(uuidForTest(802), "node-b.example", "ЮНИКОД-Б"),
+		cliXrayJSONSubscriptionWithRemarks(uuidForTest(803), "node-c.example", "Маршрут→Узел (каскад)"),
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -25,7 +25,7 @@ func TestRunCLIImportHTTPXrayJSONSubscriptionShowsRemnawaveDisplayNames(t *testi
 	opts := options{profileStorePath: filepath.Join(t.TempDir(), "profiles.json")}
 	var importOut bytes.Buffer
 	if err := runWithOptions(context.Background(), []string{"import", server.URL + "/subscription"}, &importOut, opts); err != nil {
-		t.Fatalf("Remnawave-style Xray JSON subscription import failed: %v", err)
+		t.Fatalf("Xray JSON subscription import with Unicode names failed: %v", err)
 	}
 	if got := importOut.String(); !strings.Contains(got, "Format: xray-json") || !strings.Contains(got, "Imported: 3") {
 		t.Fatalf("unexpected import output: %q", got)
@@ -36,9 +36,9 @@ func TestRunCLIImportHTTPXrayJSONSubscriptionShowsRemnawaveDisplayNames(t *testi
 		t.Fatalf("profile list failed: %v", err)
 	}
 	got := profiles.String()
-	for _, want := range []string{"USA", "FINLAND", "Netherlands"} {
+	for _, want := range []string{"Юникод-А", "ЮНИКОД-Б", "Маршрут→Узел (каскад)"} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("expected profile list to contain Remnawave display name %q, got %q", want, got)
+			t.Fatalf("expected profile list to contain Unicode display name %q, got %q", want, got)
 		}
 	}
 	if strings.Contains(got, "proxy") {
