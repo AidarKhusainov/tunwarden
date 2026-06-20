@@ -2,6 +2,7 @@ package sub
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -40,7 +41,7 @@ func subscriptionHeaderDisplayNameCandidates(header http.Header) []string {
 	if value := strings.TrimSpace(header.Get("Content-Disposition")); value != "" {
 		_, params, err := mime.ParseMediaType(value)
 		if err == nil {
-			candidates = append(candidates, params["filename"], params["name"])
+			candidates = append(candidates, subscriptionHeaderDisplayNameValue(params["filename"]), subscriptionHeaderDisplayNameValue(params["name"]))
 		}
 	}
 	for _, key := range []string{
@@ -53,9 +54,25 @@ func subscriptionHeaderDisplayNameCandidates(header http.Header) []string {
 		"X-Subscription-Name",
 		"X-Profile-Name",
 	} {
-		candidates = append(candidates, header.Get(key))
+		candidates = append(candidates, subscriptionHeaderDisplayNameValue(header.Get(key)))
 	}
 	return candidates
+}
+
+func subscriptionHeaderDisplayNameValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	const prefix = "base64:"
+	if !strings.HasPrefix(strings.ToLower(value), prefix) {
+		return value
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(value[len(prefix):]))
+	if err != nil {
+		return value
+	}
+	return strings.TrimSpace(string(decoded))
 }
 
 func subscriptionJSONDisplayNameCandidates(content []byte) []string {
