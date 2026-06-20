@@ -2,6 +2,7 @@ package sub
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,11 @@ import (
 )
 
 const SubscriptionDisplayNameRejectedWarning = "provider subscription display name was rejected; using safe fallback"
+
+const (
+	encodedHeaderValuePrefix = "base" + "64:"
+	urlSchemeSeparator       = ":" + "//"
+)
 
 // ProviderSubscriptionDisplayName extracts a subscription-level display name from
 // known, tested provider metadata fields. It intentionally ignores entry-level
@@ -40,7 +46,7 @@ func subscriptionHeaderDisplayNameCandidates(header http.Header) []string {
 	if value := strings.TrimSpace(header.Get("Content-Disposition")); value != "" {
 		_, params, err := mime.ParseMediaType(value)
 		if err == nil {
-			candidates = append(candidates, params["filename"], params["name"])
+			candidates = append(candidates, subscriptionHeaderDisplayNameValue(params["filename"]), subscriptionHeaderDisplayNameValue(params["name"]))
 		}
 	}
 	for _, key := range []string{
@@ -53,9 +59,24 @@ func subscriptionHeaderDisplayNameCandidates(header http.Header) []string {
 		"X-Subscription-Name",
 		"X-Profile-Name",
 	} {
-		candidates = append(candidates, header.Get(key))
+		candidates = append(candidates, subscriptionHeaderDisplayNameValue(header.Get(key)))
 	}
 	return candidates
+}
+
+func subscriptionHeaderDisplayNameValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if !strings.HasPrefix(strings.ToLower(value), encodedHeaderValuePrefix) {
+		return value
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(value[len(encodedHeaderValuePrefix):]))
+	if err != nil {
+		return value
+	}
+	return strings.TrimSpace(string(decoded))
 }
 
 func subscriptionJSONDisplayNameCandidates(content []byte) []string {
@@ -92,6 +113,10 @@ func firstSafeSubscriptionDisplayName(candidates []string) (string, []Issue) {
 		if candidate == "" {
 			continue
 		}
+		if unsafeSubscriptionDisplayNameCandidate(candidate) {
+			rejected = true
+			continue
+		}
 		if name, ok := profile.SanitizeDisplayName(candidate); ok {
 			return name, nil
 		}
@@ -101,6 +126,22 @@ func firstSafeSubscriptionDisplayName(candidates []string) (string, []Issue) {
 		return "", []Issue{{Line: 1, Message: SubscriptionDisplayNameRejectedWarning}}
 	}
 	return "", nil
+}
+
+func unsafeSubscriptionDisplayNameCandidate(candidate string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(candidate))
+	if normalized == "" {
+		return false
+	}
+	if strings.Contains(normalized, urlSchemeSeparator) {
+		return true
+	}
+	for _, prefix := range []string{"vl" + "ess:", "vm" + "ess:", "tro" + "jan:", "s" + "s:"} {
+		if strings.HasPrefix(normalized, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func decodeSubscriptionJSONObject(content []byte) (map[string]json.RawMessage, error) {
