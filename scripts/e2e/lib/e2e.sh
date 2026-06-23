@@ -43,17 +43,25 @@ run_capture() {
   LAST_STDOUT="${E2E_ARTIFACT_DIR}/$(printf '%03d' "${E2E_STEP}")-${safe}.stdout"
   LAST_STDERR="${E2E_ARTIFACT_DIR}/$(printf '%03d' "${E2E_STEP}")-${safe}.stderr"
 
+  local restore_errexit=0
+  case $- in
+    *e*) restore_errexit=1 ;;
+  esac
+
   log "${name}: $*"
   set +e
   "$@" >"${LAST_STDOUT}" 2>"${LAST_STDERR}"
   local code=$?
-  set -e
 
   if [[ -s "${LAST_STDOUT}" ]]; then
     sed -e 's/^/stdout: /' "${LAST_STDOUT}"
   fi
   if [[ -s "${LAST_STDERR}" ]]; then
     sed -e 's/^/stderr: /' "${LAST_STDERR}" >&2
+  fi
+
+  if [[ "${code}" == "0" && "${restore_errexit}" == "1" ]]; then
+    set -e
   fi
   return "${code}"
 }
