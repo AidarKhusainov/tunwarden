@@ -56,7 +56,10 @@ run_podlaz_as_socket_user() {
 capture_secret_command() {
   local name="$1"
   shift
-  local safe
+  local safe restore_errexit=0
+  case $- in
+    *e*) restore_errexit=1 ;;
+  esac
   safe="$(safe_name "${name}")"
   E2E_STEP=$((E2E_STEP + 1))
   LAST_STDOUT="${E2E_ARTIFACT_DIR}/$(printf '%03d' "${E2E_STEP}")-${safe}.stdout"
@@ -65,14 +68,26 @@ capture_secret_command() {
   set +e
   "$@" >"${LAST_STDOUT}" 2>"${LAST_STDERR}"
   local code=$?
-  set -e
   if [[ -s "${LAST_STDOUT}" ]]; then
     sed -e 's/^/stdout: /' "${LAST_STDOUT}"
   fi
   if [[ -s "${LAST_STDERR}" ]]; then
     sed -e 's/^/stderr: /' "${LAST_STDERR}" >&2
   fi
+  if [[ "${restore_errexit}" == "1" ]]; then
+    set -e
+  fi
   return "${code}"
+}
+
+expect_secret_success() {
+  local name="$1"
+  shift
+  set +e
+  capture_secret_command "${name}" "$@"
+  local code=$?
+  set -e
+  [[ "${code}" == "0" ]] || fail "${name} failed with exit code ${code}"
 }
 
 collect_host_snapshot() {
@@ -205,18 +220,14 @@ status_concurrency_probe() {
 connect_profile() {
   local mode="$1"
   local id="$2"
-  capture_secret_command "connect-${mode}-${id}" run_podlaz_as_socket_user connect --mode "${mode}" "${id}"
-  local code=$?
-  [[ "${code}" == "0" ]] || fail "connect ${mode} ${id} failed with exit code ${code}"
+  expect_secret_success "connect-${mode}-${id}" run_podlaz_as_socket_user connect --mode "${mode}" "${id}"
   ACTIVE_CONNECTION=1
   ACTIVE_MODE="${mode}"
 }
 
 disconnect_active() {
   local label="$1"
-  capture_secret_command "disconnect-${label}" run_podlaz_as_socket_user disconnect
-  local code=$?
-  [[ "${code}" == "0" ]] || fail "disconnect ${label} failed with exit code ${code}"
+  expect_secret_success "disconnect-${label}" run_podlaz_as_socket_user disconnect
   ACTIVE_CONNECTION=0
   ACTIVE_MODE=""
 }
@@ -375,13 +386,13 @@ collect_host_snapshot after-service-start
 
 if [[ -n "${PODLAZ_E2E_SUBSCRIPTION_URL}" ]]; then
   log "real subscription source exercise"
-  capture_secret_command subscription-add-secret run_podlaz_as_socket_user subscription add --name e2e-real-sub --url "${PODLAZ_E2E_SUBSCRIPTION_URL}"
+  expect_secret_success subscription-add-secret run_podlaz_as_socket_user subscription add --name e2e-real-sub --url "${PODLAZ_E2E_SUBSCRIPTION_URL}"
   SUB_ID="$(awk '/^Subscription added:/ {print $3}' "${LAST_STDOUT}")"
   assert_nonempty "${SUB_ID}" "real subscription id"
-  capture_secret_command subscription-update-secret run_podlaz_as_socket_user subscription update "${SUB_ID}"
-  capture_secret_command subscription-list-secret run_podlaz_as_socket_user subscription list
-  capture_secret_command subscription-show-secret run_podlaz_as_socket_user subscription show "${SUB_ID}"
-  capture_secret_command subscription-delete-secret run_podlaz_as_socket_user subscription delete "${SUB_ID}" --yes --keep-profiles
+  expect_secret_success subscription-update-secret run_podlaz_as_socket_user subscription update "${SUB_ID}"
+  expect_secret_success subscription-list-secret run_podlaz_as_socket_user subscription list
+  expect_secret_success subscription-show-secret run_podlaz_as_socket_user subscription show "${SUB_ID}"
+  expect_secret_success subscription-delete-secret run_podlaz_as_socket_user subscription delete "${SUB_ID}" --yes --keep-profiles
 fi
 
 log "proxy-only lifecycle across real profile set"
