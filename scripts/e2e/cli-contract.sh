@@ -52,7 +52,7 @@ cat >"${FIXTURES}/xray-vless.json" <<'JSON'
 JSON
 printf '%s\nhysteria2://unsupported.example\n' "${LOCAL_URI}" >"${FIXTURES}/profiles.txt"
 printf '%s\n' "${LOCAL_B64_URI}" | base64 -w0 >"${FIXTURES}/profiles.base64"
-printf '%s\n' "${SUB_URI}" >"${FIXTURES}/subscription.txt"
+printf '%s\n' "${SUB_URI}" | base64 -w0 >"${FIXTURES}/subscription.txt"
 printf '{"outbounds":' >"${FIXTURES}/broken.json"
 printf '%s\n%s\n' "${LOCAL_URI}" "${LOCAL_URI}" >"${FIXTURES}/duplicates.txt"
 
