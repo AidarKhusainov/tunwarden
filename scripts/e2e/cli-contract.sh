@@ -136,7 +136,7 @@ assert_contains "${LAST_STDOUT}" "fixture-sub"
 expect_success subscription-list-json "${PODLAZ[@]}" subscription list --json
 assert_json_file "${LAST_STDOUT}"
 expect_success subscription-show "${PODLAZ[@]}" subscription show "${SUB_ID}"
-assert_contains "${LAST_STDOUT}" "URL: redacted"
+assert_contains "${LAST_STDOUT}" "URL: REDACTED"
 expect_success subscription-show-json "${PODLAZ[@]}" subscription show "${SUB_ID}" --json
 assert_json_file "${LAST_STDOUT}"
 expect_success subscription-update "${PODLAZ[@]}" subscription update "${SUB_ID}"
