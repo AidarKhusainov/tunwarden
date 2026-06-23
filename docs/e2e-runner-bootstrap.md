@@ -38,7 +38,7 @@ Minimum values for a no-input workflow run:
 | Name | Recommended storage | Purpose |
 | --- | --- | --- |
 | `E2E_BOOTSTRAP_SSH_HOST` | environment variable or secret | SSH host or IP address. |
-| `E2E_BOOTSTRAP_SSH_USER` | environment variable or secret | SSH login user. |
+| `E2E_BOOTSTRAP_SSH_USER` | environment variable or secret | SSH login user. Use `root` when the image does not provide passwordless sudo for a regular user. |
 | `E2E_BOOTSTRAP_SSH_PRIVATE_KEY` | environment secret | Private SSH key used by the GitHub-hosted provisioning job to connect to the server. |
 | `E2E_RUNNER_ADMIN_TOKEN` | environment secret | GitHub token that can create repository self-hosted runner registration tokens. |
 
@@ -63,11 +63,25 @@ The workflow connects to `${ssh_user}@${host}` with `E2E_BOOTSTRAP_SSH_PRIVATE_K
 
 That means the server must already accept the public key for the selected SSH user. For a clean server, add the public key through the provider's cloud-init, SSH-key, rescue console, or image-init mechanism before running the workflow.
 
-The selected SSH user must be able to run:
+The selected SSH user must be one of:
 
-```bash
-sudo -n true
+- `root`; or
+- a regular user that can run `sudo -n true` without an interactive password.
+
+A failure like this means SSH authentication succeeded, but the selected user does not have non-interactive root privileges:
+
+```text
+sudo: a terminal is required to read the password
+sudo: a password is required
 ```
+
+Fix it by using a root SSH user for bootstrap, or by adding a temporary passwordless sudo rule for the selected SSH user before running the workflow:
+
+```text
+<ssh_user> ALL=(root) NOPASSWD: ALL
+```
+
+Remove or narrow that temporary rule after the bootstrap has installed the dedicated `gha-runner` sudoers policy.
 
 A failure like this means the first SSH hop did not authenticate:
 
@@ -80,8 +94,7 @@ Common causes:
 
 - the private key in `E2E_BOOTSTRAP_SSH_PRIVATE_KEY` does not match the public key installed on the server;
 - the public key is installed for a different user than `ssh_user`;
-- the provider image disables SSH key authentication for that user;
-- the server requires an interactive sudo password.
+- the provider image disables SSH key authentication for that user.
 
 The workflow prints the bootstrap SSH public key fingerprint before the SSH preflight so the key can be compared with the provider-side key.
 
@@ -107,7 +120,7 @@ The host must provide:
 
 - systemd as PID 1;
 - `/dev/net/tun`;
-- an SSH user with passwordless sudo.
+- an SSH user that is `root` or has passwordless sudo.
 
 The script installs host packages required by the existing E2E suites, creates the runner service user, creates the `podlaz` access group used by socket-access tests, installs the E2E sudoers policy, downloads the latest GitHub Actions runner release, configures it against this repository, and starts it as a systemd service.
 
