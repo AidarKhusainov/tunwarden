@@ -4,36 +4,60 @@ on:
   workflow_dispatch:
     inputs:
       host:
-        description: SSH host or IP address of the disposable E2E server
-        required: true
+        description: SSH host/IP. Empty uses E2E_BOOTSTRAP_SSH_HOST from vpn-e2e variables or secrets.
+        required: false
         type: string
+        default: ''
       ssh_user:
-        description: SSH user with passwordless sudo, or root
-        required: true
+        description: SSH user. Empty uses E2E_BOOTSTRAP_SSH_USER, then ubuntu.
+        required: false
         type: string
-        default: ubuntu
+        default: ''
       ssh_port:
-        description: SSH port
-        required: true
+        description: SSH port. Empty uses E2E_BOOTSTRAP_SSH_PORT, then 22.
+        required: false
         type: string
-        default: '22'
+        default: ''
+      platform_label:
+        description: OS label to provision and attach to the runner
+        required: true
+        type: choice
+        default: ubuntu-24.04
+        options:
+          - ubuntu-24.04
+          - ubuntu-22.04
+          - debian-12
+          - debian-13
+      arch_label:
+        description: CPU architecture label to provision and attach to the runner
+        required: true
+        type: choice
+        default: x64
+        options:
+          - x64
+          - arm64
       runner_name:
-        description: Optional GitHub runner name. Defaults to podlaz-<hostname>-vpn-e2e.
+        description: Optional GitHub runner name. Empty uses E2E_RUNNER_NAME or podlaz-<hostname>-vpn-e2e.
         required: false
         type: string
         default: ''
       runner_user:
-        description: Local Linux user that owns the GitHub Actions runner service
-        required: true
+        description: Local Linux user that owns the GitHub Actions runner service. Empty uses E2E_RUNNER_USER, then gha-runner.
+        required: false
         type: string
-        default: gha-runner
+        default: ''
+      runner_home:
+        description: Runner installation directory. Empty uses E2E_RUNNER_HOME, then /opt/actions-runner.
+        required: false
+        type: string
+        default: ''
       runner_labels:
-        description: Comma-separated runner labels expected by .github/workflows/e2e.yml
-        required: true
+        description: Comma-separated labels. Empty derives self-hosted,linux,<arch>,vpn-e2e,<platform>.
+        required: false
         type: string
-        default: self-hosted,linux,x64,vpn-e2e,ubuntu-24.04
+        default: ''
       reset_runner:
-        description: Stop and replace any existing runner installation in /opt/actions-runner
+        description: Stop and replace an existing runner installation in runner_home
         required: true
         type: boolean
         default: true
@@ -42,7 +66,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: podlaz-e2e-runner-provision-${{ inputs.host }}
+  group: podlaz-e2e-runner-provision
   cancel-in-progress: false
 
 jobs:
@@ -52,12 +76,15 @@ jobs:
     environment: vpn-e2e
     timeout-minutes: 30
     env:
-      SSH_HOST: ${{ inputs.host }}
-      SSH_PORT: ${{ inputs.ssh_port }}
-      SSH_USER: ${{ inputs.ssh_user }}
-      RUNNER_NAME: ${{ inputs.runner_name }}
-      RUNNER_USER: ${{ inputs.runner_user }}
-      RUNNER_LABELS: ${{ inputs.runner_labels }}
+      SSH_HOST: ${{ inputs.host || vars.E2E_BOOTSTRAP_SSH_HOST || secrets.E2E_BOOTSTRAP_SSH_HOST }}
+      SSH_PORT: ${{ inputs.ssh_port || vars.E2E_BOOTSTRAP_SSH_PORT || secrets.E2E_BOOTSTRAP_SSH_PORT || '22' }}
+      SSH_USER: ${{ inputs.ssh_user || vars.E2E_BOOTSTRAP_SSH_USER || secrets.E2E_BOOTSTRAP_SSH_USER || 'ubuntu' }}
+      RUNNER_PLATFORM_LABEL: ${{ inputs.platform_label || vars.E2E_RUNNER_PLATFORM_LABEL || secrets.E2E_RUNNER_PLATFORM_LABEL || 'ubuntu-24.04' }}
+      RUNNER_ARCH_LABEL: ${{ inputs.arch_label || vars.E2E_RUNNER_ARCH_LABEL || secrets.E2E_RUNNER_ARCH_LABEL || 'x64' }}
+      RUNNER_NAME: ${{ inputs.runner_name || vars.E2E_RUNNER_NAME || secrets.E2E_RUNNER_NAME }}
+      RUNNER_USER: ${{ inputs.runner_user || vars.E2E_RUNNER_USER || secrets.E2E_RUNNER_USER || 'gha-runner' }}
+      RUNNER_HOME: ${{ inputs.runner_home || vars.E2E_RUNNER_HOME || secrets.E2E_RUNNER_HOME || '/opt/actions-runner' }}
+      RUNNER_LABELS: ${{ inputs.runner_labels || vars.E2E_RUNNER_LABELS || secrets.E2E_RUNNER_LABELS }}
       RESET_RUNNER: ${{ inputs.reset_runner }}
       E2E_BOOTSTRAP_SSH_PRIVATE_KEY: ${{ secrets.E2E_BOOTSTRAP_SSH_PRIVATE_KEY }}
       E2E_BOOTSTRAP_SSH_KNOWN_HOSTS: ${{ secrets.E2E_BOOTSTRAP_SSH_KNOWN_HOSTS }}
@@ -67,16 +94,46 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate inputs and secrets
+      - name: Validate bootstrap configuration
         shell: bash
         run: |
           set -euo pipefail
-          [[ "${SSH_PORT}" =~ ^[0-9]+$ ]] || { echo "::error::ssh_port must be numeric"; exit 2; }
+
+          if [[ -z "${RUNNER_LABELS}" ]]; then
+            RUNNER_LABELS="self-hosted,linux,${RUNNER_ARCH_LABEL},vpn-e2e,${RUNNER_PLATFORM_LABEL}"
+          fi
+
+          [[ -n "${SSH_HOST}" ]] || { echo "::error::SSH host is required. Set input host or E2E_BOOTSTRAP_SSH_HOST."; exit 2; }
+          [[ -n "${SSH_USER}" ]] || { echo "::error::SSH user is required. Set input ssh_user or E2E_BOOTSTRAP_SSH_USER."; exit 2; }
+          [[ "${SSH_PORT}" =~ ^[0-9]+$ ]] || { echo "::error::SSH port must be numeric"; exit 2; }
           [[ -n "${E2E_BOOTSTRAP_SSH_PRIVATE_KEY}" ]] || { echo "::error::E2E_BOOTSTRAP_SSH_PRIVATE_KEY is required"; exit 2; }
           [[ -n "${E2E_RUNNER_ADMIN_TOKEN}" ]] || { echo "::error::E2E_RUNNER_ADMIN_TOKEN is required"; exit 2; }
-          case "${RUNNER_NAME}${RUNNER_USER}${RUNNER_LABELS}" in
-            *$'\n'*|*$'\r'*) echo "::error::runner inputs must not contain newlines"; exit 2 ;;
+
+          case "${RUNNER_PLATFORM_LABEL}" in
+            ubuntu-24.04|ubuntu-22.04|debian-12|debian-13) ;;
+            *) echo "::error::Unsupported RUNNER_PLATFORM_LABEL=${RUNNER_PLATFORM_LABEL}"; exit 2 ;;
           esac
+
+          case "${RUNNER_ARCH_LABEL}" in
+            x64|arm64) ;;
+            *) echo "::error::Unsupported RUNNER_ARCH_LABEL=${RUNNER_ARCH_LABEL}"; exit 2 ;;
+          esac
+
+          case "${SSH_HOST}${SSH_PORT}${SSH_USER}${RUNNER_NAME}${RUNNER_USER}${RUNNER_HOME}${RUNNER_LABELS}" in
+            *$'\n'*|*$'\r'*) echo "::error::Bootstrap inputs must not contain newlines"; exit 2 ;;
+          esac
+
+          {
+            echo "SSH_HOST=${SSH_HOST}"
+            echo "SSH_PORT=${SSH_PORT}"
+            echo "SSH_USER=${SSH_USER}"
+            echo "RUNNER_PLATFORM_LABEL=${RUNNER_PLATFORM_LABEL}"
+            echo "RUNNER_ARCH_LABEL=${RUNNER_ARCH_LABEL}"
+            echo "RUNNER_NAME=${RUNNER_NAME}"
+            echo "RUNNER_USER=${RUNNER_USER}"
+            echo "RUNNER_HOME=${RUNNER_HOME}"
+            echo "RUNNER_LABELS=${RUNNER_LABELS}"
+          } >> "${GITHUB_ENV}"
 
       - name: Prepare SSH identity
         shell: bash
@@ -86,12 +143,30 @@ jobs:
           printf '%s\n' "${E2E_BOOTSTRAP_SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
           chmod 0600 ~/.ssh/id_ed25519
 
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub
+          echo "Bootstrap SSH public key fingerprint:"
+          ssh-keygen -l -f ~/.ssh/id_ed25519.pub
+
           if [[ -n "${E2E_BOOTSTRAP_SSH_KNOWN_HOSTS}" ]]; then
             printf '%s\n' "${E2E_BOOTSTRAP_SSH_KNOWN_HOSTS}" > ~/.ssh/known_hosts
           else
             ssh-keyscan -p "${SSH_PORT}" -H "${SSH_HOST}" >> ~/.ssh/known_hosts
           fi
           chmod 0644 ~/.ssh/known_hosts
+
+      - name: SSH and sudo preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${SSH_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o IdentitiesOnly=yes \
+            -o PasswordAuthentication=no \
+            -o PreferredAuthentications=publickey \
+            -o StrictHostKeyChecking=yes \
+            "${SSH_USER}@${SSH_HOST}" \
+            'printf "connected as %s on %s\n" "$(id -un)" "$(hostname)"; sudo -n true'
 
       - name: Resolve latest actions runner version
         shell: bash
@@ -127,7 +202,10 @@ jobs:
         run: |
           set -euo pipefail
           scp -P "${SSH_PORT}" \
+            -o BatchMode=yes \
             -o IdentitiesOnly=yes \
+            -o PasswordAuthentication=no \
+            -o PreferredAuthentications=publickey \
             -o StrictHostKeyChecking=yes \
             scripts/ops/bootstrap-e2e-runner.sh \
             "${SSH_USER}@${SSH_HOST}:/tmp/podlaz-bootstrap-e2e-runner.sh"
@@ -148,12 +226,18 @@ jobs:
             "RUNNER_VERSION=$(shell_quote "${RUNNER_VERSION}")"
             "RUNNER_NAME=$(shell_quote "${RUNNER_NAME}")"
             "RUNNER_USER=$(shell_quote "${RUNNER_USER}")"
+            "RUNNER_HOME=$(shell_quote "${RUNNER_HOME}")"
             "RUNNER_LABELS=$(shell_quote "${RUNNER_LABELS}")"
+            "RUNNER_PLATFORM_LABEL=$(shell_quote "${RUNNER_PLATFORM_LABEL}")"
+            "RUNNER_ARCH_LABEL=$(shell_quote "${RUNNER_ARCH_LABEL}")"
             "RESET_RUNNER=$(shell_quote "${RESET_RUNNER}")"
           )
 
           ssh -p "${SSH_PORT}" \
+            -o BatchMode=yes \
             -o IdentitiesOnly=yes \
+            -o PasswordAuthentication=no \
+            -o PreferredAuthentications=publickey \
             -o StrictHostKeyChecking=yes \
             "${SSH_USER}@${SSH_HOST}" \
             "sudo env ${remote_env[*]} bash /tmp/podlaz-bootstrap-e2e-runner.sh"
