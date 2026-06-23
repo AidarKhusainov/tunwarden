@@ -19,10 +19,10 @@ require_cmd bash go python3 grep awk sed mktemp sudo systemctl journalctl apt cu
 : "${PODLAZ_E2E_PUBLIC_IP_CHECK_URL:=https://api.ipify.org}"
 : "${PODLAZ_E2E_PUBLIC_IPV6_CHECK_URL:=https://api6.ipify.org}"
 : "${PODLAZ_E2E_DNS_CHECK_HOST:=github.com}"
-: "${PODLAZ_E2E_ENABLE_TUN:=false}"
-: "${PODLAZ_E2E_ENABLE_CRASH_TESTS:=false}"
-: "${PODLAZ_E2E_ENABLE_HOST_DISRUPTION:=false}"
-: "${PODLAZ_E2E_STABILITY_MINUTES:=0}"
+: "${PODLAZ_E2E_ENABLE_TUN:=true}"
+: "${PODLAZ_E2E_ENABLE_CRASH_TESTS:=true}"
+: "${PODLAZ_E2E_ENABLE_HOST_DISRUPTION:=auto}"
+: "${PODLAZ_E2E_STABILITY_MINUTES:=5}"
 : "${PODLAZ_E2E_STATUS_CONCURRENCY:=6}"
 : "${PODLAZ_E2E_HOST_WRAPPER_DIR:=/usr/local/libexec/podlaz-e2e}"
 : "${PODLAZ_E2E_HOST_WRAPPER_TIMEOUT_SECONDS:=180}"
@@ -378,13 +378,24 @@ run_host_wrapper_probe() {
 }
 
 run_host_disruption_probes() {
-  [[ "${PODLAZ_E2E_ENABLE_HOST_DISRUPTION}" == "true" ]] || { log "host disruption wrappers are disabled; set PODLAZ_E2E_ENABLE_HOST_DISRUPTION=true to run suspend/network/DHCP/DNS/polkit host probes"; return 0; }
+  case "${PODLAZ_E2E_ENABLE_HOST_DISRUPTION}" in
+    false|"") log "host disruption wrappers are disabled"; return 0 ;;
+    true|auto) ;;
+    *) fail "unsupported PODLAZ_E2E_ENABLE_HOST_DISRUPTION=${PODLAZ_E2E_ENABLE_HOST_DISRUPTION}; use true, false, or auto" ;;
+  esac
+
   local mode="${PODLAZ_E2E_HOST_DISRUPTION_MODE}"
   if [[ -z "${mode}" ]]; then if [[ "${PODLAZ_E2E_ENABLE_TUN}" == "true" ]]; then mode="tun"; else mode="proxy-only"; fi; fi
   case "${mode}" in proxy-only) ;; tun) [[ "${PODLAZ_E2E_ENABLE_TUN}" == "true" ]] || fail "PODLAZ_E2E_HOST_DISRUPTION_MODE=tun requires PODLAZ_E2E_ENABLE_TUN=true" ;; *) fail "unsupported PODLAZ_E2E_HOST_DISRUPTION_MODE=${mode}" ;; esac
   local id="$1" available=0 wrapper
   for wrapper in suspend-resume network-reconnect dhcp-renew dns-change polkit-gui-auth polkit-tty-auth; do if [[ -x "$(safe_wrapper_path "${wrapper}")" ]]; then available=$((available + 1)); else printf '%s\n' "missing: $(safe_wrapper_path "${wrapper}")" >>"${E2E_ARTIFACT_DIR}/host-wrapper-availability.txt"; fi; done
-  [[ "${available}" -gt 0 ]] || fail "host disruption enabled, but no supported wrappers exist under ${PODLAZ_E2E_HOST_WRAPPER_DIR}"
+  if [[ "${available}" -eq 0 ]]; then
+    if [[ "${PODLAZ_E2E_ENABLE_HOST_DISRUPTION}" == "auto" ]]; then
+      log "host disruption wrappers are in auto mode, but no supported wrappers exist under ${PODLAZ_E2E_HOST_WRAPPER_DIR}; skipping host disruption probes"
+      return 0
+    fi
+    fail "host disruption enabled, but no supported wrappers exist under ${PODLAZ_E2E_HOST_WRAPPER_DIR}"
+  fi
   connect_profile "${mode}" "${id}"
   for wrapper in suspend-resume network-reconnect dhcp-renew dns-change polkit-gui-auth polkit-tty-auth; do if [[ -x "$(safe_wrapper_path "${wrapper}")" ]]; then run_host_wrapper_probe "${wrapper}" "${mode}"; fi; done
   disconnect_active "host-disruption-${mode}"
