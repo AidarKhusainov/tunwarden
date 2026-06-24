@@ -165,12 +165,6 @@ cleanup_server_coverage() {
 }
 trap cleanup_server_coverage EXIT
 
-# The rest of this suite is intentionally implemented in reusable helpers below.
-# It imports every provided real profile, validates proxy-only and TUN plans, installs the native package,
-# runs proxy-only and optional TUN lifecycles, checks DNS/public egress/IPv6, runs concurrent status/connect/disconnect,
-# optionally kills supervised core and daemon processes, optionally invokes host-owned disruption wrappers,
-# and optionally performs a long-running stability probe.
-
 profile_uri_candidates() {
   local uri
   for uri in "${PODLAZ_E2E_PROFILE_URI}" "${PODLAZ_E2E_PROFILE_URI_2}" "${PODLAZ_E2E_PROFILE_URI_3}" "${PODLAZ_E2E_PROFILE_URI_4}"; do
@@ -216,7 +210,8 @@ validate_and_plan_profile() {
 }
 
 check_dns_resolution() {
-  local phase="$1" dir="${E2E_ARTIFACT_DIR}/dns-${phase}"
+  local phase="$1"
+  local dir="${E2E_ARTIFACT_DIR}/dns-${phase}"
   mkdir -p "${dir}"
   getent hosts "${PODLAZ_E2E_DNS_CHECK_HOST}" >"${dir}/getent-hosts.txt" 2>"${dir}/getent-hosts.stderr" || fail "${phase}: DNS resolution failed for ${PODLAZ_E2E_DNS_CHECK_HOST}"
   if command -v resolvectl >/dev/null 2>&1; then
@@ -225,7 +220,8 @@ check_dns_resolution() {
 }
 
 check_public_egress() {
-  local phase="$1" dir="${E2E_ARTIFACT_DIR}/egress-${phase}"
+  local phase="$1"
+  local dir="${E2E_ARTIFACT_DIR}/egress-${phase}"
   mkdir -p "${dir}"
   local ip4="" ip6=""
   ip4="$(curl -4 -fsS --max-time 30 "${PODLAZ_E2E_PUBLIC_IP_CHECK_URL}" 2>"${dir}/public-ipv4.stderr" || true)"
@@ -284,7 +280,9 @@ expect_second_connect_rejected() {
 }
 
 concurrent_lifecycle_probe() {
-  local mode="$1" id="$2" dir="${E2E_ARTIFACT_DIR}/concurrent-lifecycle-${mode}"
+  local mode="$1"
+  local id="$2"
+  local dir="${E2E_ARTIFACT_DIR}/concurrent-lifecycle-${mode}"
   mkdir -p "${dir}"
   connect_profile "${mode}" "${id}"
   ( set +e; for _ in $(seq 1 12); do run_podlaz_as_socket_user status >>"${dir}/status-loop.log" 2>&1; sleep 0.2; done ) &
