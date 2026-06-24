@@ -151,7 +151,8 @@ Scope:
 - runs TUN connect/status/DNS/public-egress/IPv6 observation/disconnect/recover for every imported profile when TUN is explicitly enabled;
 - kills supervised Xray and `podlazd.service`, then validates status/doctor/recover/disconnect behavior when crash tests are enabled;
 - runs host-provided wrappers for suspend/resume, network reconnect, DHCP renewal, DNS mutation, and polkit GUI/TTY authorization probes when wrappers are available and host disruption is enabled or auto-detected;
-- keeps one profile connected and polls status, DNS, and public egress repeatedly when `PODLAZ_E2E_STABILITY_MINUTES > 0`.
+- keeps one profile connected and polls status, DNS, and public egress repeatedly when `PODLAZ_E2E_STABILITY_MINUTES > 0`;
+- records host snapshots before, during, and after lifecycle, crash, host-disruption, and cleanup operations.
 
 When `PODLAZ_E2E_ENABLE_TUN=false`, the stability probe runs in proxy-only mode and host-disruption auto mode selects proxy-only wrappers by default.
 
