@@ -39,6 +39,14 @@ func TestSystemdUnitDoesNotLeakAmbientNetworkingCapabilities(t *testing.T) {
 	}
 }
 
+func TestSystemdUnitKeepsCredentialDropAvailable(t *testing.T) {
+	content := readSystemdUnit(t)
+
+	if strings.Contains(content, "Restrict"+"SUIDSGID=yes") {
+		t.Fatalf("systemd unit must allow podlazd to perform its controlled setuid/setgid credential drop for Xray and TUN adapter children:\n%s", content)
+	}
+}
+
 func TestSystemdUnitDoesNotBlockTunDeviceWork(t *testing.T) {
 	content := readSystemdUnit(t)
 
