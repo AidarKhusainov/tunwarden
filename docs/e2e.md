@@ -72,7 +72,7 @@ PODLAZ_E2E_EXPECTED_EGRESS_IPV6
 Optional environment variables tune the default one-click behavior:
 
 ```text
-PODLAZ_E2E_ENABLE_TUN=true|false                  # default workflow value: false
+PODLAZ_E2E_ENABLE_TUN=true|false                  # default: true
 PODLAZ_E2E_ENABLE_CRASH_TESTS=true|false          # default: true
 PODLAZ_E2E_ENABLE_HOST_DISRUPTION=auto|true|false # default: auto
 PODLAZ_E2E_STABILITY_MINUTES=5                    # default: 5
@@ -86,7 +86,7 @@ PODLAZ_E2E_HOST_WRAPPER_TIMEOUT_SECONDS
 PODLAZ_E2E_HOST_DISRUPTION_MODE=proxy-only|tun
 ```
 
-The default workflow is intentionally conservative for the packaged least-privilege service: proxy-only lifecycle, crash probes, subscription coverage, concurrency checks, host-wrapper auto-detection, and a short stability probe are enabled. TUN lifecycle is an explicit opt-in because the packaged daemon must be able to inspect and mutate TUN, route, DNS, and nftables state before the test can safely apply full-tunnel firewall changes. Set `PODLAZ_E2E_ENABLE_TUN=true` only on a dedicated runner whose packaged `podlazd.service` deployment has validated networking privileges for that purpose.
+The default is intentionally production-like: TUN checks, crash probes, and a short stability probe are enabled. Host-disruption probes are `auto`: the suite runs safe host-owned wrappers when they exist and records missing wrappers without failing the run. The packaged daemon owns the privileged TUN, route, DNS, and nftables mutations, while Xray and the TUN adapter run under the dedicated `podlaz-xray` child identity.
 
 ## Job 1: CLI contract
 
@@ -148,13 +148,11 @@ Scope:
 - optionally exercises a real subscription URL;
 - runs proxy-only connect/status/DNS/disconnect/idempotent-disconnect for every imported profile;
 - runs concurrent status probes, overlapping second-connect rejection, and disconnect during active status polling;
-- runs TUN connect/status/DNS/public-egress/IPv6 observation/disconnect/recover for every imported profile when TUN is explicitly enabled;
+- runs TUN connect/status/DNS/public-egress/IPv6 observation/disconnect/recover for every imported profile when TUN is enabled;
 - kills supervised Xray and `podlazd.service`, then validates status/doctor/recover/disconnect behavior when crash tests are enabled;
 - runs host-provided wrappers for suspend/resume, network reconnect, DHCP renewal, DNS mutation, and polkit GUI/TTY authorization probes when wrappers are available and host disruption is enabled or auto-detected;
 - keeps one profile connected and polls status, DNS, and public egress repeatedly when `PODLAZ_E2E_STABILITY_MINUTES > 0`;
 - records host snapshots before, during, and after lifecycle, crash, host-disruption, and cleanup operations.
-
-When `PODLAZ_E2E_ENABLE_TUN=false`, the stability probe runs in proxy-only mode and host-disruption auto mode selects proxy-only wrappers by default.
 
 ## Host-disruption wrappers
 
@@ -192,7 +190,6 @@ The following items require explicit host support beyond the default single remo
 
 | Area | Status |
 | --- | --- |
-| TUN lifecycle | Covered only when `PODLAZ_E2E_ENABLE_TUN=true` and the packaged daemon deployment on the runner has validated TUN, route, DNS, and nftables privileges. |
 | Suspend/resume | Covered only when the host provides a safe `suspend-resume` wrapper and out-of-band recovery. |
 | Wi-Fi/network reconnect | Covered only when the host provides a safe `network-reconnect` wrapper for its NetworkManager/device topology. |
 | DHCP renewal | Covered only when the host provides a safe `dhcp-renew` wrapper. |
