@@ -55,7 +55,8 @@ func TestProxyOnlyCoreExecutionIdentityFailsWhenDedicatedUserMissing(t *testing.
 	if err == nil {
 		t.Fatal("expected missing dedicated user to fail")
 	}
-	if !strings.Contains(err.Error(), proxyCoreExecutionUser) {
+	message := err.Error()
+	if !strings.Contains(message, proxyCoreExecutionUser) || !strings.Contains(message, "packaging/sysusers.d/podlaz.conf") {
 		t.Fatalf("expected actionable dedicated user error, got %v", err)
 	}
 }
