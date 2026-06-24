@@ -12,6 +12,8 @@ import (
 const (
 	proxyCoreExecutionUser  = "podlaz-xray"
 	proxyCoreExecutionGroup = "podlaz-xray"
+
+	coreExecutionIdentitySetupHint = "install the packaged service or create the documented system user from packaging/sysusers.d/podlaz.conf"
 )
 
 var (
@@ -57,11 +59,11 @@ func coreChildExecutionIdentity() (coreExecutionIdentity, error) {
 func dedicatedProxyCoreExecutionIdentity() (coreExecutionIdentity, error) {
 	u, err := lookupUserName(proxyCoreExecutionUser)
 	if err != nil {
-		return coreExecutionIdentity{}, fmt.Errorf("resolve Xray execution user %q: %w", proxyCoreExecutionUser, err)
+		return coreExecutionIdentity{}, fmt.Errorf("resolve connection helper execution user %q: %w; %s", proxyCoreExecutionUser, err, coreExecutionIdentitySetupHint)
 	}
 	g, err := lookupGroupName(proxyCoreExecutionGroup)
 	if err != nil {
-		return coreExecutionIdentity{}, fmt.Errorf("resolve Xray execution group %q: %w", proxyCoreExecutionGroup, err)
+		return coreExecutionIdentity{}, fmt.Errorf("resolve connection helper execution group %q: %w; %s", proxyCoreExecutionGroup, err, coreExecutionIdentitySetupHint)
 	}
 
 	uid, err := parseSystemID("user", proxyCoreExecutionUser, u.Uid)
@@ -77,10 +79,10 @@ func dedicatedProxyCoreExecutionIdentity() (coreExecutionIdentity, error) {
 		return coreExecutionIdentity{}, err
 	}
 	if uid == 0 || gid == 0 {
-		return coreExecutionIdentity{}, fmt.Errorf("Xray execution identity %q must not resolve to uid=%d gid=%d", proxyCoreExecutionUser, uid, gid)
+		return coreExecutionIdentity{}, fmt.Errorf("connection helper execution identity %q must not resolve to uid=%d gid=%d", proxyCoreExecutionUser, uid, gid)
 	}
 	if userGID != gid {
-		return coreExecutionIdentity{}, fmt.Errorf("Xray execution user %q must use dedicated primary group %q", proxyCoreExecutionUser, proxyCoreExecutionGroup)
+		return coreExecutionIdentity{}, fmt.Errorf("connection helper execution user %q must use dedicated primary group %q", proxyCoreExecutionUser, proxyCoreExecutionGroup)
 	}
 
 	return coreExecutionIdentity{
