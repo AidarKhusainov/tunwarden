@@ -23,7 +23,6 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ProtectControlGroups=yes
-RestrictSUIDSGID=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 StandardOutput=journal
