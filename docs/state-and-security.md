@@ -249,16 +249,18 @@ The daemon service must start from least privilege. Every relaxation must be jus
 
 Packaged baseline service behavior:
 
-- `packaging/sysusers.d/podlaz.conf` creates the dedicated unprivileged `podlaz` daemon service identity and the dedicated `podlaz-xray` proxy-core child identity.
-- `packaging/systemd/podlazd.service` starts `podlazd` as `podlaz:podlaz` for the packaged proxy-only baseline.
+- `packaging/sysusers.d/podlaz.conf` creates the dedicated `podlaz` daemon socket access group and the dedicated `podlaz-xray` connection-helper identity.
+- `packaging/systemd/podlazd.service` starts `podlazd` as `root:podlaz` because packaged full-tunnel mode must inspect and mutate TUN devices, routes, policy rules, DNS link state, and nftables/firewall state through daemon-owned transactions.
+- The packaged daemon is the privileged host-networking boundary. The CLI must remain unprivileged and must only send intents through the daemon socket.
+- The unit bounds daemon privileges to `CAP_CHOWN CAP_SETUID CAP_SETGID CAP_NET_ADMIN` and grants no ambient capabilities.
+- `CAP_NET_ADMIN` is required for TUN, routes, policy rules, DNS link state through system tooling, and nftables/firewall state.
+- `CAP_CHOWN`, `CAP_SETUID`, and `CAP_SETGID` are required so the root daemon can write private generated runtime config as `root:podlaz-xray`, create the managed TUN device for `podlaz-xray`, and drop Xray/TUN adapter children to `podlaz-xray:podlaz-xray` before `exec`.
+- Xray and the TUN adapter must not inherit daemon privileges. They run under `podlaz-xray:podlaz-xray` when the daemon runs with UID 0.
+- `AmbientCapabilities=` must remain empty so child processes cannot receive daemon capabilities through ambient inheritance.
+- `RestrictSUIDSGID=yes` is intentionally not enabled because it prevents the daemon's controlled setuid/setgid credential drop before starting Xray and the TUN adapter. `NoNewPrivileges=yes` remains enabled to prevent gaining privileges through helper `exec`.
 - The packaged unit sets `UMask=0077`; daemon runtime files are private by default, and the daemon-created control socket is explicitly opened to mode `0660`.
-- In the default packaged proxy-only path, Xray child processes inherit the same unprivileged `podlaz:podlaz` service identity.
-- If a UID 0 daemon deployment is used for proxy-only mode, `podlazd` must start Xray under the dedicated `podlaz-xray:podlaz-xray` execution identity instead of letting the child inherit UID 0.
-- For the UID 0 daemon path, generated Xray runtime config is owned by `root:podlaz-xray`, the generated config directory is mode `0750`, and the generated config file is mode `0640`. This is the documented private equivalent to `0600`: only the daemon/root owner and the dedicated Xray child group can read the generated config.
-- The packaged baseline unit grants no ambient or bounding capabilities.
-- Proxy-only mode must not grant `CAP_NET_ADMIN`, `CAP_NET_RAW`, broad file capabilities, or ambient capabilities to the daemon or Xray child.
 - The dedicated `podlaz` group is the packaged socket access boundary for CLI commands that use the daemon.
-- `RuntimeDirectory=podlaz` with `RuntimeDirectoryMode=0710` lets the `podlaz` group traverse `/run/podlaz` to reach the daemon socket, but does not let group members list daemon-private runtime state.
+- `RuntimeDirectory=podlaz` with `RuntimeDirectoryMode=0711` lets unprivileged children traverse `/run/podlaz` to reach their generated runtime config while keeping directory contents non-listable.
 - Only `/run/podlaz/podlazd.sock` is intentionally exposed to `podlaz` group members for packaged CLI access.
 - Generated configs under `/run/podlaz/generated`, transaction files under `/run/podlaz/transactions`, lock files, and other daemon runtime children remain daemon-private unless a later contract explicitly changes them.
 - The daemon itself applies socket mode `0660` to `/run/podlaz/podlazd.sock`.
@@ -268,36 +270,34 @@ Packaged baseline service behavior:
 Current hardening baseline:
 
 ```ini
-User=podlaz
+User=root
 Group=podlaz
 UMask=0077
 NoNewPrivileges=yes
-CapabilityBoundingSet=
+CapabilityBoundingSet=CAP_CHOWN CAP_SETUID CAP_SETGID CAP_NET_ADMIN
 AmbientCapabilities=
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ProtectControlGroups=yes
-RestrictSUIDSGID=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 RuntimeDirectory=podlaz
-RuntimeDirectoryMode=0710
+RuntimeDirectoryMode=0711
 StateDirectory=podlaz
 StateDirectoryMode=0700
 ```
 
 Privilege status for the current milestone:
 
-- The packaged baseline unit remains unprivileged and does not grant `CAP_NET_ADMIN`.
+- The packaged baseline unit is privileged only at the daemon boundary and only for host-networking operations that cannot be performed by an unprivileged service user.
 - Packaged proxy-only mode may start and stop an Xray child process and mutate only daemon-owned generated runtime config state under `/run/podlaz`.
-- Daemon-owned TUN execution and recovery cleanup paths are privileged runtime paths. They require a privileged daemon deployment or future helper with `CAP_NET_ADMIN`-equivalent rights when they mutate TUN devices, routes, policy rules, DNS link state, or nftables/firewall state.
+- Packaged TUN mode may mutate TUN devices, routes, policy rules, DNS link state, and nftables/firewall state only through daemon-owned transactions with rollback metadata.
 - The CLI must not become a privileged or SUID networking mutator. It may parse arguments, render output, and send intents through the daemon socket only.
 - Any packaged service privilege expansion must update this document and the unit file in the same change, including the exact capability set and why each capability is required.
 - Add `CAP_NET_RAW` only if a concrete health check or networking feature needs it and the PR documents why.
 - Broad file permission bypass capabilities must not be in the baseline.
-- `PrivateDevices=yes`, restrictive address-family filters, and kernel-tunable protections are deferred because they can conflict with future `/dev/net/tun`, netlink, routing, or nftables work and must be validated together with those features.
-- Privileged daemon release is blocked until the unit file documents the final hardening choices and justifies deviations from the documented baseline.
+- `PrivateDevices=yes`, restrictive address-family filters, kernel-tunable protections, and hardening options that block controlled credential drops are deferred because they can conflict with `/dev/net/tun`, netlink, routing, nftables, or the child privilege-drop model and must be validated together with those features.
 
 ## 6. Core engine process safety
 
@@ -306,9 +306,9 @@ The core engine process is a child process managed by the daemon, not the owner 
 Rules:
 
 - The core process must not inherit broad daemon privileges unless strictly required.
-- In packaged proxy-only mode, `podlazd` and Xray both run as the unprivileged `podlaz` service identity.
-- If `podlazd` is running with UID 0 for proxy-only mode, it must drop the Xray child to the dedicated `podlaz-xray:podlaz-xray` identity before starting the process.
-- The proxy-only Xray child must not inherit supplementary groups.
+- In packaged mode, a UID 0 `podlazd` must drop the Xray child to the dedicated `podlaz-xray:podlaz-xray` identity before starting the process.
+- The TUN adapter child uses the same dedicated `podlaz-xray:podlaz-xray` identity when the daemon starts it from a privileged TUN lifecycle.
+- Xray and TUN adapter children must not inherit supplementary groups.
 - Generated core configs must be mode `0600` for same-user execution, or equivalently private as `root:podlaz-xray` with directory mode `0750` and file mode `0640` for the UID 0 daemon path.
 - Generated core configs must be written atomically.
 - Generated core configs must be treated as runtime output, not persistent source of truth.
