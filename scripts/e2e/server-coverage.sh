@@ -340,7 +340,7 @@ run_daemon_crash_probe() {
   log "daemon crash probe (${mode})"
   connect_profile "${mode}" "${id}"
   collect_host_snapshot "before-daemon-crash-${mode}"
-  sudo -n systemctl kill --signal=SIGKILL podlazd.service
+  sudo -n systemctl kill --kill-whom=main --signal=SIGKILL podlazd.service
   sleep 4
   restart_daemon_after_crash
   capture_secret_command "status-after-daemon-crash-${mode}" run_podlaz_as_socket_user status || true
