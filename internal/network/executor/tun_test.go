@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"strconv"
 	"testing"
 
 	"github.com/AidarKhusainov/podlaz/internal/network/planner"
@@ -51,6 +50,25 @@ func TestTunExecutorApplyVerifyAndRollbackOrder(t *testing.T) {
 	}
 }
 
+func TestTunExecutorApplySkipsUnmutatedSteps(t *testing.T) {
+	recorder := &callRecorder{}
+	exec := TunExecutor{TunDevice: fakeTun{rec: recorder}, Routes: fakeRoutes{rec: recorder, skipTarget: "main:203.0.113.10/32"}, PolicyRules: fakeRules{rec: recorder}}
+	plan := executorPlanForTest()
+
+	steps, err := exec.Apply(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+	for _, step := range steps {
+		if step.Kind == "route" && step.Target == "main 203.0.113.10/32" {
+			t.Fatalf("pre-existing route should not be recorded as applied: %#v", steps)
+		}
+	}
+	if len(steps) != 4 {
+		t.Fatalf("expected TUN, managed route, and policy rules only, got %#v", steps)
+	}
+}
+
 func TestTunExecutorApplyFailureLeavesRollbackablePartialState(t *testing.T) {
 	recorder := &callRecorder{}
 	exec := TunExecutor{
@@ -88,7 +106,7 @@ func TestIPTunDeviceCreateAssignsAdapterOwner(t *testing.T) {
 }
 
 func TestIPRouteAndRuleMappingUsesAddAndpodlazTableID(t *testing.T) {
-	runner := &recordingRunner{}
+	runner := &recordingRunner{results: []CommandResult{{}, {Stdout: ""}, {}, {}, {}, {}, {}, {}}}
 	routes := IPRouteExecutor{Runner: runner}
 	rules := IPPolicyRuleExecutor{Runner: runner}
 	plan := executorPlanForTest()
@@ -109,6 +127,7 @@ func TestIPRouteAndRuleMappingUsesAddAndpodlazTableID(t *testing.T) {
 	want := [][]string{
 		{"ip", "-4", "route", "add", "default", "dev", "podlaz0", "table", "51820"},
 		{"ip", "-4", "route", "flush", "cache"},
+		{"ip", "-4", "route", "show", "table", "main", "203.0.113.10/32"},
 		{"ip", "-4", "route", "add", "203.0.113.10/32", "via", "192.0.2.1", "dev", "eth0", "table", "main"},
 		{"ip", "-4", "route", "flush", "cache"},
 		{"ip", "-4", "rule", "add", "priority", "9999", "to", "203.0.113.10/32", "lookup", "main"},
@@ -169,15 +188,58 @@ func TestIPPolicyRuleVerifyChecksSelectorAndLookupTable(t *testing.T) {
 	}
 }
 
-func TestIPRouteAddDoesNotReplaceExistingRoute(t *testing.T) {
-	runner := &recordingRunner{err: errors.New("RTNETLINK answers: File exists")}
+func TestIPRouteAddSkipsMatchingExistingMainServerBypassRoute(t *testing.T) {
+	runner := &recordingRunner{stdout: "203.0.113.10 via 192.0.2.1 dev eth0 src 192.0.2.20"}
+	route := planner.TunRoutePlan{Destination: "203.0.113.10/32", Table: planner.MainRoutingTable, Interface: "eth0", Gateway: "192.0.2.1", Action: "add"}
+
+	step, err := (IPRouteExecutor{Runner: runner}).Add(context.Background(), route)
+	if err != nil {
+		t.Fatalf("expected matching existing route to be accepted: %v", err)
+	}
+	if step.Kind != "" {
+		t.Fatalf("expected no applied step for pre-existing route, got %#v", step)
+	}
+	want := [][]string{{"ip", "-4", "route", "show", "table", "main", "203.0.113.10/32"}}
+	if !reflect.DeepEqual(runner.commands, want) {
+		t.Fatalf("unexpected commands:\nwant %#v\n got %#v", want, runner.commands)
+	}
+}
+
+func TestIPRouteAddAddsMissingMainServerBypassRoute(t *testing.T) {
+	runner := &recordingRunner{results: []CommandResult{{Stdout: ""}, {}, {}}}
+	route := planner.TunRoutePlan{Destination: "203.0.113.10/32", Table: planner.MainRoutingTable, Interface: "eth0", Gateway: "192.0.2.1", Action: "add"}
+
+	step, err := (IPRouteExecutor{Runner: runner}).Add(context.Background(), route)
+	if err != nil {
+		t.Fatalf("expected missing route to be added: %v", err)
+	}
+	if step.Kind != "route" || step.Owner != OwnerRoute {
+		t.Fatalf("expected applied route step, got %#v", step)
+	}
+	want := [][]string{
+		{"ip", "-4", "route", "show", "table", "main", "203.0.113.10/32"},
+		{"ip", "-4", "route", "add", "203.0.113.10/32", "via", "192.0.2.1", "dev", "eth0", "table", "main"},
+		{"ip", "-4", "route", "flush", "cache"},
+	}
+	if !reflect.DeepEqual(runner.commands, want) {
+		t.Fatalf("unexpected commands:\nwant %#v\n got %#v", want, runner.commands)
+	}
+}
+
+func TestIPRouteAddDoesNotReplaceConflictingExistingRoute(t *testing.T) {
+	runner := &recordingRunner{stdout: "203.0.113.10 via 192.0.2.254 dev wlan0"}
 	route := planner.TunRoutePlan{Destination: "203.0.113.10/32", Table: planner.MainRoutingTable, Interface: "eth0", Gateway: "192.0.2.1", Action: "add"}
 	if _, err := (IPRouteExecutor{Runner: runner}).Add(context.Background(), route); err == nil {
-		t.Fatal("expected add to fail instead of replacing an existing route")
+		t.Fatal("expected conflicting existing route to fail instead of replacing it")
 	}
-	want := []string{"ip", "-4", "route", "add", "203.0.113.10/32", "via", "192.0.2.1", "dev", "eth0", "table", "main"}
-	if !reflect.DeepEqual(runner.commands[0], want) {
-		t.Fatalf("unexpected command: %#v", runner.commands[0])
+	for _, command := range runner.commands {
+		if containsCommandToken(command, "replace") {
+			t.Fatalf("route replace must not be used: %#v", runner.commands)
+		}
+	}
+	want := [][]string{{"ip", "-4", "route", "show", "table", "main", "203.0.113.10/32"}}
+	if !reflect.DeepEqual(runner.commands, want) {
+		t.Fatalf("unexpected commands:\nwant %#v\n got %#v", want, runner.commands)
 	}
 }
 
@@ -207,6 +269,7 @@ func (f fakeTun) Rollback(_ context.Context, plan planner.TunDevicePlan) error {
 type fakeRoutes struct {
 	rec        *callRecorder
 	failTarget string
+	skipTarget string
 }
 
 func (f fakeRoutes) Add(_ context.Context, plan planner.TunRoutePlan) (Step, error) {
@@ -214,6 +277,9 @@ func (f fakeRoutes) Add(_ context.Context, plan planner.TunRoutePlan) (Step, err
 	f.rec.calls = append(f.rec.calls, "route:add:"+target)
 	if target == f.failTarget {
 		return Step{}, errors.New("injected route failure")
+	}
+	if target == f.skipTarget {
+		return Step{}, nil
 	}
 	return Step{Kind: "route", Target: routeTarget(plan), Owner: OwnerRoute}, nil
 }
@@ -251,11 +317,24 @@ type recordingRunner struct {
 	commands [][]string
 	stdout   string
 	err      error
+	results  []CommandResult
+	errs     []error
 }
 
 func (r *recordingRunner) Run(_ context.Context, name string, args ...string) (CommandResult, error) {
 	command := append([]string{name}, args...)
 	r.commands = append(r.commands, command)
+	idx := len(r.commands) - 1
+	if idx < len(r.errs) && r.errs[idx] != nil {
+		result := CommandResult{ExitCode: 2, Stderr: r.errs[idx].Error()}
+		if idx < len(r.results) {
+			result = r.results[idx]
+		}
+		return result, r.errs[idx]
+	}
+	if idx < len(r.results) {
+		return r.results[idx], nil
+	}
 	if r.err != nil {
 		return CommandResult{ExitCode: 2, Stderr: r.err.Error()}, r.err
 	}
@@ -278,4 +357,13 @@ func executorPlanForTest() planner.TunPlan {
 
 func ruleCallTarget(plan planner.TunPolicyRulePlan) string {
 	return strconv.Itoa(plan.Priority) + ":" + plan.Selector
+}
+
+func containsCommandToken(command []string, want string) bool {
+	for _, token := range command {
+		if strings.EqualFold(token, want) {
+			return true
+		}
+	}
+	return false
 }
