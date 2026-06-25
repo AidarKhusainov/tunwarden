@@ -38,7 +38,7 @@ jobs:
       - name: Govulncheck
         run: |
           . packaging/package-toolchain.env
-          go install github.com/golang/govulncheck@latest || go install golang.org/x/vuln/cmd/govulncheck@"${GOVULNCHECK_VERSION}"
+          go install golang.org/x/vuln/cmd/govulncheck@"${GOVULNCHECK_VERSION}"
           "$(go env GOPATH)/bin/govulncheck" ./...
 
   deb-package:
