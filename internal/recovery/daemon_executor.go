@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
 
+	netexecutor "github.com/AidarKhusainov/podlaz/internal/network/executor"
 	txstate "github.com/AidarKhusainov/podlaz/internal/state"
 )
 
@@ -138,7 +140,7 @@ func (e DaemonCleanupExecutor) rollbackNFTablesResults(ctx context.Context, osEx
 	results := make([]CleanupResult, 0, len(entries))
 	for _, entry := range entries {
 		candidate := Candidate{Kind: "nftables-table", Description: "nftables table", Target: entry.Family + " " + entry.Table}
-		if entry.Owner != txstate.TransactionOwner || !isManagedNFTTarget(entry.Family, entry.Table) {
+		if !ownedRollbackMetadata(entry.Owner, netexecutor.OwnerFirewall) || !isManagedNFTTarget(entry.Family, entry.Table) {
 			results = append(results, skipped(candidate, "ambiguous or non-podlaz nftables target"))
 			continue
 		}
@@ -147,7 +149,9 @@ func (e DaemonCleanupExecutor) rollbackNFTablesResults(ctx context.Context, osEx
 			continue
 		}
 		seen[key] = struct{}{}
-		if err := osExec.rollbackNFTables(ctx, []txstate.NFTablesRollback{entry}); err != nil {
+		rollback := entry
+		rollback.Owner = txstate.TransactionOwner
+		if err := osExec.rollbackNFTables(ctx, []txstate.NFTablesRollback{rollback}); err != nil {
 			results = append(results, failed(candidate, err))
 			continue
 		}
@@ -160,11 +164,13 @@ func (e DaemonCleanupExecutor) rollbackDNSResults(ctx context.Context, osExec OS
 	results := make([]CleanupResult, 0, len(entries))
 	for _, dns := range entries {
 		candidate := Candidate{Kind: "dns", Description: "DNS link state", Target: dns.Link}
-		if dns.Owner != txstate.TransactionOwner || dns.Link != managedInterface || (dns.Backend != "" && dns.Backend != "systemd-resolved") {
+		if !ownedRollbackMetadata(dns.Owner, netexecutor.OwnerDNS) || dns.Link != managedInterface || (dns.Backend != "" && dns.Backend != "systemd-resolved") {
 			results = append(results, skipped(candidate, "ambiguous or non-podlaz DNS rollback target"))
 			continue
 		}
-		if err := osExec.rollbackDNS(ctx, dns); err != nil {
+		rollback := dns
+		rollback.Owner = txstate.TransactionOwner
+		if err := osExec.rollbackDNS(ctx, rollback); err != nil {
 			results = append(results, failed(candidate, err))
 			continue
 		}
@@ -177,7 +183,7 @@ func (e DaemonCleanupExecutor) rollbackPolicyRuleResults(ctx context.Context, os
 	results := make([]CleanupResult, 0, len(rules))
 	for _, rule := range rules {
 		candidate := Candidate{Kind: "policy-rule", Description: "policy rule", Target: fmt.Sprintf("priority %d table %s", rule.Priority, rule.Table)}
-		if rule.Owner != txstate.TransactionOwner {
+		if !ownedRollbackMetadata(rule.Owner, netexecutor.OwnerPolicyRule) {
 			results = append(results, skipped(candidate, "non-podlaz policy rule metadata"))
 			continue
 		}
@@ -185,7 +191,9 @@ func (e DaemonCleanupExecutor) rollbackPolicyRuleResults(ctx context.Context, os
 			results = append(results, skipped(candidate, "ambiguous or non-podlaz policy rule table"))
 			continue
 		}
-		if err := osExec.rollbackPolicyRule(ctx, rule); err != nil {
+		rollback := rule
+		rollback.Owner = txstate.TransactionOwner
+		if err := osExec.rollbackPolicyRule(ctx, rollback); err != nil {
 			results = append(results, failed(candidate, err))
 			continue
 		}
@@ -198,8 +206,20 @@ func (e DaemonCleanupExecutor) rollbackRouteResults(ctx context.Context, osExec 
 	results := make([]CleanupResult, 0, len(routes))
 	for _, route := range routes {
 		candidate := Candidate{Kind: "route", Description: "route", Target: fmt.Sprintf("%s table %s", route.CIDR, route.Table)}
-		if route.Owner != txstate.TransactionOwner {
+		if !ownedRollbackMetadata(route.Owner, netexecutor.OwnerRoute) {
 			results = append(results, skipped(candidate, "non-podlaz route metadata"))
+			continue
+		}
+		if safeMainServerBypassRoute(route) {
+			if err := rollbackMainServerBypassRoute(ctx, osExec, route); err != nil {
+				results = append(results, failed(candidate, err))
+				continue
+			}
+			results = append(results, recovered(candidate))
+			continue
+		}
+		if strings.TrimSpace(route.Table) == "main" {
+			results = append(results, skipped(candidate, "ambiguous or non-podlaz main-table route"))
 			continue
 		}
 		if _, ok := managedTableToken(route.Table); !ok {
@@ -210,7 +230,9 @@ func (e DaemonCleanupExecutor) rollbackRouteResults(ctx context.Context, osExec 
 			results = append(results, skipped(candidate, "ambiguous or non-podlaz route device"))
 			continue
 		}
-		if err := osExec.rollbackRoute(ctx, route); err != nil {
+		rollback := route
+		rollback.Owner = txstate.TransactionOwner
+		if err := osExec.rollbackRoute(ctx, rollback); err != nil {
 			results = append(results, failed(candidate, err))
 			continue
 		}
@@ -223,11 +245,13 @@ func (e DaemonCleanupExecutor) rollbackTUNResults(ctx context.Context, osExec OS
 	results := make([]CleanupResult, 0, len(entries))
 	for _, tun := range entries {
 		candidate := Candidate{Kind: "tun-interface", Description: "TUN interface", Target: tun.InterfaceName}
-		if tun.Owner != txstate.TransactionOwner || tun.InterfaceName != managedInterface {
+		if !ownedRollbackMetadata(tun.Owner, netexecutor.OwnerTunDevice) || tun.InterfaceName != managedInterface {
 			results = append(results, skipped(candidate, "ambiguous or non-podlaz TUN target"))
 			continue
 		}
-		if err := osExec.rollbackTUN(ctx, tun); err != nil {
+		rollback := tun
+		rollback.Owner = txstate.TransactionOwner
+		if err := osExec.rollbackTUN(ctx, rollback); err != nil {
 			results = append(results, failed(candidate, err))
 			continue
 		}
@@ -255,6 +279,36 @@ func (e DaemonCleanupExecutor) rollbackGeneratedConfigResults(osExec OSCleanupEx
 		results = append(results, recovered(candidate))
 	}
 	return results
+}
+
+func ownedRollbackMetadata(owner, expected string) bool {
+	owner = strings.TrimSpace(owner)
+	expected = strings.TrimSpace(expected)
+	return expected != "" && (owner == expected || owner == txstate.TransactionOwner)
+}
+
+func safeMainServerBypassRoute(route txstate.RouteRollback) bool {
+	if strings.TrimSpace(route.Table) != "main" {
+		return false
+	}
+	prefix, err := netip.ParsePrefix(strings.TrimSpace(route.CIDR))
+	if err != nil {
+		return false
+	}
+	return prefix.Addr().Is4() && prefix.Bits() == 32 && strings.TrimSpace(route.Via) != "" && strings.TrimSpace(route.Dev) != ""
+}
+
+func rollbackMainServerBypassRoute(ctx context.Context, osExec OSCleanupExecutor, route txstate.RouteRollback) error {
+	if !ownedRollbackMetadata(route.Owner, netexecutor.OwnerRoute) || !safeMainServerBypassRoute(route) {
+		return fmt.Errorf("refuse to rollback ambiguous main-table route %s", route.CIDR)
+	}
+	cidr := strings.TrimSpace(route.CIDR)
+	via := strings.TrimSpace(route.Via)
+	dev := strings.TrimSpace(route.Dev)
+	if err := osExec.run(ctx, "ip", "-4", "route", "del", cidr, "via", via, "dev", dev, "table", "main"); err != nil && !commandErrorIsMissing(err) {
+		return fmt.Errorf("delete main-table server bypass route %s via %s dev %s: %w", cidr, via, dev, err)
+	}
+	return nil
 }
 
 func hasFailedCleanup(results []CleanupResult) bool {
