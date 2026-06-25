@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if ! declare -F safe_name >/dev/null 2>&1; then
+  # shellcheck source=e2e.sh
+  source "${SCRIPT_DIR}/e2e.sh"
+fi
 
 # Redaction-safe diagnostics for packaged Xray exec failures.
 # This helper intentionally avoids collecting profile URIs, subscription URLs,
@@ -117,3 +124,7 @@ collect_packaged_xray_exec_diagnostics() {
   collect_daemon_proc_status "${dir}"
   write_xray_exec_diagnostic_summary "${dir}"
 }
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  collect_packaged_xray_exec_diagnostics "${1:-manual}"
+fi
