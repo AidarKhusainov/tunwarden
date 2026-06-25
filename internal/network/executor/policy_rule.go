@@ -14,6 +14,16 @@ type IPPolicyRuleExecutor struct {
 }
 
 func (e IPPolicyRuleExecutor) Add(ctx context.Context, plan planner.TunPolicyRulePlan) (Step, error) {
+	line, err := e.existingPolicyRuleLine(ctx, plan)
+	if err != nil {
+		return Step{}, fmt.Errorf("inspect existing policy rule priority %d: %w", plan.Priority, err)
+	}
+	if line != "" {
+		if err := verifyPolicyRuleLine(line, plan); err != nil {
+			return Step{}, fmt.Errorf("existing policy rule priority %d differs from planned rule: %w", plan.Priority, err)
+		}
+		return Step{}, nil
+	}
 	args := ruleArgs("add", plan)
 	if err := runCommand(ctx, e.Runner, "ip", args...); err != nil {
 		return Step{}, fmt.Errorf("add policy rule priority %d: %w", plan.Priority, err)
@@ -49,6 +59,15 @@ func (e IPPolicyRuleExecutor) Rollback(ctx context.Context, plan planner.TunPoli
 		return fmt.Errorf("flush IPv4 route cache after delete policy rule priority %d: %w", plan.Priority, err)
 	}
 	return nil
+}
+
+func (e IPPolicyRuleExecutor) existingPolicyRuleLine(ctx context.Context, plan planner.TunPolicyRulePlan) (string, error) {
+	args := []string{"-4", "rule", "show", "priority", strconv.Itoa(plan.Priority)}
+	result, err := observeCommand(ctx, e.Runner, "ip", args...)
+	if err != nil {
+		return "", err
+	}
+	return firstNonEmptyLine(result.Stdout), nil
 }
 
 func ruleArgs(op string, plan planner.TunPolicyRulePlan) []string {
