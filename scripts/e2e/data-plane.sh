@@ -172,6 +172,13 @@ assert_loopback_listeners() {
   fi
 }
 
+assert_no_stale_state() {
+  local phase="$1"
+  expect_secret_success "status-${phase}-after-disconnect" run_podlaz_as_socket_user status
+  expect_secret_success "recover-${phase}-dry-run" run_podlaz_as_socket_user recover
+  grep -F "No podlaz-owned recovery candidates found." "${LAST_STDOUT}" >/dev/null || fail "${phase}: recovery dry-run found podlaz-owned cleanup candidates"
+}
+
 connect_profile() {
   local label="$1" id="$2"
   shift 2
@@ -217,6 +224,7 @@ assert_proxy_egress socks "proxy-only-explicit"
 assert_proxy_egress http "proxy-only-explicit"
 disconnect_profile "proxy-only-explicit"
 assert_proxy_cleanup "proxy-only-explicit"
+assert_no_stale_state "proxy-only-explicit"
 
 log "default connect mode data-plane lifecycle"
 connect_profile "default-mode" "${PROFILE_ID}"
@@ -225,6 +233,7 @@ assert_proxy_egress socks "default-mode"
 assert_proxy_egress http "default-mode"
 disconnect_profile "default-mode"
 assert_proxy_cleanup "default-mode"
+assert_no_stale_state "default-mode"
 
 if [[ ! "${PODLAZ_E2E_RELIABILITY_CYCLES}" =~ ^[0-9]+$ ]]; then
   fail "PODLAZ_E2E_RELIABILITY_CYCLES must be a non-negative integer"
@@ -235,8 +244,10 @@ if [[ "${PODLAZ_E2E_RELIABILITY_CYCLES}" -gt 0 ]]; then
     connect_profile "reliability-${cycle}" "${PROFILE_ID}" --mode proxy-only
     assert_loopback_listeners "reliability-${cycle}"
     assert_proxy_egress socks "reliability-${cycle}"
+    assert_proxy_egress http "reliability-${cycle}"
     disconnect_profile "reliability-${cycle}"
     assert_proxy_cleanup "reliability-${cycle}"
+    assert_no_stale_state "reliability-${cycle}"
   done
 else
   log "proxy-only reliability cycle gate is disabled; set PODLAZ_E2E_RELIABILITY_CYCLES=100 for release/manual evidence"
