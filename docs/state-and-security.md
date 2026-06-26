@@ -249,16 +249,13 @@ The daemon service must start from least privilege. Every relaxation must be jus
 
 Packaged baseline service behavior:
 
-- `packaging/sysusers.d/podlaz.conf` creates the dedicated unprivileged `podlaz` daemon service identity and the dedicated `podlaz-xray` proxy-core child identity.
-- `packaging/systemd/podlazd.service` starts `podlazd` as `podlaz:podlaz` for the packaged proxy-only baseline.
+- `packaging/sysusers.d/podlaz.conf` creates the dedicated unprivileged `podlaz` daemon access group and the dedicated `podlaz-xray` proxy-core child identity.
+- `packaging/systemd/podlazd.service` starts `podlazd` as `root:podlaz` so the daemon can own TUN, route, policy-rule, DNS, nftables, and child-lifecycle operations while keeping the CLI unprivileged.
+- Xray child processes must be started under the dedicated `podlaz-xray:podlaz-xray` execution identity instead of inheriting UID 0.
+- Generated Xray runtime config is owned by `root:podlaz-xray`, the generated config directory is mode `0750`, and the generated config file is mode `0640`. This is the documented private equivalent to `0600`: only the daemon/root owner and the dedicated Xray child group can read the generated config.
 - The packaged unit sets `UMask=0077`; daemon runtime files are private by default, and the daemon-created control socket is explicitly opened to mode `0660`.
-- In the default packaged proxy-only path, Xray child processes inherit the same unprivileged `podlaz:podlaz` service identity.
-- If a UID 0 daemon deployment is used for proxy-only mode, `podlazd` must start Xray under the dedicated `podlaz-xray:podlaz-xray` execution identity instead of letting the child inherit UID 0.
-- For the UID 0 daemon path, generated Xray runtime config is owned by `root:podlaz-xray`, the generated config directory is mode `0750`, and the generated config file is mode `0640`. This is the documented private equivalent to `0600`: only the daemon/root owner and the dedicated Xray child group can read the generated config.
-- The packaged baseline unit grants no ambient or bounding capabilities.
-- Proxy-only mode must not grant `CAP_NET_ADMIN`, `CAP_NET_RAW`, broad file capabilities, or ambient capabilities to the daemon or Xray child.
 - The dedicated `podlaz` group is the packaged socket access boundary for CLI commands that use the daemon.
-- `RuntimeDirectory=podlaz` with `RuntimeDirectoryMode=0710` lets the `podlaz` group traverse `/run/podlaz` to reach the daemon socket, but does not let group members list daemon-private runtime state.
+- `RuntimeDirectory=podlaz` with `RuntimeDirectoryMode=0711` lets local users traverse `/run/podlaz` to reach the daemon socket path, but does not let them list daemon-private runtime state.
 - Only `/run/podlaz/podlazd.sock` is intentionally exposed to `podlaz` group members for packaged CLI access.
 - Generated configs under `/run/podlaz/generated`, transaction files under `/run/podlaz/transactions`, lock files, and other daemon runtime children remain daemon-private unless a later contract explicitly changes them.
 - The daemon itself applies socket mode `0660` to `/run/podlaz/podlazd.sock`.
@@ -268,12 +265,12 @@ Packaged baseline service behavior:
 Current hardening baseline:
 
 ```ini
-User=podlaz
+User=root
 Group=podlaz
 UMask=0077
 NoNewPrivileges=yes
-CapabilityBoundingSet=
-AmbientCapabilities=
+CapabilityBoundingSet=CAP_CHOWN CAP_SETUID CAP_SETGID CAP_KILL CAP_NET_ADMIN
+AmbientCapabilities=CAP_SETUID CAP_KILL
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
@@ -282,22 +279,24 @@ RestrictSUIDSGID=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 RuntimeDirectory=podlaz
-RuntimeDirectoryMode=0710
+RuntimeDirectoryMode=0711
 StateDirectory=podlaz
 StateDirectoryMode=0700
 ```
 
 Privilege status for the current milestone:
 
-- The packaged baseline unit remains unprivileged and does not grant `CAP_NET_ADMIN`.
-- Packaged proxy-only mode may start and stop an Xray child process and mutate only daemon-owned generated runtime config state under `/run/podlaz`.
-- Daemon-owned TUN execution and recovery cleanup paths are privileged runtime paths. They require a privileged daemon deployment or future helper with `CAP_NET_ADMIN`-equivalent rights when they mutate TUN devices, routes, policy rules, DNS link state, or nftables/firewall state.
-- The CLI must not become a privileged or SUID networking mutator. It may parse arguments, render output, and send intents through the daemon socket only.
-- Any packaged service privilege expansion must update this document and the unit file in the same change, including the exact capability set and why each capability is required.
+- The packaged daemon is privileged because full-tunnel mode and daemon-owned recovery mutate Linux networking state; the CLI must remain an unprivileged client that sends intents through the daemon socket only.
+- `CAP_NET_ADMIN` is kept in the service bounding set for TUN devices, routes, policy rules, DNS link state, and nftables/firewall state, but it is not ambient. It must not be inherited by Xray.
+- `CAP_SETUID` and `CAP_SETGID` allow the daemon to drop the Xray child into the dedicated `podlaz-xray:podlaz-xray` identity and clear supplementary groups.
+- `CAP_KILL` allows the daemon to stop only the child processes it supervises and records; recovery still must not signal stale PIDs from metadata alone.
+- `CAP_CHOWN` allows the daemon to write runtime config as `root:podlaz-xray` with group-readable private file mode for the child.
+- `NoNewPrivileges=yes`, `RestrictSUIDSGID=yes`, `MemoryDenyWriteExecute=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `ProtectControlGroups=yes`, and `LockPersonality=yes` remain part of the packaged hardening baseline.
+- Packaged proxy-only mode must not grant `CAP_NET_ADMIN`, `CAP_NET_RAW`, broad file capabilities, or ambient capabilities to Xray.
 - Add `CAP_NET_RAW` only if a concrete health check or networking feature needs it and the PR documents why.
 - Broad file permission bypass capabilities must not be in the baseline.
-- `PrivateDevices=yes`, restrictive address-family filters, and kernel-tunable protections are deferred because they can conflict with future `/dev/net/tun`, netlink, routing, or nftables work and must be validated together with those features.
-- Privileged daemon release is blocked until the unit file documents the final hardening choices and justifies deviations from the documented baseline.
+- `PrivateDevices=yes`, restrictive address-family filters, and kernel-tunable protections are deferred because they can conflict with `/dev/net/tun`, netlink, routing, or nftables work and must be validated together with those features.
+- Any future packaged service privilege expansion must update this document and the unit file in the same change, including the exact capability set and why each capability is required.
 
 ## 6. Core engine process safety
 
@@ -306,10 +305,10 @@ The core engine process is a child process managed by the daemon, not the owner 
 Rules:
 
 - The core process must not inherit broad daemon privileges unless strictly required.
-- In packaged proxy-only mode, `podlazd` and Xray both run as the unprivileged `podlaz` service identity.
-- If `podlazd` is running with UID 0 for proxy-only mode, it must drop the Xray child to the dedicated `podlaz-xray:podlaz-xray` identity before starting the process.
+- In packaged mode, `podlazd` runs as `root:podlaz`, but Xray must run as the unprivileged `podlaz-xray:podlaz-xray` child identity.
 - The proxy-only Xray child must not inherit supplementary groups.
-- Generated core configs must be mode `0600` for same-user execution, or equivalently private as `root:podlaz-xray` with directory mode `0750` and file mode `0640` for the UID 0 daemon path.
+- Xray must not inherit `CAP_NET_ADMIN`, `CAP_NET_RAW`, `CAP_SETUID`, `CAP_SETGID`, `CAP_KILL`, or broad file capabilities.
+- Generated core configs must be private as `root:podlaz-xray` with directory mode `0750` and file mode `0640`.
 - Generated core configs must be written atomically.
 - Generated core configs must be treated as runtime output, not persistent source of truth.
 - Generated core configs must not be printed or logged in full by default.
