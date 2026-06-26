@@ -46,3 +46,18 @@ func TestFetchSourceRejectsUnexpectedHTTPStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestFetchSourceRejectsOversizedHTTPResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("x", 4*1024*1024+1)))
+	}))
+	defer server.Close()
+
+	_, err := FetchSource(context.Background(), Source{ID: "large", Name: "large", URL: server.URL + "/sub", Format: FormatBase64})
+	if err == nil {
+		t.Fatal("expected size-limit error")
+	}
+	if !strings.Contains(err.Error(), "content exceeds 4 MiB limit") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
