@@ -23,9 +23,10 @@ FAKE_JOURNALCTL_ARGS="${E2E_HOME}/fake-journalctl.args"
 mkdir -p "${FAKE_JOURNALCTL_DIR}"
 cat >"${FAKE_JOURNALCTL_DIR}/journalctl" <<'SH'
 #!/usr/bin/env bash
+parent_pid="${PPID}"
 printf '%s\n' "$@" >>"${PODLAZ_FAKE_JOURNALCTL_ARGS:?}"
 printf 'podlazd.service: fake follow line\n'
-while :; do
+while kill -0 "${parent_pid}" 2>/dev/null; do
   sleep 1
 done
 SH
