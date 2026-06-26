@@ -109,7 +109,7 @@ func assertDedicatedCoreIdentity(t *testing.T, identity coreExecutionIdentity) {
 		t.Fatalf("unexpected dedicated identity: %#v", identity)
 	}
 
-	cmd := exec.Command("xray")
+	cmd := exec.Command("core-test")
 	configureCoreCommandCredential(cmd, identity)
 	if cmd.SysProcAttr == nil || cmd.SysProcAttr.Credential == nil {
 		t.Fatalf("expected command credential to be configured")
@@ -118,8 +118,11 @@ func assertDedicatedCoreIdentity(t *testing.T, identity coreExecutionIdentity) {
 	if credential.Uid != 997 || credential.Gid != 996 {
 		t.Fatalf("unexpected command credential: %#v", credential)
 	}
-	if len(credential.Groups) != 0 || !credential.NoSetGroups {
-		t.Fatalf("expected supplementary groups to be disabled, got %#v", credential)
+	if credential.NoSetGroups {
+		t.Fatalf("expected supplementary groups to be set explicitly, got %#v", credential)
+	}
+	if len(credential.Groups) != 0 {
+		t.Fatalf("expected empty supplementary groups, got %#v", credential.Groups)
 	}
 
 	permissions := identity.runtimeConfigPermissions()

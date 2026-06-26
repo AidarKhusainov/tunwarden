@@ -42,6 +42,18 @@ func TestTunTransactionWaitsForExplicitCommitAfterApplyAndVerify(t *testing.T) {
 	}
 }
 
+func TestTunTransactionDoesNotPersistPreApplyRollbackOwnership(t *testing.T) {
+	runtimeDir := t.TempDir()
+	executor := &preApplyInspectingTunExecutor{t: t, runtimeDir: runtimeDir}
+	_, err := runTunTransaction(context.Background(), runtimeDir, profile.Profile{ID: "test-profile"}, transactionPlanWithServerBypassForTest(), executor, fixedClock())
+	if err != nil {
+		t.Fatalf("run TUN transaction failed: %v", err)
+	}
+	if !executor.inspected {
+		t.Fatal("expected executor to inspect the crash-window transaction state")
+	}
+}
+
 func TestTunTransactionRollsBackOnlyAppliedStepsAfterPartialApplyFailure(t *testing.T) {
 	runtimeDir := t.TempDir()
 	executor := &recordingTunExecutor{applyErr: errors.New("route apply failed")}
@@ -86,6 +98,36 @@ func TestTunTransactionRollsBackVerifyFailure(t *testing.T) {
 		t.Fatalf("unexpected executor calls: %#v", executor.calls)
 	}
 }
+
+type preApplyInspectingTunExecutor struct {
+	t          *testing.T
+	runtimeDir string
+	inspected  bool
+}
+
+func (e *preApplyInspectingTunExecutor) Apply(context.Context, planner.TunPlan) ([]netexecutor.Step, error) {
+	e.t.Helper()
+	e.inspected = true
+	summaries, warnings := txstate.ScanTransactions(e.runtimeDir)
+	if len(warnings) > 0 || len(summaries) != 1 {
+		e.t.Fatalf("unexpected transaction scan during apply: summaries=%#v warnings=%#v", summaries, warnings)
+	}
+	if summaries[0].State != txstate.TransactionApplying || !summaries[0].RequiresCleanup {
+		e.t.Fatalf("expected applying transaction during apply, got %#v", summaries[0])
+	}
+	tx, _, err := (txstate.TransactionStore{RuntimeDir: e.runtimeDir}).Load(summaries[0].ID)
+	if err != nil {
+		e.t.Fatalf("load transaction during apply: %v", err)
+	}
+	if len(tx.Rollback.Routes) != 0 || len(tx.Rollback.PolicyRules) != 0 || len(tx.Rollback.TUN) != 0 || len(tx.Rollback.DNS) != 0 || len(tx.Rollback.NFTables) != 0 {
+		e.t.Fatalf("pre-apply transaction must not claim rollback ownership, got %#v", tx.Rollback)
+	}
+	return nil, nil
+}
+
+func (e *preApplyInspectingTunExecutor) Verify(context.Context, planner.TunPlan) error { return nil }
+
+func (e *preApplyInspectingTunExecutor) Rollback(context.Context, planner.TunPlan) error { return nil }
 
 type recordingTunExecutor struct {
 	applyErr  error
@@ -136,6 +178,26 @@ func transactionPlanForTest() planner.TunPlan {
 		}},
 		Steps: []string{"Plan TUN interface podlaz0"},
 	}
+}
+
+func transactionPlanWithServerBypassForTest() planner.TunPlan {
+	plan := transactionPlanForTest()
+	plan.Routes = append(plan.Routes, planner.TunRoutePlan{
+		Family:      "ipv4",
+		Destination: "203.0.113.10/32",
+		Table:       planner.MainRoutingTable,
+		Gateway:     "192.0.2.1",
+		Interface:   "eth0",
+		Action:      "add",
+	})
+	plan.PolicyRules = append(plan.PolicyRules, planner.TunPolicyRulePlan{
+		Family:   "ipv4",
+		Priority: planner.ServerRulePriority,
+		Selector: "to 203.0.113.10/32",
+		Table:    planner.MainRoutingTable,
+		Action:   "add",
+	})
+	return plan
 }
 
 func fixedClock() func() time.Time {

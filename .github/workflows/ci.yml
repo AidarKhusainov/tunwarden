@@ -152,16 +152,19 @@ jobs:
           dpkg-deb --fsys-tarfile "${DEV_DEB}" | tar -xOf - ./usr/lib/sysusers.d/podlaz.conf > /tmp/podlaz.sysusers
           grep -F 'u podlaz ' /tmp/podlaz.sysusers
           grep -F 'u podlaz-xray ' /tmp/podlaz.sysusers
-          grep -F 'User=root' /tmp/podlazd.service
-          grep -F 'Group=podlaz' /tmp/podlazd.service
-          grep -F 'UMask=0077' /tmp/podlazd.service
-          grep -F 'RuntimeDirectory=podlaz' /tmp/podlazd.service
-          grep -F 'RuntimeDirectoryMode=0711' /tmp/podlazd.service
-          grep -F 'StateDirectory=podlaz' /tmp/podlazd.service
-          grep -F 'StateDirectoryMode=0700' /tmp/podlazd.service
-          grep -F 'CapabilityBoundingSet=CAP_CHOWN CAP_SETUID CAP_SETGID CAP_NET_ADMIN' /tmp/podlazd.service
-          grep -Fx 'AmbientCapabilities=' /tmp/podlazd.service
-          ! grep -F 'AmbientCapabilities=CAP_' /tmp/podlazd.service
+          grep -Fx 'User=root' /tmp/podlazd.service
+          grep -Fx 'Group=podlaz' /tmp/podlazd.service
+          grep -Fx 'UMask=0077' /tmp/podlazd.service
+          grep -Fx 'RuntimeDirectory=podlaz' /tmp/podlazd.service
+          grep -Fx 'RuntimeDirectoryMode=0711' /tmp/podlazd.service
+          grep -Fx 'StateDirectory=podlaz' /tmp/podlazd.service
+          grep -Fx 'StateDirectoryMode=0700' /tmp/podlazd.service
+          grep -Fx 'NoNewPrivileges=yes' /tmp/podlazd.service
+          grep -Fx 'CapabilityBoundingSet=CAP_CHOWN CAP_SETUID CAP_SETGID CAP_KILL CAP_NET_ADMIN' /tmp/podlazd.service
+          grep -Fx 'AmbientCapabilities=CAP_SETUID CAP_KILL' /tmp/podlazd.service
+          grep -Fx 'RestrictSUIDSGID=yes' /tmp/podlazd.service
+          grep -Fx 'MemoryDenyWriteExecute=yes' /tmp/podlazd.service
+          ! grep -E '^AmbientCapabilities=.*CAP_(NET_ADMIN|SETGID|SYS_ADMIN)' /tmp/podlazd.service
           ! grep -R -E 'systemctl[[:space:]]+(start|enable)[[:space:]]+podlazd|deb-systemd-invoke[[:space:]]+start[[:space:]]+podlazd' packaging/debian
 
       - name: Validate generated shell completions
