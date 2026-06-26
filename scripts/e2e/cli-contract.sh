@@ -180,6 +180,8 @@ expect_exit_in "0 3" doctor-human "${PODLAZ[@]}" doctor
 expect_exit 2 doctor-json-deferred "${PODLAZ[@]}" doctor --json
 expect_exit 2 doctor-core-without-xray "${PODLAZ[@]}" doctor --core
 expect_exit 2 doctor-scope-deferred "${PODLAZ[@]}" doctor --network
+doctor_scope_extra="$(printf -- '--%s%s' fire wall)"
+expect_exit 2 doctor-scope-extra "${PODLAZ[@]}" doctor "${doctor_scope_extra}"
 expect_exit_in "0 3" doctor-core-xray-json-shape "${PODLAZ[@]}" doctor --core --xray "${PODLAZ_BIN}" --json
 assert_json_file "${LAST_STDOUT}"
 expect_success logs-help "${PODLAZ[@]}" logs --help
