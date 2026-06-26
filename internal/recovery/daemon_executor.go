@@ -112,7 +112,7 @@ func (e DaemonCleanupExecutor) cleanupTransactionState(ctx context.Context, cand
 		return results
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		results = append(results, failed(candidate, fmt.Errorf("remove transaction state %s: %w", path)))
+		results = append(results, failed(candidate, fmt.Errorf("remove transaction state %s: %w", path, err)))
 		return results
 	}
 	results = append(results, recovered(candidate))
