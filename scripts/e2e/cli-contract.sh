@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/e2e.sh
 source "${SCRIPT_DIR}/lib/e2e.sh"
 
-require_cmd bash go python3 base64 grep awk sed mktemp
+require_cmd bash go python3 base64 grep awk sed mktemp timeout
 build_podlaz_binary
 setup_isolated_xdg "cli-contract"
 
@@ -185,6 +185,7 @@ assert_json_file "${LAST_STDOUT}"
 expect_success logs-help "${PODLAZ[@]}" logs --help
 expect_exit 2 logs-json-deferred "${PODLAZ[@]}" logs --json
 expect_exit 2 logs-invalid-since "${PODLAZ[@]}" logs --since
+expect_exit_in "0 1 124" logs-follow-bounded timeout 3 "${PODLAZ[@]}" logs --follow
 expect_success recover-help "${PODLAZ[@]}" recover --help
 expect_exit_in "0 3" recover-dry-run "${PODLAZ[@]}" recover
 expect_exit 2 recover-execute-without-yes "${PODLAZ[@]}" recover --execute
