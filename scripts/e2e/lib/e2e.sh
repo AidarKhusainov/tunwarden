@@ -172,7 +172,7 @@ assert_artifacts_do_not_contain_sensitive_values() {
   scan_artifact_needle() {
     local needle="$1"
     [[ -n "${needle}" ]] || return 0
-    if grep -RIFn --exclude="$(basename "${report}")" -- "${needle}" "${E2E_ARTIFACT_DIR}" >>"${report}" 2>/dev/null; then
+    if grep -RIlF --exclude="$(basename "${report}")" -- "${needle}" "${E2E_ARTIFACT_DIR}" >>"${report}" 2>/dev/null; then
       found=1
     fi
   }
@@ -188,7 +188,7 @@ assert_artifacts_do_not_contain_sensitive_values() {
   done
 
   if [[ "${found}" == "1" ]]; then
-    sed -e 's/^/redaction leak: /' "${report}" >&2
+    sort -u "${report}" | sed -e 's/^/redaction leak file: /' >&2
     fail "${label}: sensitive value appeared in e2e artifacts"
   fi
   printf 'No configured sensitive values were found in %s\n' "${E2E_ARTIFACT_DIR}" >"${report}"
