@@ -27,7 +27,7 @@ PACKAGE_INSTALLED=0
 SERVICE_TOUCHED=0
 ACTIVE_CONNECTION=0
 
-mask_multiline_secret() {
+mask_multiline_sensitive() {
   local value="${1:-}"
   [[ -n "${value}" ]] || return 0
   mask_value "${value}"
@@ -37,8 +37,8 @@ mask_multiline_secret() {
   done <<<"${value}"
 }
 
-for secret in "${PODLAZ_E2E_PROFILE_URI}" "${PODLAZ_E2E_PROFILE_URI_LIST}" "${PODLAZ_E2E_EXPECTED_EGRESS_IP}"; do
-  mask_multiline_secret "${secret}"
+for sensitive in "${PODLAZ_E2E_PROFILE_URI}" "${PODLAZ_E2E_PROFILE_URI_LIST}" "${PODLAZ_E2E_EXPECTED_EGRESS_IP}"; do
+  mask_multiline_sensitive "${sensitive}"
 done
 
 build_podlaz_binary
@@ -53,7 +53,7 @@ run_podlaz_as_socket_user() {
     /usr/bin/podlaz "$@"
 }
 
-capture_secret_command() {
+capture_sensitive_command() {
   local name="$1"
   shift
   local safe restore_errexit=0
@@ -64,7 +64,7 @@ capture_secret_command() {
   E2E_STEP=$((E2E_STEP + 1))
   LAST_STDOUT="${E2E_ARTIFACT_DIR}/$(printf '%03d' "${E2E_STEP}")-${safe}.stdout"
   LAST_STDERR="${E2E_ARTIFACT_DIR}/$(printf '%03d' "${E2E_STEP}")-${safe}.stderr"
-  log "${name}: command contains secret material; arguments are intentionally not printed"
+  log "${name}: command arguments are intentionally not printed"
   set +e
   "$@" >"${LAST_STDOUT}" 2>"${LAST_STDERR}"
   local code=$?
@@ -74,11 +74,11 @@ capture_secret_command() {
   return "${code}"
 }
 
-expect_secret_success() {
+expect_sensitive_success() {
   local name="$1"
   shift
   set +e
-  capture_secret_command "${name}" "$@"
+  capture_sensitive_command "${name}" "$@"
   local code=$?
   set -e
   [[ "${code}" == "0" ]] || fail "${name} failed with exit code ${code}"
@@ -188,42 +188,49 @@ assert_proxy_cleanup() {
 assert_loopback_listeners() {
   local phase="$1"
   local listeners="${E2E_ARTIFACT_DIR}/data-plane-${phase}-listeners.txt"
-  ss -ltnp >"${listeners}" 2>&1 || fail "${phase}: failed to inspect TCP listeners"
-  grep -E '127\.0\.0\.1:1080\b' "${listeners}" >/dev/null || fail "${phase}: SOCKS listener is not bound on 127.0.0.1:1080"
-  grep -E '127\.0\.0\.1:8080\b' "${listeners}" >/dev/null || fail "${phase}: HTTP listener is not bound on 127.0.0.1:8080"
-  if grep -E '(^|[[:space:]])(0\.0\.0\.0|\*):1080\b' "${listeners}" >/dev/null; then
+  local attempt
+  for attempt in $(seq 1 100); do
+    ss -ltnp >"${listeners}" 2>&1 || fail "${phase}: failed to inspect TCP listeners"
+    if grep -E '(^|[[:space:]])127\.0\.0\.1:1080([[:space:]]|$)' "${listeners}" >/dev/null && grep -E '(^|[[:space:]])127\.0\.0\.1:8080([[:space:]]|$)' "${listeners}" >/dev/null; then
+      break
+    fi
+    sleep 0.1
+  done
+  grep -E '(^|[[:space:]])127\.0\.0\.1:1080([[:space:]]|$)' "${listeners}" >/dev/null || fail "${phase}: SOCKS listener is not bound on 127.0.0.1:1080"
+  grep -E '(^|[[:space:]])127\.0\.0\.1:8080([[:space:]]|$)' "${listeners}" >/dev/null || fail "${phase}: HTTP listener is not bound on 127.0.0.1:8080"
+  if grep -E '(^|[[:space:]])(0\.0\.0\.0|\*):1080([[:space:]]|$)' "${listeners}" >/dev/null; then
     fail "${phase}: SOCKS listener is exposed beyond loopback"
   fi
-  if grep -E '(^|[[:space:]])(0\.0\.0\.0|\*):8080\b' "${listeners}" >/dev/null; then
+  if grep -E '(^|[[:space:]])(0\.0\.0\.0|\*):8080([[:space:]]|$)' "${listeners}" >/dev/null; then
     fail "${phase}: HTTP listener is exposed beyond loopback"
   fi
 }
 
 assert_no_stale_state() {
   local phase="$1"
-  expect_secret_success "status-${phase}-after-disconnect" run_podlaz_as_socket_user status
-  expect_secret_success "recover-${phase}-dry-run" run_podlaz_as_socket_user recover
+  expect_sensitive_success "status-${phase}-after-disconnect" run_podlaz_as_socket_user status
+  expect_sensitive_success "recover-${phase}-dry-run" run_podlaz_as_socket_user recover
   grep -F "No podlaz-owned recovery candidates found." "${LAST_STDOUT}" >/dev/null || fail "${phase}: recovery dry-run found podlaz-owned cleanup candidates"
 }
 
 connect_profile() {
   local label="$1" id="$2"
   shift 2
-  expect_secret_success "connect-${label}" run_podlaz_as_socket_user connect "$@" "${id}"
+  expect_sensitive_success "connect-${label}" run_podlaz_as_socket_user connect "$@" "${id}"
   ACTIVE_CONNECTION=1
-  capture_secret_command "status-${label}" run_podlaz_as_socket_user status || true
+  capture_sensitive_command "status-${label}" run_podlaz_as_socket_user status || true
 }
 
 disconnect_profile() {
   local label="$1"
-  expect_secret_success "disconnect-${label}" run_podlaz_as_socket_user disconnect
+  expect_sensitive_success "disconnect-${label}" run_podlaz_as_socket_user disconnect
   ACTIVE_CONNECTION=0
 }
 
 log "import primary real profile for data-plane checks"
 PRIMARY_URI="$(first_profile_uri)"
 assert_nonempty "${PRIMARY_URI}" "primary real profile URI"
-expect_secret_success import-primary-profile "${PODLAZ[@]}" profile import "${PRIMARY_URI}"
+expect_sensitive_success import-primary-profile "${PODLAZ[@]}" profile import "${PRIMARY_URI}"
 PROFILE_ID="$(awk '/^Imported profile:/ {print $3}' "${LAST_STDOUT}")"
 assert_nonempty "${PROFILE_ID}" "primary profile id"
 assert_not_contains "${LAST_STDOUT}" "${PRIMARY_URI}"
