@@ -16,9 +16,10 @@ There are no manual inputs. A normal run executes these jobs in order:
 
 1. `CLI contract e2e`
 2. `Package and service e2e`
-3. `Maximum server coverage e2e`
+3. `Proxy data-plane e2e`
+4. `Maximum server coverage e2e`
 
-This is the default release/acceptance path for the dedicated E2E server.
+Each job depends on the previous job. If an upstream job fails or is skipped, the downstream dependency chain does not continue unless the workflow adds an explicit conditional override. This is the default release/acceptance path for the dedicated E2E server.
 
 ## Runner contract
 
@@ -76,6 +77,7 @@ PODLAZ_E2E_ENABLE_TUN=true|false                  # default: true
 PODLAZ_E2E_ENABLE_CRASH_TESTS=true|false          # default: true
 PODLAZ_E2E_ENABLE_HOST_DISRUPTION=auto|true|false # default: auto
 PODLAZ_E2E_STABILITY_MINUTES=5                    # default: 5
+PODLAZ_E2E_RELIABILITY_CYCLES=100                 # default: 0
 PODLAZ_E2E_EXPECT_IPV6=observe|blocked|egress     # default: observe
 PODLAZ_E2E_PUBLIC_IP_CHECK_URL
 PODLAZ_E2E_PUBLIC_IPV6_CHECK_URL
@@ -86,7 +88,7 @@ PODLAZ_E2E_HOST_WRAPPER_TIMEOUT_SECONDS
 PODLAZ_E2E_HOST_DISRUPTION_MODE=proxy-only|tun
 ```
 
-The default is intentionally production-like: TUN checks, crash probes, and a short stability probe are enabled. Host-disruption probes are `auto`: the suite runs safe host-owned wrappers when they exist and records missing wrappers without failing the run. The packaged daemon owns the privileged TUN, route, DNS, and nftables mutations, while Xray and the TUN adapter run under the dedicated `podlaz-xray` child identity.
+The default is intentionally production-like: TUN checks, crash probes, and a short stability probe are enabled. The proxy data-plane reliability loop is disabled by default and can be enabled by setting `PODLAZ_E2E_RELIABILITY_CYCLES` to the desired non-negative cycle count, for example `100` for release/manual evidence. Host-disruption probes are `auto`: the suite runs safe host-owned wrappers when they exist and records missing wrappers without failing the run. The packaged daemon owns the privileged TUN, route, DNS, and nftables mutations, while Xray and the TUN adapter run under the dedicated `podlaz-xray` child identity.
 
 ## Job 1: CLI contract
 
@@ -107,6 +109,7 @@ Scope:
 - exercises subscription add/update/list/show/delete paths with a local `file://` fixture;
 - exercises read-only plan output for proxy-only and TUN modes;
 - exercises deferred JSON and invalid-argument exit-code gates for daemon-backed commands;
+- exercises deferred doctor scopes and bounded logs follow flags;
 - writes stdout/stderr diagnostics for every command to the workflow artifact directory.
 
 This job does not require VPN credentials and does not intentionally mutate host networking.
@@ -131,7 +134,31 @@ Scope:
 - captures `systemctl status` and journald diagnostics;
 - validates same-version reinstall and package removal.
 
-## Job 3: Maximum server coverage
+## Job 3: Proxy data-plane
+
+Script:
+
+```bash
+bash scripts/e2e/data-plane.sh
+```
+
+Scope:
+
+- requires `PODLAZ_E2E_PROFILE_URI` or at least one non-empty line in `PODLAZ_E2E_PROFILE_URI_LIST`;
+- imports one configured real profile into isolated user state and validates it for proxy-only mode;
+- builds and installs the local Debian package for the native runner architecture;
+- starts `podlazd.service`;
+- runs an explicit `connect --mode proxy-only` lifecycle;
+- sends external IPv4 HTTP requests through both the SOCKS listener at `127.0.0.1:1080` and the HTTP listener at `127.0.0.1:8080`;
+- verifies proxy listeners are bound to loopback and are not exposed on all interfaces;
+- verifies proxy cleanup after disconnect by asserting SOCKS and HTTP proxy traffic no longer succeeds;
+- runs one default `connect <profile-id>` lifecycle and verifies the same proxy-only data-plane behavior;
+- checks status and recovery dry-run after disconnect to catch stale podlaz-owned state;
+- optionally repeats the proxy-only lifecycle `PODLAZ_E2E_RELIABILITY_CYCLES` times, including SOCKS/HTTP egress and stale-state checks in each cycle.
+
+The reliability loop is a gated release/manual probe. Set `PODLAZ_E2E_RELIABILITY_CYCLES=100` when issue or release evidence requires the 100-cycle mode; leave it unset or `0` for the normal one-click path.
+
+## Job 4: Maximum server coverage
 
 Script:
 

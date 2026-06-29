@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/e2e.sh
 source "${SCRIPT_DIR}/lib/e2e.sh"
 
-require_cmd bash go python3 base64 grep awk sed mktemp
+require_cmd bash go python3 base64 grep awk sed mktemp timeout
 build_podlaz_binary
 setup_isolated_xdg "cli-contract"
 
@@ -17,6 +17,33 @@ VALID_PROFILE_URI='vless://00000000-0000-0000-0000-000000000002@example.net:443?
 LOCAL_URI='vless://00000000-0000-0000-0000-000000000003@uri.example.com:443?type=tcp&security=tls&encryption=none#plain-cli'
 LOCAL_B64_URI='vless://00000000-0000-0000-0000-000000000004@base64.example.com:443?type=tcp&security=tls&encryption=none#base64-cli'
 SUB_URI='vless://00000000-0000-0000-0000-000000000005@subscription.example.com:443?type=tcp&security=tls&encryption=none#sub-cli'
+
+FAKE_JOURNALCTL_DIR="${E2E_HOME}/fake-journalctl-bin"
+FAKE_JOURNALCTL_ARGS="${E2E_HOME}/fake-journalctl.args"
+mkdir -p "${FAKE_JOURNALCTL_DIR}"
+cat >"${FAKE_JOURNALCTL_DIR}/journalctl" <<'SH'
+#!/usr/bin/env bash
+parent_pid="${PPID}"
+printf '%s\n' "$@" >>"${PODLAZ_FAKE_JOURNALCTL_ARGS:?}"
+printf 'podlazd.service: fake follow line\n'
+while kill -0 "${parent_pid}" 2>/dev/null; do
+  sleep 1
+done
+SH
+chmod +x "${FAKE_JOURNALCTL_DIR}/journalctl"
+
+expect_logs_follow_timeout() {
+  local name="$1"
+  shift
+  : >"${FAKE_JOURNALCTL_ARGS}"
+  expect_exit 124 "${name}" timeout --kill-after=2 3 env \
+    "PATH=${FAKE_JOURNALCTL_DIR}:${PATH}" \
+    "PODLAZ_FAKE_JOURNALCTL_ARGS=${FAKE_JOURNALCTL_ARGS}" \
+    "${PODLAZ[@]}" logs "$@"
+  assert_contains "${LAST_STDOUT}" "podlaz daemon logs"
+  assert_contains "${LAST_STDOUT}" "podlazd.service: fake follow line"
+  assert_contains "${FAKE_JOURNALCTL_ARGS}" "--follow"
+}
 
 cat >"${FIXTURES}/xray-vless.json" <<'JSON'
 {
@@ -179,12 +206,17 @@ expect_success doctor-help "${PODLAZ[@]}" doctor --help
 expect_exit_in "0 3" doctor-human "${PODLAZ[@]}" doctor
 expect_exit 2 doctor-json-deferred "${PODLAZ[@]}" doctor --json
 expect_exit 2 doctor-core-without-xray "${PODLAZ[@]}" doctor --core
-expect_exit 2 doctor-scope-deferred "${PODLAZ[@]}" doctor --network
+expect_exit 2 doctor-scope-network "${PODLAZ[@]}" doctor --network
+expect_exit 2 doctor-scope-dns "${PODLAZ[@]}" doctor --dns
+expect_exit 2 doctor-scope-routes "${PODLAZ[@]}" doctor --routes
+expect_exit 2 doctor-scope-firewall "${PODLAZ[@]}" doctor --firewall
 expect_exit_in "0 3" doctor-core-xray-json-shape "${PODLAZ[@]}" doctor --core --xray "${PODLAZ_BIN}" --json
 assert_json_file "${LAST_STDOUT}"
 expect_success logs-help "${PODLAZ[@]}" logs --help
 expect_exit 2 logs-json-deferred "${PODLAZ[@]}" logs --json
 expect_exit 2 logs-invalid-since "${PODLAZ[@]}" logs --since
+expect_logs_follow_timeout logs-follow-short-bounded -f
+expect_logs_follow_timeout logs-follow-long-bounded --follow
 expect_success recover-help "${PODLAZ[@]}" recover --help
 expect_exit_in "0 3" recover-dry-run "${PODLAZ[@]}" recover
 expect_exit 2 recover-execute-without-yes "${PODLAZ[@]}" recover --execute
