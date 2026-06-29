@@ -206,11 +206,31 @@ assert_loopback_listeners() {
   fi
 }
 
+assert_recovery_candidates_empty() {
+  local phase="$1"
+  python3 - "${LAST_STDOUT}" "${phase}" <<'PY'
+import json
+import sys
+
+path, phase = sys.argv[1], sys.argv[2]
+with open(path, encoding="utf-8") as handle:
+    payload = json.load(handle)
+candidates = payload.get("recovery", {}).get("candidates", [])
+if candidates:
+    print(f"{phase}: recovery dry-run found podlaz-owned cleanup candidates", file=sys.stderr)
+    print(json.dumps(candidates, ensure_ascii=False, indent=2), file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 assert_no_stale_state() {
   local phase="$1"
   expect_sensitive_success "status-${phase}-after-disconnect" run_podlaz_as_socket_user status
-  expect_sensitive_success "recover-${phase}-dry-run" run_podlaz_as_socket_user recover
-  grep -F "No podlaz-owned recovery candidates found." "${LAST_STDOUT}" >/dev/null || fail "${phase}: recovery dry-run found podlaz-owned cleanup candidates"
+  grep -F "Connection: inactive" "${LAST_STDOUT}" >/dev/null || fail "${phase}: status is not inactive after disconnect"
+  grep -F "Stale state: none" "${LAST_STDOUT}" >/dev/null || fail "${phase}: status reports stale state after disconnect"
+  expect_sensitive_success "recover-${phase}-dry-run-json" run_podlaz_as_socket_user recover --json
+  assert_json_file "${LAST_STDOUT}"
+  assert_recovery_candidates_empty "${phase}"
 }
 
 connect_profile() {
