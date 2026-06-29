@@ -162,6 +162,38 @@ mask_value() {
   fi
 }
 
+assert_artifacts_do_not_contain_sensitive_values() {
+  local label="$1"
+  shift
+  local report="${E2E_ARTIFACT_DIR}/$(safe_name "${label}")-redaction-scan.txt"
+  local found=0
+  : >"${report}"
+
+  scan_artifact_needle() {
+    local needle="$1"
+    [[ -n "${needle}" ]] || return 0
+    if grep -RIlF --exclude="$(basename "${report}")" -- "${needle}" "${E2E_ARTIFACT_DIR}" >>"${report}" 2>/dev/null; then
+      found=1
+    fi
+  }
+
+  local value line
+  for value in "$@"; do
+    if [[ "${value}" != *$'\n'* ]]; then
+      scan_artifact_needle "${value}"
+    fi
+    while IFS= read -r line; do
+      scan_artifact_needle "${line}"
+    done <<<"${value}"
+  done
+
+  if [[ "${found}" == "1" ]]; then
+    sort -u "${report}" | sed -e 's/^/redaction leak file: /' >&2
+    fail "${label}: sensitive value appeared in e2e artifacts"
+  fi
+  printf 'No configured sensitive values were found in %s\n' "${E2E_ARTIFACT_DIR}" >"${report}"
+}
+
 write_vless_fixtures() {
   local dir="$1"
   mkdir -p "${dir}"

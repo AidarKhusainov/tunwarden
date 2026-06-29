@@ -307,4 +307,6 @@ else
   log "proxy-only reliability cycle gate is disabled; set PODLAZ_E2E_RELIABILITY_CYCLES=100 for release/manual evidence"
 fi
 
+assert_artifacts_do_not_contain_sensitive_values "data-plane" "${PODLAZ_E2E_PROFILE_URI}" "${PODLAZ_E2E_PROFILE_URI_LIST}"
+
 log "data-plane e2e completed"
