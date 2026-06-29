@@ -100,7 +100,7 @@ line 26 "existing contract" "No-supported-profiles behavior is documented; deter
 line 27 "existing test" "Mixed supported/unsupported URI-list entries are covered."
 line 28 "existing test" "Duplicate import atomicity is covered; existing profile collision remains a related gap."
 line 29 "existing unit evidence" "VMess, Trojan, and Shadowsocks share URI import are covered by unit tests."
-line 30 "new tests and runtime artifact scan" "Unit-style shell tests prove no-leak success, leak detection, multiline configured values, and no secret echoing; data-plane E2E scans real profile URI inputs."
+line 30 "new partial evidence" "Data-plane E2E scans configured real profile URI inputs only, with deterministic tests for multiline values and no matched-value echoing. Subscription URLs, HTTP header values, generated runtime config material, and provider-private values remain gaps."
 line 31 "existing evidence" "Real-profile artifacts store profile IDs, not raw profile URIs."
 line 32 "documented evidence" "Default runner matrix boundaries are documented."
 line 33 "existing gated probe" "Host-disruption probes require explicit host-owned wrappers."
@@ -131,7 +131,7 @@ line 57 "existing contract" "Unsupported-only import/subscription behavior is do
 line 58 "new unit test" "HTTP 404/500 and response size-limit contracts are covered."
 line 59 "existing code evidence" "Top-level share-URI import dispatch is implemented."
 line 60 "existing evidence" "Server coverage records every imported profile for manual protocol-family review."
-line 61 "new tests and runtime artifact scan" "Shell tests prove leak detection does not print matched secret values; data-plane E2E fails when configured real profile URI inputs appear in uploaded artifacts."
+line 61 "new partial evidence" "Data-plane E2E fails when configured real profile URI inputs appear in uploaded artifacts. Subscription URL/header inputs, generated runtime config material, and provider-private values are not covered by this scan yet."
 
 log "wrote issue #160 coverage map to ${REPORT}"
 cat "${REPORT}"
