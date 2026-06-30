@@ -83,6 +83,24 @@ func TestConnectHandlerConflictRaceFromLifecycleConnectRemainsConflict(t *testin
 	}
 }
 
+func TestConnectHandlerSentinelConflictDoesNotRequireActiveStatus(t *testing.T) {
+	lifecycle := &staticLifecycle{connectErr: errConnectionAlreadyActive, status: api.StatusResponse{Connection: "inactive"}}
+	mux := http.NewServeMux()
+	registerLifecycleHandlers(mux, lifecycle)
+
+	req := httptest.NewRequest(http.MethodPost, api.ConnectPath, strings.NewReader(validConnectBody(planner.ModeTun)))
+	rr := httptest.NewRecorder()
+
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d: %s", rr.Code, http.StatusConflict, rr.Body.String())
+	}
+	if lifecycle.connectCalls != 1 {
+		t.Fatalf("connect lifecycle called %d time(s), want 1", lifecycle.connectCalls)
+	}
+}
+
 func validConnectBody(mode string) string {
 	return `{"mode":"` + mode + `","profile":{"id":"profile-1","name":"vpn","source":"manual","engine":"xray","server":"vpn.example","port":443,"protocol":"vless"}}`
 }
