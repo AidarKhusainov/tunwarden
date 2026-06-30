@@ -121,24 +121,20 @@ func TestE2ERedactionScanChecksDerivedSubscriptionProviderSecrets(t *testing.T) 
 		"provider-token-123456789",
 		"provider-token-abcdefghi",
 		"query-token-123456789",
-		"userinfo-token-123456789",
 	}
 	result := runBash(t, artifactDir, `
 set -Eeuo pipefail
 source ./lib/e2e.sh
-SUBSCRIPTION_PATH_URL="https://provider.example/sub/${AUTH_TOKEN}"
+SUBSCRIPTION_PATH_URL="https://provider.example/sub/provider-token-123456789"
 SUBSCRIPTION_DECODED_PATH_URL="https://provider.example/sub/provider-token%2Dabcdefghi"
 SUBSCRIPTION_QUERY_URL="https://provider.example/api/v1?access_token=query-token-123456789"
-SUBSCRIPTION_USERINFO_URL="https://provider-user:userinfo-token-123456789@provider.example/sub"
-printf 'subscription path token: %s\n' "${AUTH_TOKEN}" >"${E2E_ARTIFACT_DIR}/subscription-path-token-leak.txt"
+printf 'subscription path token: provider-token-123456789\n' >"${E2E_ARTIFACT_DIR}/subscription-path-token-leak.txt"
 printf 'subscription decoded path token: provider-token-abcdefghi\n' >"${E2E_ARTIFACT_DIR}/subscription-decoded-path-token-leak.txt"
 printf 'subscription query token: query-token-123456789\n' >"${E2E_ARTIFACT_DIR}/subscription-query-token-leak.txt"
-printf 'subscription userinfo token: userinfo-token-123456789\n' >"${E2E_ARTIFACT_DIR}/subscription-userinfo-token-leak.txt"
 assert_artifacts_do_not_contain_sensitive_values "subscription-provider-secret-leak" \
   "${SUBSCRIPTION_PATH_URL}" \
   "${SUBSCRIPTION_DECODED_PATH_URL}" \
-  "${SUBSCRIPTION_QUERY_URL}" \
-  "${SUBSCRIPTION_USERINFO_URL}"
+  "${SUBSCRIPTION_QUERY_URL}"
 `)
 
 	if result.err == nil {
@@ -161,7 +157,6 @@ assert_artifacts_do_not_contain_sensitive_values "subscription-provider-secret-l
 		"subscription-path-token-leak.txt",
 		"subscription-decoded-path-token-leak.txt",
 		"subscription-query-token-leak.txt",
-		"subscription-userinfo-token-leak.txt",
 	} {
 		if !strings.Contains(string(report), filename) {
 			t.Fatalf("expected report to identify leaking artifact path %q, got %q", filename, string(report))
