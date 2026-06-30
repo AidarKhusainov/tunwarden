@@ -92,6 +92,7 @@ func TestFullTunnelTransactionRunnerFailureBranchesRollbackAppliedState(t *testi
 				h.startCoreErr = errFullTunnelConnectionBecameActive
 			},
 			wantErr:             "connection already active; rolled back newly applied TUN transaction",
+			wantErrIs:           errFullTunnelConnectionBecameActive,
 			wantExecutorCalls:   "apply,verify,rollback",
 			wantCoreStarted:     1,
 			wantRolledBackState: true,
@@ -168,6 +169,7 @@ func TestFullTunnelTransactionRunnerFailureBranchesRollbackAppliedState(t *testi
 				h.commitErr = errFullTunnelCoreExitedBeforeCommit
 			},
 			wantErr:             "rolled back applied podlaz-owned networking state",
+			wantErrIs:           errFullTunnelCoreExitedBeforeCommit,
 			wantExecutorCalls:   "apply,verify,rollback",
 			wantCoreStarted:     1,
 			wantCoreStopped:     0,
