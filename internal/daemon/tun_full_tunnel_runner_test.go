@@ -12,6 +12,17 @@ import (
 	txstate "github.com/AidarKhusainov/podlaz/internal/state"
 )
 
+var (
+	errRunnerApplyFailed           = errors.New("apply failed")
+	errRunnerCoreStartFailed       = errors.New("core start failed")
+	errRunnerCoreMetadataFailed    = errors.New("core metadata failed")
+	errRunnerCoreStartupFailed     = errors.New("core exited during startup")
+	errRunnerAdapterStartFailed    = errors.New("adapter start failed")
+	errRunnerAdapterMetadataFailed = errors.New("adapter metadata failed")
+	errRunnerConnectivityFailed    = errors.New("connectivity failed")
+	errRunnerCommitFailed          = errors.New("commit failed")
+)
+
 func TestFullTunnelTransactionRunnerCommitsActiveState(t *testing.T) {
 	h := newFullTunnelRunnerHarness(t)
 
@@ -43,6 +54,7 @@ func TestFullTunnelTransactionRunnerFailureBranchesRollbackAppliedState(t *testi
 		name                string
 		configure           func(*fullTunnelRunnerHarness)
 		wantErr             string
+		wantErrIs           error
 		wantExecutorCalls   string
 		wantCoreStarted     int
 		wantCoreStopped     int
@@ -55,28 +67,53 @@ func TestFullTunnelTransactionRunnerFailureBranchesRollbackAppliedState(t *testi
 		{
 			name: "execution apply failure",
 			configure: func(h *fullTunnelRunnerHarness) {
-				h.executor.applyErr = errors.New("apply failed")
+				h.executor.applyErr = errRunnerApplyFailed
 			},
 			wantErr:             "rolled back applied",
+			wantErrIs:           errRunnerApplyFailed,
 			wantExecutorCalls:   "apply,rollback",
 			wantRolledBackState: true,
 		},
 		{
 			name: "core start failure",
 			configure: func(h *fullTunnelRunnerHarness) {
-				h.startCoreErr = errors.New("core start failed")
+				h.startCoreErr = errRunnerCoreStartFailed
 			},
 			wantErr:             "core start failed",
+			wantErrIs:           errRunnerCoreStartFailed,
 			wantExecutorCalls:   "apply,verify,rollback",
 			wantCoreStarted:     1,
 			wantRolledBackState: true,
 		},
 		{
+			name: "connection became active after network transaction",
+			configure: func(h *fullTunnelRunnerHarness) {
+				h.startCoreErr = errFullTunnelConnectionBecameActive
+			},
+			wantErr:             "connection already active; rolled back newly applied TUN transaction",
+			wantExecutorCalls:   "apply,verify,rollback",
+			wantCoreStarted:     1,
+			wantRolledBackState: true,
+		},
+		{
+			name: "core metadata failure",
+			configure: func(h *fullTunnelRunnerHarness) {
+				h.saveCoreMetadataErr = errRunnerCoreMetadataFailed
+			},
+			wantErr:             "core metadata failed",
+			wantErrIs:           errRunnerCoreMetadataFailed,
+			wantExecutorCalls:   "apply,verify,rollback",
+			wantCoreStarted:     1,
+			wantCoreStopped:     1,
+			wantRolledBackState: true,
+		},
+		{
 			name: "core startup verification failure",
 			configure: func(h *fullTunnelRunnerHarness) {
-				h.verifyCoreErr = errors.New("core exited during startup")
+				h.verifyCoreErr = errRunnerCoreStartupFailed
 			},
 			wantErr:             "rolled back applied",
+			wantErrIs:           errRunnerCoreStartupFailed,
 			wantExecutorCalls:   "apply,verify,rollback",
 			wantCoreStarted:     1,
 			wantCoreStopped:     1,
@@ -85,9 +122,10 @@ func TestFullTunnelTransactionRunnerFailureBranchesRollbackAppliedState(t *testi
 		{
 			name: "adapter start failure",
 			configure: func(h *fullTunnelRunnerHarness) {
-				h.startAdapterErr = errors.New("adapter start failed")
+				h.startAdapterErr = errRunnerAdapterStartFailed
 			},
 			wantErr:             "adapter start failed",
+			wantErrIs:           errRunnerAdapterStartFailed,
 			wantExecutorCalls:   "apply,verify,rollback",
 			wantCoreStarted:     1,
 			wantCoreStopped:     1,
@@ -95,11 +133,26 @@ func TestFullTunnelTransactionRunnerFailureBranchesRollbackAppliedState(t *testi
 			wantRolledBackState: true,
 		},
 		{
+			name: "adapter metadata failure",
+			configure: func(h *fullTunnelRunnerHarness) {
+				h.saveAdapterMetadataErr = errRunnerAdapterMetadataFailed
+			},
+			wantErr:             "adapter metadata failed",
+			wantErrIs:           errRunnerAdapterMetadataFailed,
+			wantExecutorCalls:   "apply,verify,rollback",
+			wantCoreStarted:     1,
+			wantCoreStopped:     1,
+			wantAdapterStarted:  1,
+			wantAdapterStopped:  1,
+			wantRolledBackState: true,
+		},
+		{
 			name: "connectivity verification failure",
 			configure: func(h *fullTunnelRunnerHarness) {
-				h.verifyConnectivityErr = errors.New("connectivity failed")
+				h.verifyConnectivityErr = errRunnerConnectivityFailed
 			},
 			wantErr:             "rolled back applied",
+			wantErrIs:           errRunnerConnectivityFailed,
 			wantExecutorCalls:   "apply,verify,rollback",
 			wantCoreStarted:     1,
 			wantCoreStopped:     1,
@@ -109,11 +162,27 @@ func TestFullTunnelTransactionRunnerFailureBranchesRollbackAppliedState(t *testi
 			wantRolledBackState: true,
 		},
 		{
+			name: "core exited before commit",
+			configure: func(h *fullTunnelRunnerHarness) {
+				h.commitErr = errFullTunnelCoreExitedBeforeCommit
+			},
+			wantErr:             "rolled back applied podlaz-owned networking state",
+			wantExecutorCalls:   "apply,verify,rollback",
+			wantCoreStarted:     1,
+			wantCoreStopped:     0,
+			wantAdapterStarted:  1,
+			wantAdapterStopped:  1,
+			wantVerifyCalls:     1,
+			wantCommitCalls:     1,
+			wantRolledBackState: true,
+		},
+		{
 			name: "commit failure",
 			configure: func(h *fullTunnelRunnerHarness) {
-				h.commitErr = errors.New("commit failed")
+				h.commitErr = errRunnerCommitFailed
 			},
 			wantErr:             "commit failed",
+			wantErrIs:           errRunnerCommitFailed,
 			wantExecutorCalls:   "apply,verify,rollback",
 			wantCoreStarted:     1,
 			wantCoreStopped:     1,
@@ -133,6 +202,9 @@ func TestFullTunnelTransactionRunnerFailureBranchesRollbackAppliedState(t *testi
 			_, err := h.runner().run(context.Background())
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+			if tt.wantErrIs != nil && !errors.Is(err, tt.wantErrIs) {
+				t.Fatalf("expected error to match %v, got %v", tt.wantErrIs, err)
 			}
 			if calls := strings.Join(h.executor.calls, ","); calls != tt.wantExecutorCalls {
 				t.Fatalf("unexpected executor calls: got %q want %q", calls, tt.wantExecutorCalls)
@@ -161,8 +233,10 @@ type fullTunnelRunnerHarness struct {
 	executor   *recordingTunExecutor
 
 	startCoreErr          error
+	saveCoreMetadataErr   error
 	verifyCoreErr         error
 	startAdapterErr       error
+	saveAdapterMetadataErr error
 	verifyConnectivityErr error
 	commitErr             error
 
@@ -207,6 +281,12 @@ func (h *fullTunnelRunnerHarness) runner() *fullTunnelTransactionRunner {
 			h.coreStopped++
 			return nil
 		},
+		saveCoreMetadata: func(store txstate.TransactionStore, transactionID, runtimeConfigPath string, pid int, now txTime) error {
+			if h.saveCoreMetadataErr != nil {
+				return h.saveCoreMetadataErr
+			}
+			return saveCoreRollbackMetadata(store, transactionID, runtimeConfigPath, pid, now)
+		},
 		verifyCoreStarted: func(<-chan struct{}) error {
 			return h.verifyCoreErr
 		},
@@ -220,6 +300,12 @@ func (h *fullTunnelRunnerHarness) runner() *fullTunnelTransactionRunner {
 		stopAdapter: func() error {
 			h.adapterStopped++
 			return nil
+		},
+		saveAdapterMetadata: func(store txstate.TransactionStore, transactionID string, pid int, now txTime) error {
+			if h.saveAdapterMetadataErr != nil {
+				return h.saveAdapterMetadataErr
+			}
+			return saveTunAdapterRollbackMetadata(store, transactionID, pid, now)
 		},
 		verifyConnectivity: func(context.Context, planner.TunPlan, tunCoreRuntimePlan) error {
 			h.connectivityVerified++
