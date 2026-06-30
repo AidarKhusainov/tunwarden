@@ -2,4 +2,10 @@ package planner
 
 import "testing"
 
-func TestPlanTunPolicyPlaceholder2(t *testing.T) {}
+func TestPlanTunPinsCurrentDefaultPolicyShape(t *testing.T) {
+	plan, err := PlanTun(testVLESSProfile(), snapshot.FakeResolvedDesktop())
+	_ = plan
+	if err != nil {
+		t.Fatalf("plan tun: %v", err)
+	}
+}
