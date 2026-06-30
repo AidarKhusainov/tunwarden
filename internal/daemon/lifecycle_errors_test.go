@@ -84,6 +84,28 @@ func TestConnectHandlerConflictRaceFromLifecycleConnectRemainsConflict(t *testin
 	}
 }
 
+func TestConnectHandlerGenericErrorAfterStartedStatusRemainsInternal(t *testing.T) {
+	lifecycle := &staticLifecycle{
+		connectErr:         errors.New("start side effect failed"),
+		status:             api.StatusResponse{Connection: "inactive"},
+		statusAfterConnect: api.StatusResponse{Connection: "active"},
+	}
+	mux := http.NewServeMux()
+	registerLifecycleHandlers(mux, lifecycle)
+
+	req := httptest.NewRequest(http.MethodPost, api.ConnectPath, strings.NewReader(validConnectBody(planner.ModeProxyOnly)))
+	rr := httptest.NewRecorder()
+
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d: %s", rr.Code, http.StatusInternalServerError, rr.Body.String())
+	}
+	if lifecycle.connectCalls != 1 {
+		t.Fatalf("connect lifecycle called %d time(s), want 1", lifecycle.connectCalls)
+	}
+}
+
 func TestConnectHandlerSentinelConflictDoesNotRequireActiveStatus(t *testing.T) {
 	lifecycle := &staticLifecycle{connectErr: errConnectionAlreadyActive, status: api.StatusResponse{Connection: "inactive"}}
 	mux := http.NewServeMux()
