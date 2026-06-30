@@ -115,6 +115,55 @@ assert_artifacts_do_not_contain_sensitive_values "derived-fragment-leak" "${PROF
 	}
 }
 
+func TestE2ERedactionScanChecksDerivedSubscriptionProviderSecrets(t *testing.T) {
+	artifactDir := t.TempDir()
+	secrets := []string{
+		"provider-token-123456789",
+		"provider-token-abcdefghi",
+		"query-token-123456789",
+	}
+	result := runBash(t, artifactDir, `
+set -Eeuo pipefail
+source ./lib/e2e.sh
+SUBSCRIPTION_PATH_URL="https://provider.example/sub/provider-token-123456789"
+SUBSCRIPTION_DECODED_PATH_URL="https://provider.example/sub/provider-token%2Dabcdefghi"
+SUBSCRIPTION_QUERY_URL="https://provider.example/api/v1?access_token=query-token-123456789"
+printf 'subscription path token: provider-token-123456789\n' >"${E2E_ARTIFACT_DIR}/subscription-path-token-leak.txt"
+printf 'subscription decoded path token: provider-token-abcdefghi\n' >"${E2E_ARTIFACT_DIR}/subscription-decoded-path-token-leak.txt"
+printf 'subscription query token: query-token-123456789\n' >"${E2E_ARTIFACT_DIR}/subscription-query-token-leak.txt"
+assert_artifacts_do_not_contain_sensitive_values "subscription-provider-secret-leak" \
+  "${SUBSCRIPTION_PATH_URL}" \
+  "${SUBSCRIPTION_DECODED_PATH_URL}" \
+  "${SUBSCRIPTION_QUERY_URL}"
+`)
+
+	if result.err == nil {
+		t.Fatalf("redaction scan should fail when artifacts contain tokens derived from configured subscription URLs")
+	}
+	for _, secret := range secrets {
+		assertNoSecretLeak(t, result.stdout, secret, "stdout")
+		assertNoSecretLeak(t, result.stderr, secret, "stderr")
+	}
+
+	reportPath := filepath.Join(artifactDir, "subscription-provider-secret-leak-redaction-scan.txt")
+	report, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("read redaction report: %v", err)
+	}
+	for _, secret := range secrets {
+		assertNoSecretLeak(t, string(report), secret, "redaction report")
+	}
+	for _, filename := range []string{
+		"subscription-path-token-leak.txt",
+		"subscription-decoded-path-token-leak.txt",
+		"subscription-query-token-leak.txt",
+	} {
+		if !strings.Contains(string(report), filename) {
+			t.Fatalf("expected report to identify leaking artifact path %q, got %q", filename, string(report))
+		}
+	}
+}
+
 func TestE2EGeneratedContentScanDetectsFullRuntimeConfigLeak(t *testing.T) {
 	artifactDir := t.TempDir()
 	const runtimeSecret = "123e4567-e89b-12d3-a456-426614174001"
