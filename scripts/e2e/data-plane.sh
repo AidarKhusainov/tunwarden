@@ -233,6 +233,13 @@ assert_no_stale_state() {
   assert_recovery_candidates_empty "${phase}"
 }
 
+assert_current_runtime_config_artifacts_safe() {
+  local phase="$1"
+  expect_sensitive_success "status-json-${phase}-runtime-config-scan" run_podlaz_as_socket_user status --json
+  assert_json_file "${LAST_STDOUT}"
+  assert_active_runtime_config_artifacts_safe "runtime-config-${phase}" "${LAST_STDOUT}"
+}
+
 connect_profile() {
   local label="$1" id="$2"
   shift 2
@@ -276,6 +283,7 @@ connect_profile "proxy-only-explicit" "${PROFILE_ID}" --mode proxy-only
 assert_loopback_listeners "proxy-only-explicit"
 assert_proxy_egress socks "proxy-only-explicit"
 assert_proxy_egress http "proxy-only-explicit"
+assert_current_runtime_config_artifacts_safe "proxy-only-explicit"
 disconnect_profile "proxy-only-explicit"
 assert_proxy_cleanup "proxy-only-explicit"
 assert_no_stale_state "proxy-only-explicit"
@@ -285,6 +293,7 @@ connect_profile "default-mode" "${PROFILE_ID}"
 assert_loopback_listeners "default-mode"
 assert_proxy_egress socks "default-mode"
 assert_proxy_egress http "default-mode"
+assert_current_runtime_config_artifacts_safe "default-mode"
 disconnect_profile "default-mode"
 assert_proxy_cleanup "default-mode"
 assert_no_stale_state "default-mode"
@@ -299,6 +308,7 @@ if [[ "${PODLAZ_E2E_RELIABILITY_CYCLES}" -gt 0 ]]; then
     assert_loopback_listeners "reliability-${cycle}"
     assert_proxy_egress socks "reliability-${cycle}"
     assert_proxy_egress http "reliability-${cycle}"
+    assert_current_runtime_config_artifacts_safe "reliability-${cycle}"
     disconnect_profile "reliability-${cycle}"
     assert_proxy_cleanup "reliability-${cycle}"
     assert_no_stale_state "reliability-${cycle}"
