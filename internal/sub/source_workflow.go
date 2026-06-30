@@ -91,9 +91,9 @@ func runSourceWorkflow(ctx context.Context, req sourceWorkflowRequest) (UpdateRe
 	diff, err := req.profileStore.ReplaceSubscriptionProfiles(req.previousProfileIDs, prepared.parsed.Profiles)
 	if err != nil {
 		if req.addSource {
-			return UpdateResult{}, rollbackSourceWorkflowState(err, subscriptionSnapshot)
+			return UpdateResult{}, rollbackSourceWorkflowState(err, profileSnapshot, subscriptionSnapshot)
 		}
-		return UpdateResult{}, err
+		return UpdateResult{}, rollbackSourceWorkflowState(err, profileSnapshot)
 	}
 
 	rollbackUserState := func(applyErr error) error {
