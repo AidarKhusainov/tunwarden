@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -98,6 +99,39 @@ func TestConnectHandlerSentinelConflictDoesNotRequireActiveStatus(t *testing.T) 
 	}
 	if lifecycle.connectCalls != 1 {
 		t.Fatalf("connect lifecycle called %d time(s), want 1", lifecycle.connectCalls)
+	}
+}
+
+func TestXrayManagerActiveCoreConflictUsesSentinelBeforeStatusActive(t *testing.T) {
+	originalCurrentEUID := currentEUID
+	currentEUID = func() int { return 1000 }
+	t.Cleanup(func() { currentEUID = originalCurrentEUID })
+
+	fakeXray := writeFakeXray(t, "#!/bin/sh\nexit 0\n")
+	tests := []struct {
+		name string
+		mode string
+	}{
+		{name: "proxy-only", mode: planner.ModeProxyOnly},
+		{name: "tun", mode: planner.ModeTun},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := &XrayManager{RuntimeDir: t.TempDir(), XrayPath: fakeXray}
+			manager.cmd = &exec.Cmd{}
+
+			req := connectRequestForTest()
+			req.Mode = tt.mode
+			_, err := manager.Connect(context.Background(), req)
+			if !errors.Is(err, errConnectionAlreadyActive) {
+				t.Fatalf("Connect error = %v, want errConnectionAlreadyActive", err)
+			}
+
+			if status := manager.Status(context.Background()); status.Connection != "inactive" {
+				t.Fatalf("status connection = %q, want inactive", status.Connection)
+			}
+		})
 	}
 }
 
