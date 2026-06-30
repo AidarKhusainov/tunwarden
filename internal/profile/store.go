@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+
+	"github.com/AidarKhusainov/podlaz/internal/storejson"
 )
 
 const profilesFileName = "profiles.json"
@@ -259,60 +261,45 @@ func (s Store) load() ([]Profile, error) {
 }
 
 func (s Store) save(profiles []Profile) error {
-	return s.saveWithDirectorySync(profiles, syncDir)
+	return s.saveWithDirectorySync(profiles, storejson.SyncDir)
 }
 
 func (s Store) saveWithDirectorySync(profiles []Profile, syncParentDir func(string) error) error {
-	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create profile store directory: %w", err)
-	}
-
-	tmp, err := os.CreateTemp(dir, ".profiles-*.tmp")
+	err := storejson.WriteFile(s.path, storeFile{SchemaVersion: "v1", Profiles: profiles}, storejson.Options{
+		TempPattern:   ".profiles-*.tmp",
+		DirectoryMode: storejson.DefaultDirectoryMode,
+		FileMode:      storejson.DefaultFileMode,
+		SyncParentDir: syncParentDir,
+	})
 	if err != nil {
-		return fmt.Errorf("create temporary profile store: %w", err)
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("secure temporary profile store: %w", err)
-	}
-
-	encoder := json.NewEncoder(tmp)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(storeFile{SchemaVersion: "v1", Profiles: profiles}); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write temporary profile store: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("sync temporary profile store: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temporary profile store: %w", err)
-	}
-	if err := os.Rename(tmpName, s.path); err != nil {
-		return fmt.Errorf("replace profile store atomically: %w", err)
-	}
-	if err := syncParentDir(dir); err != nil {
-		return fmt.Errorf("sync profile store parent directory: %w", err)
+		return profileStoreWriteError(err)
 	}
 	return nil
 }
 
-func syncDir(path string) error {
-	dir, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open parent directory %s for sync: %w", path, err)
+func profileStoreWriteError(err error) error {
+	var writeErr *storejson.WriteError
+	if !errors.As(err, &writeErr) {
+		return fmt.Errorf("write profile store: %w", err)
 	}
-	if err := dir.Sync(); err != nil {
-		_ = dir.Close()
-		return fmt.Errorf("sync parent directory %s: %w", path, err)
+	switch writeErr.Operation {
+	case storejson.OperationEncodeJSON, storejson.OperationWriteTempFile:
+		return fmt.Errorf("write temporary profile store: %w", writeErr.Err)
+	case storejson.OperationCreateDirectory:
+		return fmt.Errorf("create profile store directory: %w", writeErr.Err)
+	case storejson.OperationCreateTempFile:
+		return fmt.Errorf("create temporary profile store: %w", writeErr.Err)
+	case storejson.OperationSetTempPermissions:
+		return fmt.Errorf("secure temporary profile store: %w", writeErr.Err)
+	case storejson.OperationSyncTempFile:
+		return fmt.Errorf("sync temporary profile store: %w", writeErr.Err)
+	case storejson.OperationCloseTempFile:
+		return fmt.Errorf("close temporary profile store: %w", writeErr.Err)
+	case storejson.OperationRenameTempFile:
+		return fmt.Errorf("replace profile store atomically: %w", writeErr.Err)
+	case storejson.OperationSyncParentDirectory:
+		return fmt.Errorf("sync profile store parent directory: %w", writeErr.Err)
+	default:
+		return fmt.Errorf("write profile store: %w", writeErr.Err)
 	}
-	if err := dir.Close(); err != nil {
-		return fmt.Errorf("close parent directory %s after sync: %w", path, err)
-	}
-	return nil
 }
