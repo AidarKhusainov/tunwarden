@@ -235,13 +235,13 @@ type fullTunnelRunnerHarness struct {
 	runtimeDir string
 	executor   *recordingTunExecutor
 
-	startCoreErr          error
-	saveCoreMetadataErr   error
-	verifyCoreErr         error
-	startAdapterErr       error
+	startCoreErr           error
+	saveCoreMetadataErr    error
+	verifyCoreErr          error
+	startAdapterErr        error
 	saveAdapterMetadataErr error
-	verifyConnectivityErr error
-	commitErr             error
+	verifyConnectivityErr  error
+	commitErr              error
 
 	coreStarted          int
 	coreStopped          int
