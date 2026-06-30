@@ -269,11 +269,14 @@ assert_active_runtime_config_artifacts_safe() {
 
   report="${E2E_ARTIFACT_DIR}/$(safe_name "${label}")-content-redaction-scan.txt"
   require_cmd python3
-  python3 "${E2E_REDACTION_SCAN}" file-contents "${E2E_ARTIFACT_DIR}" "${report}" "${source_copies[@]}" || scan_code=$?
-  rm -f -- "${source_copies[@]}"
-  if [[ "${scan_code}" != "0" ]]; then
-    fail "${label}: generated runtime config appeared in e2e artifacts"
+  if python3 "${E2E_REDACTION_SCAN}" file-contents "${E2E_ARTIFACT_DIR}" "${report}" "${source_copies[@]}"; then
+    rm -f -- "${source_copies[@]}"
+    rm -f -- "${evidence}"
+    return 0
   fi
+  scan_code=$?
+  rm -f -- "${source_copies[@]}"
+  fail "${label}: generated runtime config appeared in e2e artifacts"
 }
 
 write_vless_fixtures() {
