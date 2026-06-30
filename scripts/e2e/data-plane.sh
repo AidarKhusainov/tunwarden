@@ -235,9 +235,31 @@ assert_no_stale_state() {
 
 assert_current_runtime_config_artifacts_safe() {
   local phase="$1"
-  expect_sensitive_success "status-json-${phase}-runtime-config-scan" run_podlaz_as_socket_user status --json
-  assert_json_file "${LAST_STDOUT}"
-  assert_active_runtime_config_artifacts_safe "runtime-config-${phase}" "${LAST_STDOUT}"
+  local status_json
+  expect_sensitive_success "status-${phase}-runtime-config-scan" run_podlaz_as_socket_user status
+  status_json="$(mktemp "${E2E_TMP_ROOT}/$(safe_name "status-${phase}").runtime-config-status.XXXXXX.json")"
+  chmod 600 "${status_json}"
+  python3 - "${LAST_STDOUT}" "${status_json}" <<'PY'
+import json
+import sys
+
+status_path, output_path = sys.argv[1], sys.argv[2]
+runtime_config_path = ""
+with open(status_path, encoding="utf-8") as handle:
+    for line in handle:
+        key, separator, value = line.partition(":")
+        if separator and key.strip() == "Runtime config":
+            runtime_config_path = value.strip()
+            break
+if not runtime_config_path:
+    print("active status output did not expose Runtime config path", file=sys.stderr)
+    sys.exit(1)
+with open(output_path, "w", encoding="utf-8") as handle:
+    json.dump({"runtime_config_path": runtime_config_path}, handle)
+PY
+  assert_json_file "${status_json}"
+  assert_active_runtime_config_artifacts_safe "runtime-config-${phase}" "${status_json}"
+  rm -f -- "${status_json}"
 }
 
 connect_profile() {
