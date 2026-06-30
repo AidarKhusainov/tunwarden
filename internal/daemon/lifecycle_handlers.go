@@ -54,6 +54,10 @@ func registerLifecycleHandlers(mux *http.ServeMux, lifecycle lifecycleService, a
 		}
 		response, err := lifecycle.Connect(r.Context(), req)
 		if err != nil {
+			if lifecycleConnectionActive(r.Context(), lifecycle) {
+				writeDaemonAPIHTTPError(w, daemonAPIConflict(err))
+				return
+			}
 			writeDaemonAPIHTTPError(w, err)
 			return
 		}
@@ -118,5 +122,5 @@ func lifecycleConnectionActive(ctx context.Context, lifecycle lifecycleService) 
 }
 
 func activeConnectionError() error {
-	return errors.New("connection already active; run podlaz disconnect before connecting another profile")
+	return errConnectionAlreadyActive
 }
