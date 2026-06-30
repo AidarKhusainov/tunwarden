@@ -54,7 +54,7 @@ func registerLifecycleHandlers(mux *http.ServeMux, lifecycle lifecycleService, a
 		}
 		response, err := lifecycle.Connect(r.Context(), req)
 		if err != nil {
-			if lifecycleConnectionStarted(r.Context(), lifecycle) {
+			if req.Mode == planner.ModeProxyOnly && lifecycleConnectionStarted(r.Context(), lifecycle) {
 				writeDaemonAPIHTTPError(w, daemonAPIConflict(err))
 				return
 			}
