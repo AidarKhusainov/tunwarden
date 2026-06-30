@@ -7,6 +7,9 @@ E2E_ARTIFACT_DIR="${E2E_ARTIFACT_DIR:-${RUNNER_TEMP:-/tmp}/podlaz-e2e-artifacts}
 E2E_TMP_ROOT="${E2E_TMP_ROOT:-${RUNNER_TEMP:-/tmp}/podlaz-e2e-tmp}"
 mkdir -p "${E2E_ARTIFACT_DIR}" "${E2E_TMP_ROOT}"
 
+E2E_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+E2E_REDACTION_SCAN="${E2E_LIB_DIR}/redaction_scan.py"
+
 E2E_STEP=0
 LAST_STDOUT=""
 LAST_STDERR=""
@@ -166,32 +169,20 @@ assert_artifacts_do_not_contain_sensitive_values() {
   local label="$1"
   shift
   local report="${E2E_ARTIFACT_DIR}/$(safe_name "${label}")-redaction-scan.txt"
-  local found=0
-  : >"${report}"
-
-  scan_artifact_needle() {
-    local needle="$1"
-    [[ -n "${needle}" ]] || return 0
-    if grep -RIlF --exclude="$(basename "${report}")" -- "${needle}" "${E2E_ARTIFACT_DIR}" >>"${report}" 2>/dev/null; then
-      found=1
-    fi
-  }
-
-  local value line
-  for value in "$@"; do
-    if [[ "${value}" != *$'\n'* ]]; then
-      scan_artifact_needle "${value}"
-    fi
-    while IFS= read -r line; do
-      scan_artifact_needle "${line}"
-    done <<<"${value}"
-  done
-
-  if [[ "${found}" == "1" ]]; then
-    sort -u "${report}" | sed -e 's/^/redaction leak file: /' >&2
+  require_cmd python3
+  if ! python3 "${E2E_REDACTION_SCAN}" sensitive-values "${E2E_ARTIFACT_DIR}" "${report}" "$@"; then
     fail "${label}: sensitive value appeared in e2e artifacts"
   fi
-  printf 'No configured sensitive values were found in %s\n' "${E2E_ARTIFACT_DIR}" >"${report}"
+}
+
+assert_artifacts_do_not_contain_file_contents() {
+  local label="$1"
+  shift
+  local report="${E2E_ARTIFACT_DIR}/$(safe_name "${label}")-content-redaction-scan.txt"
+  require_cmd python3
+  if ! python3 "${E2E_REDACTION_SCAN}" file-contents "${E2E_ARTIFACT_DIR}" "${report}" "$@"; then
+    fail "${label}: generated content appeared in e2e artifacts"
+  fi
 }
 
 write_vless_fixtures() {
