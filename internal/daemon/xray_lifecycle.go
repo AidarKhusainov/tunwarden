@@ -102,7 +102,7 @@ func (m *XrayManager) connectProxyOnly(ctx context.Context, req api.ConnectReque
 	m.mu.Lock()
 	if m.cmd != nil || m.state.Connection == "active" {
 		m.mu.Unlock()
-		return api.LifecycleResponse{}, errors.New("connection already active; run podlaz disconnect before connecting another profile")
+		return api.LifecycleResponse{}, errConnectionAlreadyActive
 	}
 	if _, _, err := m.startXrayLocked(p, xrayPath, runtimeConfigPath, proxyPlan.XrayConfig, coreIdentity); err != nil {
 		m.mu.Unlock()
