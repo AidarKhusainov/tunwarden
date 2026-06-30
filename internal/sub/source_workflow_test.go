@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -70,6 +72,37 @@ func TestSourceWorkflowImportAndUpdateUseSharedPipeline(t *testing.T) {
 	}
 }
 
+func TestSourceWorkflowImportRollbackRemovesNewSubscriptionAndProfiles(t *testing.T) {
+	dir := t.TempDir()
+	profileStore, subscriptionStore := newSourceWorkflowStores(t, dir)
+	fixturePath := filepath.Join(dir, "import-rollback-sub.txt")
+	writeSourceWorkflowFixture(t, fixturePath, workflowShareLink(1, "import-rollback.example", "443", "transient"))
+
+	injectedErr := errors.New("injected import metadata persistence failure")
+	_, err := ImportSource(context.Background(), subscriptionStore, profileStore, localSourceWorkflowFileURL(fixturePath), SourceWorkflowOptions{
+		AfterProfileApply: func() error { return injectedErr },
+	})
+	if !errors.Is(err, injectedErr) {
+		t.Fatalf("expected injected import failure, got %v", err)
+	}
+
+	sources, err := subscriptionStore.List()
+	if err != nil {
+		t.Fatalf("list subscriptions after import rollback: %v", err)
+	}
+	if len(sources) != 0 {
+		t.Fatalf("failed import left subscription metadata behind: %+v", sources)
+	}
+
+	profiles, err := profileStore.List()
+	if err != nil {
+		t.Fatalf("list profiles after import rollback: %v", err)
+	}
+	if len(profiles) != 0 {
+		t.Fatalf("failed import left profiles behind: %+v", profiles)
+	}
+}
+
 func TestSourceWorkflowUpdateRollbackRestoresProfilesAndMetadata(t *testing.T) {
 	dir := t.TempDir()
 	profileStore, subscriptionStore := newSourceWorkflowStores(t, dir)
@@ -84,7 +117,7 @@ func TestSourceWorkflowUpdateRollbackRestoresProfilesAndMetadata(t *testing.T) {
 		t.Fatalf("seed source workflow failed: %v", err)
 	}
 
-	injectedErr := errors.New("injected metadata persistence failure")
+	injectedErr := errors.New("injected subscription metadata failure")
 	writeSourceWorkflowFixture(t, fixturePath, workflowShareLink(1, "rollback.example", "443", "mutated"))
 	_, err = UpdateSource(context.Background(), subscriptionStore, profileStore, lastGood.Subscription.ID, SourceWorkflowOptions{
 		AfterProfileApply: func() error { return injectedErr },
@@ -111,6 +144,32 @@ func TestSourceWorkflowUpdateRollbackRestoresProfilesAndMetadata(t *testing.T) {
 	}
 	if fmt.Sprint(source.ProfileIDs) != fmt.Sprint(lastGood.Subscription.ProfileIDs) {
 		t.Fatalf("rollback changed subscription profile ids: got %v want %v", source.ProfileIDs, lastGood.Subscription.ProfileIDs)
+	}
+}
+
+func TestSourceWorkflowImportPropagatesProviderMetadataWarnings(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
+	profileStore, subscriptionStore := newSourceWorkflowStores(t, dir)
+	encoded := base64.StdEncoding.EncodeToString([]byte(workflowShareLink(1, "warning.example", "443", "safe-profile")))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Subscription-Title", "https://provider.example/sub/provider-token-123456789")
+		_, _ = w.Write([]byte(encoded))
+	}))
+	defer server.Close()
+
+	result, err := ImportSource(context.Background(), subscriptionStore, profileStore, server.URL, SourceWorkflowOptions{})
+	if err != nil {
+		t.Fatalf("import source workflow with provider metadata warning failed: %v", err)
+	}
+	if result.Warnings == nil || len(result.Warnings) != 1 {
+		t.Fatalf("expected one propagated provider metadata warning, got %+v", result.Warnings)
+	}
+	if result.Warnings[0].Message != SubscriptionDisplayNameRejectedWarning {
+		t.Fatalf("unexpected provider metadata warning: %+v", result.Warnings[0])
+	}
+	if strings.Contains(result.Subscription.Name, "provider-token-123456789") {
+		t.Fatalf("unsafe provider title was used as display name: %+v", result.Subscription)
 	}
 }
 
