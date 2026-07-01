@@ -47,6 +47,7 @@ const (
 type completionFlag struct {
 	Name          string
 	Shorthand     string
+	Description   string
 	TakesValue    bool
 	Values        []string
 	NonRepeatable bool
@@ -54,6 +55,7 @@ type completionFlag struct {
 
 type completionCommand struct {
 	Name         string
+	Description  string
 	Children     []*completionCommand
 	Flags        []completionFlag
 	Dynamic      completionDynamicKind
@@ -179,58 +181,61 @@ func analyzeCompletion(root *completionCommand, words []string, cursor int) comp
 func completionRegistry() *completionCommand {
 	modes := []string{planner.ModeProxyOnly, planner.ModeTun}
 	protocols := []string{"vless", "vmess", "trojan", "shadowsocks"}
+	jsonFlag := longBoolFlag("--json", "Print JSON output")
+	yesFlag := longBoolFlag("--yes", "Confirm without prompting")
+	modeFlag := longEnumFlag("--mode", modes, "Select connection mode")
 	return &completionCommand{Children: []*completionCommand{
-		{Name: "version"},
-		{Name: "import", DefaultFiles: true},
-		{Name: "profile", Children: []*completionCommand{
-			{Name: "add", Flags: []completionFlag{
-				longValueFlag("--name"),
-				longValueFlag("--server"),
-				longValueFlag("--port"),
-				longEnumFlag("--protocol", protocols),
+		{Name: "version", Description: "Show version"},
+		{Name: "import", Description: "Import profile or subscription", DefaultFiles: true},
+		{Name: "profile", Description: "Manage profiles", Children: []*completionCommand{
+			{Name: "add", Description: "Add manual profile", Flags: []completionFlag{
+				longValueFlag("--name", "Profile name"),
+				longValueFlag("--server", "Server hostname"),
+				longValueFlag("--port", "Server port"),
+				longEnumFlag("--protocol", protocols, "Profile protocol"),
 			}},
-			{Name: "import"},
-			{Name: "list", Flags: []completionFlag{longBoolFlag("--json")}},
-			{Name: "show", Flags: []completionFlag{longBoolFlag("--json")}, Dynamic: completionDynamicProfileIDs},
-			{Name: "validate", Flags: []completionFlag{longEnumFlag("--mode", modes), longBoolFlag("--json")}, Dynamic: completionDynamicProfileIDs},
-			{Name: "delete", Flags: []completionFlag{longBoolFlag("--yes")}, Dynamic: completionDynamicProfileIDs},
+			{Name: "import", Description: "Import share URI"},
+			{Name: "list", Description: "List profiles", Flags: []completionFlag{jsonFlag}},
+			{Name: "show", Description: "Show profile", Flags: []completionFlag{jsonFlag}, Dynamic: completionDynamicProfileIDs},
+			{Name: "validate", Description: "Validate profile", Flags: []completionFlag{modeFlag, jsonFlag}, Dynamic: completionDynamicProfileIDs},
+			{Name: "delete", Description: "Delete profile", Flags: []completionFlag{yesFlag}, Dynamic: completionDynamicProfileIDs},
 		}},
-		{Name: "subscription", Children: []*completionCommand{
-			{Name: "add", Flags: []completionFlag{longValueFlag("--name"), longValueFlag("--url")}},
-			{Name: "list", Flags: []completionFlag{longBoolFlag("--json")}},
-			{Name: "show", Flags: []completionFlag{longBoolFlag("--json")}, Dynamic: completionDynamicSubscriptionIDs},
-			{Name: "update", Dynamic: completionDynamicSubscriptionIDs},
-			{Name: "delete", Flags: []completionFlag{longBoolFlag("--yes"), longBoolFlag("--keep-profiles")}, Dynamic: completionDynamicSubscriptionIDs},
+		{Name: "subscription", Description: "Manage subscriptions", Children: []*completionCommand{
+			{Name: "add", Description: "Add subscription", Flags: []completionFlag{longValueFlag("--name", "Subscription name"), longValueFlag("--url", "Subscription URL")}},
+			{Name: "list", Description: "List subscriptions", Flags: []completionFlag{jsonFlag}},
+			{Name: "show", Description: "Show subscription", Flags: []completionFlag{jsonFlag}, Dynamic: completionDynamicSubscriptionIDs},
+			{Name: "update", Description: "Fetch subscription", Dynamic: completionDynamicSubscriptionIDs},
+			{Name: "delete", Description: "Delete subscription", Flags: []completionFlag{yesFlag, longBoolFlag("--keep-profiles", "Keep imported profiles")}, Dynamic: completionDynamicSubscriptionIDs},
 		}},
-		{Name: "plan", Flags: []completionFlag{longEnumFlag("--mode", modes), longBoolFlag("--json")}, Dynamic: completionDynamicProfileIDs},
-		{Name: "connect", Flags: []completionFlag{longEnumFlag("--mode", modes)}, Dynamic: completionDynamicProfileIDs},
-		{Name: "disconnect"},
-		{Name: "status"},
-		{Name: "doctor", Flags: []completionFlag{longBoolFlag("--core"), longValueFlag("--xray"), longBoolFlag("--json")}},
-		{Name: "logs", Flags: []completionFlag{
-			{Name: "--follow", Shorthand: "-f", NonRepeatable: true},
-			longBoolFlag("--daemon"),
-			longBoolFlag("--core"),
-			longValueFlag("--since"),
+		{Name: "plan", Description: "Preview connection plan", Flags: []completionFlag{modeFlag, jsonFlag}, Dynamic: completionDynamicProfileIDs},
+		{Name: "connect", Description: "Start connection", Flags: []completionFlag{modeFlag}, Dynamic: completionDynamicProfileIDs},
+		{Name: "disconnect", Description: "Stop connection"},
+		{Name: "status", Description: "Show status"},
+		{Name: "doctor", Description: "Run diagnostics", Flags: []completionFlag{longBoolFlag("--core", "Check core binary"), longValueFlag("--xray", "Core binary path"), jsonFlag}},
+		{Name: "logs", Description: "Show logs", Flags: []completionFlag{
+			{Name: "--follow", Shorthand: "-f", Description: "Follow logs", NonRepeatable: true},
+			longBoolFlag("--daemon", "Daemon logs"),
+			longBoolFlag("--core", "Core logs"),
+			longValueFlag("--since", "Journal time filter"),
 		}},
-		{Name: "recover", Flags: []completionFlag{longBoolFlag("--execute"), longBoolFlag("--yes"), longBoolFlag("--json")}},
-		{Name: "completion", Children: []*completionCommand{{Name: "bash"}, {Name: "zsh"}, {Name: "fish"}}},
-		{Name: "help", Children: []*completionCommand{
-			{Name: "version"}, {Name: "import"}, {Name: "profile"}, {Name: "subscription"}, {Name: "plan"}, {Name: "connect"}, {Name: "disconnect"}, {Name: "status"}, {Name: "doctor"}, {Name: "logs"}, {Name: "recover"}, {Name: "completion"}, {Name: "help"},
+		{Name: "recover", Description: "Inspect recovery", Flags: []completionFlag{longBoolFlag("--execute", "Execute cleanup"), yesFlag, jsonFlag}},
+		{Name: "completion", Description: "Generate completion", Children: []*completionCommand{{Name: "bash", Description: "Bash script"}, {Name: "zsh", Description: "Zsh script"}, {Name: "fish", Description: "Fish script"}}},
+		{Name: "help", Description: "Show help", Children: []*completionCommand{
+			{Name: "version", Description: "Version help"}, {Name: "import", Description: "Import help"}, {Name: "profile", Description: "Profile help"}, {Name: "subscription", Description: "Subscription help"}, {Name: "plan", Description: "Plan help"}, {Name: "connect", Description: "Connect help"}, {Name: "disconnect", Description: "Disconnect help"}, {Name: "status", Description: "Status help"}, {Name: "doctor", Description: "Doctor help"}, {Name: "logs", Description: "Logs help"}, {Name: "recover", Description: "Recover help"}, {Name: "completion", Description: "Completion help"}, {Name: "help", Description: "Help help"},
 		}},
 	}}
 }
 
-func longBoolFlag(name string) completionFlag {
-	return completionFlag{Name: name, NonRepeatable: true}
+func longBoolFlag(name string, description string) completionFlag {
+	return completionFlag{Name: name, Description: description, NonRepeatable: true}
 }
 
-func longValueFlag(name string) completionFlag {
-	return completionFlag{Name: name, TakesValue: true, NonRepeatable: true}
+func longValueFlag(name string, description string) completionFlag {
+	return completionFlag{Name: name, Description: description, TakesValue: true, NonRepeatable: true}
 }
 
-func longEnumFlag(name string, values []string) completionFlag {
-	return completionFlag{Name: name, TakesValue: true, Values: values, NonRepeatable: true}
+func longEnumFlag(name string, values []string, description string) completionFlag {
+	return completionFlag{Name: name, Description: description, TakesValue: true, Values: values, NonRepeatable: true}
 }
 
 func completionTopLevelCommandNames() []string {
@@ -317,7 +322,7 @@ func noFileCompletion(candidates []completionCandidate) completionResult {
 func commandCandidates(commands []*completionCommand) []completionCandidate {
 	candidates := make([]completionCandidate, 0, len(commands))
 	for _, command := range commands {
-		candidates = append(candidates, completionCandidate{Value: command.Name})
+		candidates = append(candidates, completionCandidate{Value: command.Name, Description: command.Description})
 	}
 	return candidates
 }
@@ -331,10 +336,10 @@ func flagCandidates(flags []completionFlag, used map[string]struct{}) []completi
 			}
 		}
 		if flag.Name != "" {
-			candidates = append(candidates, completionCandidate{Value: flag.Name})
+			candidates = append(candidates, completionCandidate{Value: flag.Name, Description: flag.Description})
 		}
 		if flag.Shorthand != "" {
-			candidates = append(candidates, completionCandidate{Value: flag.Shorthand})
+			candidates = append(candidates, completionCandidate{Value: flag.Shorthand, Description: flag.Description})
 		}
 	}
 	return candidates

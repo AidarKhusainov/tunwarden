@@ -51,16 +51,27 @@ func printBashCompletion(w io.Writer) {
 
 _podlaz()
 {
-    local cur line value
-    local -a runtime_lines runtime_values
+    local cur line value insert_only
+    local -a runtime_lines matches values
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
+    insert_only=false
 
     compopt +o default 2>/dev/null || true
     compopt +o nospace 2>/dev/null || true
 
     if ! mapfile -t runtime_lines < <("${COMP_WORDS[0]}" __complete bash "$COMP_CWORD" "${COMP_WORDS[@]}" 2>/dev/null); then
         return 0
+    fi
+
+    if [[ -z "${COMP_TYPE+x}" ]]; then
+        insert_only=true
+    else
+        case "$COMP_TYPE" in
+            37|42)
+                insert_only=true
+                ;;
+        esac
     fi
 
     for line in "${runtime_lines[@]}"; do
@@ -82,12 +93,24 @@ _podlaz()
                 ;;
         esac
         value="${line%%$'\t'*}"
-        runtime_values+=("$value")
+        [[ "$value" == "$cur"* ]] || continue
+        matches+=("$line")
+        values+=("$value")
     done
 
-    if ((${#runtime_values[@]} > 0)); then
-        COMPREPLY=( $(compgen -W "${runtime_values[*]}" -- "$cur") )
+    if ((${#matches[@]} == 1)); then
+        COMPREPLY=("${values[0]}")
+        return 0
     fi
+
+    for line in "${matches[@]}"; do
+        value="${line%%$'\t'*}"
+        if [[ "$insert_only" == true || "$line" != *$'\t'* ]]; then
+            COMPREPLY+=("$value")
+        else
+            COMPREPLY+=("$line")
+        fi
+    done
     return 0
 }
 
@@ -228,63 +251,63 @@ complete -c plz -f
 complete -c plz -n '__fish_podlaz_needs_runtime_argument' -a '(__fish_podlaz_complete)'
 complete -c plz -n '__fish_podlaz_needs_files' -F
 
-complete -c podlaz -n '__fish_podlaz_using_subcommand profile add' -l name -x
-complete -c podlaz -n '__fish_podlaz_using_subcommand profile add' -l server -x
-complete -c podlaz -n '__fish_podlaz_using_subcommand profile add' -l port -x
-complete -c podlaz -n '__fish_podlaz_using_subcommand profile add' -l protocol -x -a '%s'
-complete -c podlaz -n '__fish_podlaz_using_subcommand profile list' -l json
-complete -c podlaz -n '__fish_podlaz_using_subcommand profile show' -l json
-complete -c podlaz -n '__fish_podlaz_using_subcommand profile validate' -l mode -x -a '%s'
-complete -c podlaz -n '__fish_podlaz_using_subcommand profile validate' -l json
-complete -c podlaz -n '__fish_podlaz_using_subcommand profile delete' -l yes
+complete -c podlaz -n '__fish_podlaz_using_subcommand profile add' -l name -x -d 'Profile name'
+complete -c podlaz -n '__fish_podlaz_using_subcommand profile add' -l server -x -d 'Server hostname'
+complete -c podlaz -n '__fish_podlaz_using_subcommand profile add' -l port -x -d 'Server port'
+complete -c podlaz -n '__fish_podlaz_using_subcommand profile add' -l protocol -x -a '%s' -d 'Profile protocol'
+complete -c podlaz -n '__fish_podlaz_using_subcommand profile list' -l json -d 'Print JSON output'
+complete -c podlaz -n '__fish_podlaz_using_subcommand profile show' -l json -d 'Print JSON output'
+complete -c podlaz -n '__fish_podlaz_using_subcommand profile validate' -l mode -x -a '%s' -d 'Select connection mode'
+complete -c podlaz -n '__fish_podlaz_using_subcommand profile validate' -l json -d 'Print JSON output'
+complete -c podlaz -n '__fish_podlaz_using_subcommand profile delete' -l yes -d 'Confirm without prompting'
 
-complete -c podlaz -n '__fish_podlaz_using_subcommand subscription add' -l name -x
-complete -c podlaz -n '__fish_podlaz_using_subcommand subscription add' -l url -x
-complete -c podlaz -n '__fish_podlaz_using_subcommand subscription list' -l json
-complete -c podlaz -n '__fish_podlaz_using_subcommand subscription show' -l json
+complete -c podlaz -n '__fish_podlaz_using_subcommand subscription add' -l name -x -d 'Subscription name'
+complete -c podlaz -n '__fish_podlaz_using_subcommand subscription add' -l url -x -d 'Subscription URL'
+complete -c podlaz -n '__fish_podlaz_using_subcommand subscription list' -l json -d 'Print JSON output'
+complete -c podlaz -n '__fish_podlaz_using_subcommand subscription show' -l json -d 'Print JSON output'
 
-complete -c podlaz -n '__fish_podlaz_using_command plan' -l mode -x -a '%s'
-complete -c podlaz -n '__fish_podlaz_using_command plan' -l json
-complete -c podlaz -n '__fish_podlaz_using_command connect' -l mode -x -a '%s'
-complete -c podlaz -n '__fish_podlaz_using_command doctor' -l core
-complete -c podlaz -n '__fish_podlaz_using_command doctor' -l xray -x
-complete -c podlaz -n '__fish_podlaz_using_command doctor' -l json
-complete -c podlaz -n '__fish_podlaz_using_command logs' -l follow -s f
-complete -c podlaz -n '__fish_podlaz_using_command logs' -l daemon
-complete -c podlaz -n '__fish_podlaz_using_command logs' -l core
-complete -c podlaz -n '__fish_podlaz_using_command logs' -l since -x
-complete -c podlaz -n '__fish_podlaz_using_command recover' -l execute
-complete -c podlaz -n '__fish_podlaz_using_command recover' -l yes
-complete -c podlaz -n '__fish_podlaz_using_command recover' -l json
+complete -c podlaz -n '__fish_podlaz_using_command plan' -l mode -x -a '%s' -d 'Select connection mode'
+complete -c podlaz -n '__fish_podlaz_using_command plan' -l json -d 'Print JSON output'
+complete -c podlaz -n '__fish_podlaz_using_command connect' -l mode -x -a '%s' -d 'Select connection mode'
+complete -c podlaz -n '__fish_podlaz_using_command doctor' -l core -d 'Check core binary'
+complete -c podlaz -n '__fish_podlaz_using_command doctor' -l xray -x -d 'Core binary path'
+complete -c podlaz -n '__fish_podlaz_using_command doctor' -l json -d 'Print JSON output'
+complete -c podlaz -n '__fish_podlaz_using_command logs' -l follow -s f -d 'Follow logs'
+complete -c podlaz -n '__fish_podlaz_using_command logs' -l daemon -d 'Daemon logs'
+complete -c podlaz -n '__fish_podlaz_using_command logs' -l core -d 'Core logs'
+complete -c podlaz -n '__fish_podlaz_using_command logs' -l since -x -d 'Journal time filter'
+complete -c podlaz -n '__fish_podlaz_using_command recover' -l execute -d 'Execute cleanup'
+complete -c podlaz -n '__fish_podlaz_using_command recover' -l yes -d 'Confirm without prompting'
+complete -c podlaz -n '__fish_podlaz_using_command recover' -l json -d 'Print JSON output'
 
-complete -c plz -n '__fish_podlaz_using_subcommand profile add' -l name -x
-complete -c plz -n '__fish_podlaz_using_subcommand profile add' -l server -x
-complete -c plz -n '__fish_podlaz_using_subcommand profile add' -l port -x
-complete -c plz -n '__fish_podlaz_using_subcommand profile add' -l protocol -x -a '%s'
-complete -c plz -n '__fish_podlaz_using_subcommand profile list' -l json
-complete -c plz -n '__fish_podlaz_using_subcommand profile show' -l json
-complete -c plz -n '__fish_podlaz_using_subcommand profile validate' -l mode -x -a '%s'
-complete -c plz -n '__fish_podlaz_using_subcommand profile validate' -l json
-complete -c plz -n '__fish_podlaz_using_subcommand profile delete' -l yes
+complete -c plz -n '__fish_podlaz_using_subcommand profile add' -l name -x -d 'Profile name'
+complete -c plz -n '__fish_podlaz_using_subcommand profile add' -l server -x -d 'Server hostname'
+complete -c plz -n '__fish_podlaz_using_subcommand profile add' -l port -x -d 'Server port'
+complete -c plz -n '__fish_podlaz_using_subcommand profile add' -l protocol -x -a '%s' -d 'Profile protocol'
+complete -c plz -n '__fish_podlaz_using_subcommand profile list' -l json -d 'Print JSON output'
+complete -c plz -n '__fish_podlaz_using_subcommand profile show' -l json -d 'Print JSON output'
+complete -c plz -n '__fish_podlaz_using_subcommand profile validate' -l mode -x -a '%s' -d 'Select connection mode'
+complete -c plz -n '__fish_podlaz_using_subcommand profile validate' -l json -d 'Print JSON output'
+complete -c plz -n '__fish_podlaz_using_subcommand profile delete' -l yes -d 'Confirm without prompting'
 
-complete -c plz -n '__fish_podlaz_using_subcommand subscription add' -l name -x
-complete -c plz -n '__fish_podlaz_using_subcommand subscription add' -l url -x
-complete -c plz -n '__fish_podlaz_using_subcommand subscription list' -l json
-complete -c plz -n '__fish_podlaz_using_subcommand subscription show' -l json
+complete -c plz -n '__fish_podlaz_using_subcommand subscription add' -l name -x -d 'Subscription name'
+complete -c plz -n '__fish_podlaz_using_subcommand subscription add' -l url -x -d 'Subscription URL'
+complete -c plz -n '__fish_podlaz_using_subcommand subscription list' -l json -d 'Print JSON output'
+complete -c plz -n '__fish_podlaz_using_subcommand subscription show' -l json -d 'Print JSON output'
 
-complete -c plz -n '__fish_podlaz_using_command plan' -l mode -x -a '%s'
-complete -c plz -n '__fish_podlaz_using_command plan' -l json
-complete -c plz -n '__fish_podlaz_using_command connect' -l mode -x -a '%s'
-complete -c plz -n '__fish_podlaz_using_command doctor' -l core
-complete -c plz -n '__fish_podlaz_using_command doctor' -l xray -x
-complete -c plz -n '__fish_podlaz_using_command doctor' -l json
-complete -c plz -n '__fish_podlaz_using_command logs' -l follow -s f
-complete -c plz -n '__fish_podlaz_using_command logs' -l daemon
-complete -c plz -n '__fish_podlaz_using_command logs' -l core
-complete -c plz -n '__fish_podlaz_using_command logs' -l since -x
-complete -c plz -n '__fish_podlaz_using_command recover' -l execute
-complete -c plz -n '__fish_podlaz_using_command recover' -l yes
-complete -c plz -n '__fish_podlaz_using_command recover' -l json
+complete -c plz -n '__fish_podlaz_using_command plan' -l mode -x -a '%s' -d 'Select connection mode'
+complete -c plz -n '__fish_podlaz_using_command plan' -l json -d 'Print JSON output'
+complete -c plz -n '__fish_podlaz_using_command connect' -l mode -x -a '%s' -d 'Select connection mode'
+complete -c plz -n '__fish_podlaz_using_command doctor' -l core -d 'Check core binary'
+complete -c plz -n '__fish_podlaz_using_command doctor' -l xray -x -d 'Core binary path'
+complete -c plz -n '__fish_podlaz_using_command doctor' -l json -d 'Print JSON output'
+complete -c plz -n '__fish_podlaz_using_command logs' -l follow -s f -d 'Follow logs'
+complete -c plz -n '__fish_podlaz_using_command logs' -l daemon -d 'Daemon logs'
+complete -c plz -n '__fish_podlaz_using_command logs' -l core -d 'Core logs'
+complete -c plz -n '__fish_podlaz_using_command logs' -l since -x -d 'Journal time filter'
+complete -c plz -n '__fish_podlaz_using_command recover' -l execute -d 'Execute cleanup'
+complete -c plz -n '__fish_podlaz_using_command recover' -l yes -d 'Confirm without prompting'
+complete -c plz -n '__fish_podlaz_using_command recover' -l json -d 'Print JSON output'
 `, completionWords(completionTopLevelCommandNames()), completionWords(completionConnectionModeNames()), completionWords(completionProfileProtocolNames()), completionWords(completionProfileProtocolNames()), completionWords(completionConnectionModeNames()), completionWords(completionConnectionModeNames()), completionWords(completionConnectionModeNames()), completionWords(completionProfileProtocolNames()), completionWords(completionConnectionModeNames()), completionWords(completionConnectionModeNames()), completionWords(completionConnectionModeNames()))
 }
 

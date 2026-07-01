@@ -9,6 +9,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprint(w, `podlaz - Linux VPN client.
 
 podlaz is a Linux VPN client with profile management and daemon-controlled runtime operations.
+Packaged installs also provide plz as a short alias for podlaz.
 
 Usage:
   podlaz version
@@ -24,6 +25,9 @@ Usage:
   podlaz recover
   podlaz completion <bash|zsh|fish>
   podlaz help [command]
+
+Alias:
+  plz <command>  Short alias installed by the Debian package.
 `)
 }
 
