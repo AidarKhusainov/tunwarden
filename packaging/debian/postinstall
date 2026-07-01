@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+unit=podlazd.service
+run_action=start
+
 if [ "${1:-configure}" != "configure" ]; then
 	exit 0
 fi
@@ -10,13 +13,13 @@ if command -v systemd-sysusers >/dev/null 2>&1; then
 fi
 
 if command -v deb-systemd-helper >/dev/null 2>&1; then
-	deb-systemd-helper unmask podlazd.service >/dev/null || true
-	deb-systemd-helper enable podlazd.service >/dev/null || true
-	deb-systemd-helper update-state podlazd.service >/dev/null || true
+	deb-systemd-helper unmask "$unit" >/dev/null || true
+	deb-systemd-helper enable "$unit" >/dev/null || true
+	deb-systemd-helper update-state "$unit" >/dev/null || true
 fi
 
 if command -v deb-systemd-invoke >/dev/null 2>&1; then
-	deb-systemd-invoke start podlazd.service >/dev/null || true
+	deb-systemd-invoke "$run_action" "$unit" >/dev/null || true
 fi
 
 exit 0
