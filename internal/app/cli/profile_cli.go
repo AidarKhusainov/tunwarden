@@ -42,7 +42,7 @@ func runProfileCommand(ctx context.Context, args []string, stdout io.Writer, opt
 	case "validate":
 		return runProfileValidate(store, args[1:], stdout)
 	case "delete":
-		return runProfileDelete(store, args[1:], stdout)
+		return runProfileDelete(store, args[1:], stdout, opts)
 	default:
 		return usageError("unknown profile subcommand %q", args[0])
 	}
@@ -104,12 +104,12 @@ func runProfileList(store profile.Store, args []string, stdout io.Writer) error 
 		return writeJSON(stdout, okJSON(map[string]any{"profiles": profilesForOutput(profiles)}))
 	}
 
-	fmt.Fprintln(stdout, "ID        NAME   PROTOCOL  SERVER       PORT")
+	rows := make([][]string, 0, len(profiles))
 	for _, p := range profiles {
 		out := profileForOutput(p)
-		fmt.Fprintf(stdout, "%-9s %-6s %-9s %-12s %d\n", out.ID, out.Name, out.Protocol, out.Server, out.Port)
+		rows = append(rows, []string{out.ID, out.Name, out.Protocol, out.Server, strconv.Itoa(int(out.Port))})
 	}
-	return nil
+	return writeTable(stdout, []string{"ID", "NAME", "PROTOCOL", "SERVER", "PORT"}, rows)
 }
 
 func runProfileShow(store profile.Store, args []string, stdout io.Writer) error {
@@ -208,18 +208,24 @@ func runProfileValidate(store profile.Store, args []string, stdout io.Writer) er
 	return nil
 }
 
-func runProfileDelete(store profile.Store, args []string, stdout io.Writer) error {
+func runProfileDelete(store profile.Store, args []string, stdout io.Writer, opts options) error {
 	id, yes, err := parseProfileDeleteArgs(args)
 	if err != nil {
 		return err
 	}
 	if !yes {
-		return usageError("profile delete requires --yes in this non-interactive v0.1 CLI")
+		if !profileDeleteInputIsTerminal(opts) {
+			return usageError("profile delete requires --yes in non-interactive mode")
+		}
+		prompt := fmt.Sprintf("Delete profile %s? Type yes to continue", render.Redact(id))
+		if err := confirmDefaultYes(stdout, confirmationReader(opts), prompt, "profile delete", "profile delete canceled"); err != nil {
+			return err
+		}
 	}
 	if err := store.Delete(id); err != nil {
 		return profileCommandError(err)
 	}
-	fmt.Fprintf(stdout, "Profile deleted: %s\n", id)
+	fmt.Fprintf(stdout, "Profile deleted: %s\n", render.Redact(id))
 	return nil
 }
 
@@ -394,6 +400,13 @@ func parseProfileDeleteArgs(args []string) (string, bool, error) {
 	return id, yes, nil
 }
 
+func profileDeleteInputIsTerminal(opts options) bool {
+	if opts.stdinIsTerminal != nil {
+		return opts.stdinIsTerminal()
+	}
+	return isStdinTerminal()
+}
+
 func parseOptionalJSON(args []string, command string) (bool, error) {
 	var jsonOutput bool
 	for _, arg := range args {
@@ -526,7 +539,7 @@ func printProfileHelp(w io.Writer) {
   podlaz profile list [--json]
   podlaz profile show <profile-id> [--json]
   podlaz profile validate <profile-id> [--mode proxy-only|tun] [--json]
-  podlaz profile delete <profile-id> --yes
+  podlaz profile delete <profile-id> [--yes]
 
 Manage profiles in local podlaz user state. These commands never start
 network processes and never mutate TUN, routes, DNS, nftables, or firewall state.
