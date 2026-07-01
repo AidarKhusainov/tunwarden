@@ -26,6 +26,9 @@ func confirmDefaultYes(stdout io.Writer, reader io.Reader, prompt, readContext, 
 		if err != nil && !errors.Is(err, io.EOF) {
 			return fmt.Errorf("read %s confirmation: %w", readContext, err)
 		}
+		if errors.Is(err, io.EOF) && line == "" {
+			return exitError{code: 1, err: errors.New(cancelMessage)}
+		}
 
 		confirmed, ok := parseDefaultYesConfirmation(line)
 		if ok {
@@ -45,13 +48,14 @@ func confirmDefaultYes(stdout io.Writer, reader io.Reader, prompt, readContext, 
 }
 
 func parseDefaultYesConfirmation(input string) (confirmed bool, valid bool) {
-	switch strings.ToLower(strings.TrimSpace(input)) {
-	case "":
-		return true, true
+	normalized := strings.ToLower(strings.TrimSpace(input))
+	switch normalized {
 	case "y", "yes":
 		return true, true
 	case "n", "no":
 		return false, true
+	case "":
+		return strings.Contains(input, "\n"), strings.Contains(input, "\n")
 	default:
 		return false, false
 	}
