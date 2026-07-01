@@ -88,6 +88,7 @@ built_assignment="$(quote_go_ldflag_assignment "${built_package}=${built}")"
 ldflags="-s -w -X ${version_assignment} -X ${commit_assignment} -X ${built_assignment}"
 CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "${ldflags}" -o "${root_dir}/usr/bin/podlaz" ./cmd/podlaz
 CGO_ENABLED=1 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "${ldflags}" -o "${root_dir}/usr/bin/podlazd" ./cmd/podlazd
+ln -s podlaz "${root_dir}/usr/bin/plz"
 
 generate_completion bash "${root_dir}/usr/share/bash-completion/completions/podlaz"
 generate_completion zsh "${root_dir}/usr/share/zsh/vendor-completions/_podlaz"
@@ -96,6 +97,9 @@ chmod 0644 \
   "${root_dir}/usr/share/bash-completion/completions/podlaz" \
   "${root_dir}/usr/share/zsh/vendor-completions/_podlaz" \
   "${root_dir}/usr/share/fish/vendor_completions.d/podlaz.fish"
+ln -s podlaz "${root_dir}/usr/share/bash-completion/completions/plz"
+ln -s _podlaz "${root_dir}/usr/share/zsh/vendor-completions/_plz"
+ln -s podlaz.fish "${root_dir}/usr/share/fish/vendor_completions.d/plz.fish"
 
 install -m 0644 packaging/systemd/podlazd.service "${root_dir}/usr/lib/systemd/system/podlazd.service"
 install -m 0644 packaging/sysusers.d/podlaz.conf "${root_dir}/usr/lib/sysusers.d/podlaz.conf"

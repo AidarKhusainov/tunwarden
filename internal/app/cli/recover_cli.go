@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -91,19 +90,7 @@ func confirmRecoverExecute(stdout io.Writer, opts options) error {
 	if !recoverInputIsTerminal(opts) {
 		return usageError("recover --execute requires --yes in non-interactive mode")
 	}
-	reader := opts.stdin
-	if reader == nil {
-		reader = os.Stdin
-	}
-	fmt.Fprint(stdout, "Recover will ask podlazd to remove only clearly podlaz-owned stale state. Type yes to continue: ")
-	line, err := bufio.NewReader(reader).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("read recovery confirmation: %w", err)
-	}
-	if strings.EqualFold(strings.TrimSpace(line), "yes") {
-		return nil
-	}
-	return exitError{code: 1, err: errors.New("recover canceled")}
+	return confirmDefaultYes(stdout, confirmationReader(opts), "Recover will ask podlazd to remove only clearly podlaz-owned stale state. Type yes to continue", "recovery", "recover canceled")
 }
 
 func recoverInputIsTerminal(opts options) bool {

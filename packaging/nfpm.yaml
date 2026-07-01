@@ -29,6 +29,9 @@ contents:
     dst: /usr/bin/podlaz
     file_info:
       mode: 0755
+  - src: /usr/bin/podlaz
+    dst: /usr/bin/plz
+    type: symlink
   - src: ./dist/package-root/usr/bin/podlazd
     dst: /usr/bin/podlazd
     file_info:
