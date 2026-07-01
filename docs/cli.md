@@ -24,8 +24,6 @@ plz --help
 | Flag | Meaning |
 | --- | --- |
 | `--json` | Stable JSON where implemented. |
-| `--verbose` | Extra diagnostics where supported. |
-| `--quiet` | Essential output where supported. |
 | `--yes` | Confirm destructive or recovery execution. Long-only. |
 
 | Mode | Meaning |
