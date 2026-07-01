@@ -56,7 +56,10 @@ func TestRunCLIProfileAddListShowAndDelete(t *testing.T) {
 
 func TestRunCLIProfileDeleteRequiresYes(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "profiles.json")
-	opts := options{profileStorePath: storePath}
+	opts := options{
+		profileStorePath: storePath,
+		stdinIsTerminal: func() bool { return false },
+	}
 	addTestProfile(t, opts)
 
 	err := runWithOptions(context.Background(), []string{"profile", "delete", "test"}, &bytes.Buffer{}, opts)
