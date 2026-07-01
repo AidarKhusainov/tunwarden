@@ -78,7 +78,8 @@ check_pattern scripts/e2e/server-coverage.sh "run_host_wrapper_probe" "host disr
 check_pattern scripts/e2e/cli-contract.sh "subscription-delete-keep-profiles" "subscription delete keep-profiles coverage"
 check_pattern scripts/e2e/cli-contract.sh "import-local-base64-uri-list" "local import fixture coverage"
 check_pattern scripts/e2e/package-service.sh "dpkg-deb --contents" "package contents coverage"
-check_pattern scripts/e2e/package-service.sh "same-version reinstall and remove" "package reinstall/remove coverage"
+check_pattern scripts/e2e/package-service.sh "same-version reinstall and purge" "package reinstall/purge coverage"
+check_pattern scripts/e2e/package-service.sh "deb-systemd-helper purge podlazd.service" "package systemd-helper cleanup coverage"
 check_pattern docs/e2e.md "Additional Debian/Ubuntu or arm64 coverage" "matrix boundary documentation"
 
 line 1 "new runtime probe" "SOCKS proxy egress through loopback listener."
@@ -122,7 +123,7 @@ line 38 "existing contract" "TUN plan says no changes were applied; stronger no-
 line 39 "existing test" "TUN plan JSON asserts safety flags, route/DNS/firewall structures, ownership/rollback keys, and snapshot keys."
 line 40 "existing test" "Shell completions are covered."
 line 41 "existing test" "Help paths are covered."
-line 42 "existing tests" "Package metadata, installed layout, reinstall, and removal are covered."
+line 42 "existing tests" "Package metadata, installed layout, reinstall, and purge cleanup are covered."
 line 43 "existing tests" "Packaged service metadata is inspected."
 line 44 "existing tests" "Runtime/state directory contract is checked through package/service tests."
 line 45 "existing tests" "Installed CLI, daemon, service, sysusers, and completions are checked."
