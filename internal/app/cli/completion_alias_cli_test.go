@@ -48,7 +48,8 @@ func TestRunCLICompletionGeneratesPlzAliasSupport(t *testing.T) {
 
 func TestRunCLICompletionRuntimeAcceptsPlzCommandName(t *testing.T) {
 	got := runCompletionRuntime(t, options{}, bashCompleteArgs(1, "plz", "")...)
-	for _, want := range []string{"connect", "completion", "profile", "subscription"} {
-		assertContainsLine(t, got, want)
-	}
+	assertContainsCandidateLine(t, got, "connect", "Start connection")
+	assertContainsCandidateLine(t, got, "completion", "Generate completion")
+	assertContainsCandidateLine(t, got, "profile", "Manage profiles")
+	assertContainsCandidateLine(t, got, "subscription", "Manage subscriptions")
 }
