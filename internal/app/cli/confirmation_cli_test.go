@@ -56,3 +56,17 @@ func TestConfirmDefaultYesCancel(t *testing.T) {
 		t.Fatalf("expected cancel error, got %v", err)
 	}
 }
+
+func TestConfirmDefaultYesEmptyEOFCancels(t *testing.T) {
+	var out bytes.Buffer
+	err := confirmDefaultYes(&out, strings.NewReader(""), "Continue", "test", "canceled")
+	if err == nil {
+		t.Fatal("expected empty EOF to cancel")
+	}
+	if got := ExitCode(err); got != 1 {
+		t.Fatalf("expected cancel exit code 1, got %d", got)
+	}
+	if !strings.Contains(err.Error(), "canceled") {
+		t.Fatalf("expected cancel error, got %v", err)
+	}
+}
