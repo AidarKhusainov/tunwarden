@@ -110,7 +110,7 @@ The package does not depend on polkit. Installing the static policy file does no
 
 ## Service install behavior
 
-Installing the package must not unexpectedly change live host networking.
+Installing the package must make the local daemon available for normal first-run CLI usage without unexpectedly changing live host networking.
 
 Package installation:
 
@@ -120,9 +120,9 @@ Package installation:
 - installs the systemd unit;
 - installs the sysusers configuration;
 - creates or declares packaged service identities through `systemd-sysusers` when that command is available;
-- records systemd unit state through Debian systemd helper tools when available;
-- does not start or enable `podlazd.service`;
-- does not start Xray;
+- unmasks, enables, and records `podlazd.service` state through Debian systemd helper tools when available;
+- requests `podlazd.service` startup through Debian systemd invocation helper tools when available;
+- does not start Xray because of package installation alone;
 - does not create TUN devices;
 - does not change routes, DNS, nftables, firewall rules, or host resolver files;
 - does not enable polkit authorization by itself;
@@ -157,4 +157,4 @@ dist/podlaz_0.0.0~dev-1_linux_amd64.deb
 dist/podlaz_0.0.0~dev-1_linux_arm64.deb
 ```
 
-The package gate validates the declarative packaged contract: sysusers identities, service `User=`/`Group=`, `UMask=`, runtime and state directory modes, bounded daemon capabilities, the narrow ambient capabilities required for daemon-owned child lifecycle, static polkit action IDs, absence of broad polkit defaults, absence of AppStream/metainfo files, and absence of package maintainer hooks that automatically start or enable `podlazd.service`.
+The package gate validates the declarative packaged contract: sysusers identities, service `User=`/`Group=`, `UMask=`, runtime and state directory modes, bounded daemon capabilities, the narrow ambient capabilities required for daemon-owned child lifecycle, static polkit action IDs, absence of broad polkit defaults, absence of AppStream/metainfo files, and Debian helper-based daemon availability hooks.
