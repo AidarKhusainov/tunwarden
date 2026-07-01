@@ -95,10 +95,9 @@ test -f /usr/lib/sysusers.d/podlaz.conf || fail "missing sysusers contract"
 
 log "systemd daemon lifecycle"
 sudo -n systemctl daemon-reload
-sudo -n systemctl reset-failed podlazd.service || true
-sudo -n systemctl start podlazd.service
+expect_success installed-service-enabled sudo -n systemctl is-enabled --quiet podlazd.service
 SERVICE_TOUCHED=1
-sudo -n systemctl is-active --quiet podlazd.service
+expect_success installed-service-active sudo -n systemctl is-active --quiet podlazd.service
 collect_service_diagnostics
 sudo -n systemctl stop podlazd.service
 SERVICE_TOUCHED=0
