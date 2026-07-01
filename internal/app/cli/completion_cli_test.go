@@ -27,7 +27,7 @@ func TestRunCLICompletionGeneratesSupportedShells(t *testing.T) {
 		{
 			name: "zsh",
 			args: []string{"completion", "zsh"},
-			want: []string{"#compdef podlaz", "__complete zsh", "_podlaz \"$@\"", "proxy-only tun", "vless vmess trojan shadowsocks"},
+			want: []string{"#compdef podlaz", "__complete zsh", "_describe -t podlaz-completions", "_podlaz \"$@\"", "proxy-only tun", "vless vmess trojan shadowsocks"},
 		},
 		{
 			name: "fish",
@@ -70,7 +70,7 @@ func TestRunCLICompletionHelp(t *testing.T) {
 		t.Fatalf("completion help failed: %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{"podlaz completion bash", "podlaz completion zsh", "podlaz completion fish", "does not contact podlazd"} {
+	for _, want := range []string{"podlaz completion bash", "podlaz completion zsh", "podlaz completion fish", "packaged plz alias", "does not contact podlazd"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected completion help to contain %q, got %q", want, got)
 		}
@@ -136,11 +136,6 @@ func TestRunCLICompletionRuntimeSuggestsStaticValues(t *testing.T) {
 			args: bashCompleteArgs(4, "podlaz", "profile", "add", "--protocol", ""),
 			want: []string{"vless", "vmess", "trojan", "shadowsocks"},
 		},
-		{
-			name: "top level commands",
-			args: bashCompleteArgs(1, "podlaz", ""),
-			want: []string{"connect", "completion", "profile", "subscription"},
-		},
 	}
 
 	for _, tt := range tests {
@@ -153,11 +148,26 @@ func TestRunCLICompletionRuntimeSuggestsStaticValues(t *testing.T) {
 	}
 }
 
+func TestRunCLICompletionRuntimeSuggestsCommandDescriptions(t *testing.T) {
+	opts := seedCompletionStores(t)
+	got := runCompletionRuntime(t, opts, bashCompleteArgs(1, "podlaz", "")...)
+	assertContainsCandidateLine(t, got, "connect", "Start connection")
+	assertContainsCandidateLine(t, got, "profile", "Manage profiles")
+	assertContainsCandidateLine(t, got, "subscription", "Manage subscriptions")
+}
+
+func TestRunCLICompletionRuntimeSuggestsFlagDescriptions(t *testing.T) {
+	opts := seedCompletionStores(t)
+	got := runCompletionRuntime(t, opts, bashCompleteArgs(2, "podlaz", "plan", "-")...)
+	assertContainsCandidateLine(t, got, "--mode", "Select connection mode")
+	assertContainsCandidateLine(t, got, "--json", "Print JSON output")
+}
+
 func TestRunCLICompletionRuntimeDoesNotSuggestUsedNonRepeatableFlags(t *testing.T) {
 	opts := seedCompletionStores(t)
 	got := runCompletionRuntime(t, opts, bashCompleteArgs(4, "podlaz", "plan", "--mode", "tun", "-")...)
-	assertContainsLine(t, got, "--json")
-	assertNotContainsLine(t, got, "--mode")
+	assertContainsCandidateLine(t, got, "--json", "Print JSON output")
+	assertNotContainsCandidateValue(t, got, "--mode")
 }
 
 func TestRunCLICompletionRuntimeUsesDefaultFilesForImportPath(t *testing.T) {
