@@ -42,16 +42,29 @@ plz --help
 | `4` | Permission or authorization failure. |
 | `5` | Required daemon access was unavailable. |
 
+## Completion
+
+```bash
+podlaz completion bash|zsh|fish
+plz completion bash|zsh|fish
+```
+
+Completion generation is read-only. It must not contact the daemon, start Xray,
+mutate networking, or require root.
+
+Generated scripts support both `podlaz` and `plz`. Interactive completion may
+read local profile and subscription IDs. zsh and fish show short command/flag
+descriptions where the shell supports them; bash completes the same values but
+does not show descriptions in the standard completion UI.
+
 ## Commands
 
 ```bash
 podlaz version
 podlaz help [command]
-podlaz completion bash|zsh|fish
 ```
 
-Read-only. Completion generation prints static scripts and must not read user
-state, contact the daemon, start Xray, mutate networking, or require root.
+Read-only.
 
 ```bash
 podlaz import <share-uri|local-path|file-or-http-url>
