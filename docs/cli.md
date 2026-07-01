@@ -53,9 +53,9 @@ Completion generation is read-only. It must not contact the daemon, start Xray,
 mutate networking, or require root.
 
 Generated scripts support both `podlaz` and `plz`. Interactive completion may
-read local profile and subscription IDs. zsh and fish show short command/flag
-descriptions where the shell supports them; bash completes the same values but
-does not show descriptions in the standard completion UI.
+read local profile and subscription IDs. bash, zsh, and fish expose short
+command/flag descriptions where the shell completion UI supports listing them.
+Single inserted completions must not include description text.
 
 ## Commands
 
