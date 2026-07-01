@@ -178,17 +178,25 @@ jobs:
           set -euo pipefail
           for arch in amd64 arm64; do
             package="dist/podlaz_${VERSION}_linux_${arch}.deb"
-            dpkg-deb --fsys-tarfile "$package" | tar -xOf - ./usr/lib/systemd/system/podlazd.service > "/tmp/podlazd-${arch}.service"
-            dpkg-deb --fsys-tarfile "$package" | tar -xOf - ./usr/lib/sysusers.d/podlaz.conf > "/tmp/podlaz-${arch}.sysusers"
-            grep -F 'u podlaz ' "/tmp/podlaz-${arch}.sysusers"
-            grep -F 'u podlaz-xray ' "/tmp/podlaz-${arch}.sysusers"
-            grep -F 'User=podlaz' "/tmp/podlazd-${arch}.service"
-            grep -F 'Group=podlaz' "/tmp/podlazd-${arch}.service"
-            grep -F 'UMask=0077' "/tmp/podlazd-${arch}.service"
-            grep -F 'RuntimeDirectory=podlaz' "/tmp/podlazd-${arch}.service"
-            grep -F 'RuntimeDirectoryMode=0710' "/tmp/podlazd-${arch}.service"
-            grep -F 'StateDirectory=podlaz' "/tmp/podlazd-${arch}.service"
-            grep -F 'StateDirectoryMode=0700' "/tmp/podlazd-${arch}.service"
+            service="/tmp/podlazd-${arch}.service"
+            sysusers="/tmp/podlaz-${arch}.sysusers"
+            dpkg-deb --fsys-tarfile "$package" | tar -xOf - ./usr/lib/systemd/system/podlazd.service > "$service"
+            dpkg-deb --fsys-tarfile "$package" | tar -xOf - ./usr/lib/sysusers.d/podlaz.conf > "$sysusers"
+            grep -F 'u podlaz ' "$sysusers"
+            grep -F 'u podlaz-xray ' "$sysusers"
+            grep -Fx 'User=root' "$service"
+            grep -Fx 'Group=podlaz' "$service"
+            grep -Fx 'UMask=0077' "$service"
+            grep -Fx 'RuntimeDirectory=podlaz' "$service"
+            grep -Fx 'RuntimeDirectoryMode=0711' "$service"
+            grep -Fx 'StateDirectory=podlaz' "$service"
+            grep -Fx 'StateDirectoryMode=0700' "$service"
+            grep -Fx 'NoNewPrivileges=yes' "$service"
+            grep -Fx 'CapabilityBoundingSet=CAP_CHOWN CAP_SETUID CAP_SETGID CAP_KILL CAP_NET_ADMIN' "$service"
+            grep -Fx 'AmbientCapabilities=CAP_SETUID CAP_KILL' "$service"
+            grep -Fx 'RestrictSUIDSGID=yes' "$service"
+            grep -Fx 'MemoryDenyWriteExecute=yes' "$service"
+            ! grep -E '^AmbientCapabilities=.*CAP_(NET_ADMIN|SETGID|SYS_ADMIN)' "$service"
           done
           ! grep -R -E 'systemctl[[:space:]]+(start|enable)[[:space:]]+podlazd|deb-systemd-invoke[[:space:]]+start[[:space:]]+podlazd' packaging/debian
 
@@ -205,6 +213,12 @@ jobs:
           grep -F '__complete zsh' /tmp/_podlaz
           grep -F 'complete -c podlaz -f' /tmp/podlaz.fish
           grep -F '__complete fish' /tmp/podlaz.fish
+          grep -F -- "-l mode -x -a 'proxy-only tun'" /tmp/podlaz.fish
+          grep -F -- "-l protocol -x -a 'vless vmess trojan shadowsocks'" /tmp/podlaz.fish
+          fish --no-config --command 'source /tmp/podlaz.fish; complete -C "podlaz plan -" | grep -F -- "--mode"'
+          fish --no-config --command 'source /tmp/podlaz.fish; complete -C "podlaz plan --mode " | grep -F "proxy-only"'
+          fish --no-config --command 'source /tmp/podlaz.fish; complete -C "podlaz profile add --protocol " | grep -F "vless"'
+          fish --no-config --command 'source /tmp/podlaz.fish; complete -C "podlaz logs -" | grep -F -- "--follow"'
 
       - name: Lint Debian packages
         env:
@@ -251,6 +265,16 @@ jobs:
           test ! -e /usr/share/metainfo/io.github.aidarkhusainov.podlaz.metainfo.xml
           man -l /usr/share/man/man1/podlaz.1.gz >/dev/null
           man -l /usr/share/man/man8/podlazd.8.gz >/dev/null
+          bash -n /usr/share/bash-completion/completions/podlaz
+          zsh -n /usr/share/zsh/vendor-completions/_podlaz
+          fish --no-config --command 'source /usr/share/fish/vendor_completions.d/podlaz.fish'
+          bash --noprofile --norc -c 'source /usr/share/bash-completion/completions/podlaz; COMP_WORDS=(podlaz ""); COMP_CWORD=1; _podlaz; printf "%s\n" "${COMPREPLY[@]}" | grep -Fx completion'
+          zsh -fc 'autoload -Uz compinit; fpath=(/usr/share/zsh/vendor-completions $fpath); compinit -D; autoload -Uz _podlaz; whence _podlaz >/dev/null'
+          fish --no-config --command 'source /usr/share/fish/vendor_completions.d/podlaz.fish; complete -C "podlaz " | grep -F completion'
+          fish --no-config --command 'source /usr/share/fish/vendor_completions.d/podlaz.fish; complete -C "podlaz plan -" | grep -F -- "--mode"'
+          fish --no-config --command 'source /usr/share/fish/vendor_completions.d/podlaz.fish; complete -C "podlaz plan --mode " | grep -F "proxy-only"'
+          fish --no-config --command 'source /usr/share/fish/vendor_completions.d/podlaz.fish; complete -C "podlaz profile add --protocol " | grep -F "vless"'
+          fish --no-config --command 'source /usr/share/fish/vendor_completions.d/podlaz.fish; complete -C "podlaz logs -" | grep -F -- "--follow"'
           ! pgrep -x podlazd
 
       - name: Remove package locally
