@@ -93,7 +93,7 @@ test -x /usr/bin/podlazd || fail "missing /usr/bin/podlazd"
 test -f /usr/lib/systemd/system/podlazd.service || fail "missing podlazd.service"
 test -f /usr/lib/sysusers.d/podlaz.conf || fail "missing sysusers contract"
 
-log "systemd daemon lifecycle"
+log "package first-run service availability"
 sudo -n systemctl daemon-reload
 expect_success installed-service-enabled sudo -n systemctl is-enabled --quiet podlazd.service
 SERVICE_TOUCHED=1
