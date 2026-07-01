@@ -5,9 +5,10 @@ podlazd \- local podlaz daemon for proxy and VPN lifecycle state
 .SY podlazd
 .YS
 .PP
-Packaged systemd deployments normally use:
+Packaged systemd deployments normally enable and start the daemon during package
+configuration. Administrator recovery commands are:
 .EX
-systemctl start podlazd
+sudo systemctl enable --now podlazd
 systemctl status podlazd --no-pager
 journalctl -u podlazd -n 50 --no-pager
 .EE
@@ -35,9 +36,11 @@ identity.
 .SH SERVICE MANAGEMENT
 The packaged service unit is
 .BR podlazd.service .
-Typical administrator commands are:
+The Debian package normally makes this service available for first-run CLI use
+through package maintainer scripts. If service recovery is needed, typical
+administrator commands are:
 .EX
-sudo systemctl start podlazd
+sudo systemctl enable --now podlazd
 systemctl status podlazd --no-pager
 journalctl -u podlazd -n 50 --no-pager
 sudo systemctl stop podlazd
