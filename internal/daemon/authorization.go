@@ -109,9 +109,5 @@ func requiresPeerCredentials(authorizer Authorizer) bool {
 }
 
 func writeAuthorizationHTTPError(w http.ResponseWriter, err error) {
-	status := http.StatusForbidden
-	if errors.Is(err, ErrAuthorizationUnavailable) {
-		status = http.StatusServiceUnavailable
-	}
-	http.Error(w, err.Error(), status)
+	writeDaemonAPIHTTPError(w, categorizeAuthorizationError(err))
 }

@@ -32,25 +32,29 @@ func registerLifecycleHandlers(mux *http.ServeMux, lifecycle lifecycleService, a
 		}
 		var req api.ConnectRequest
 		if err := decodeJSONBody(r, &req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeDaemonAPIHTTPError(w, daemonAPIBadRequest(err))
 			return
 		}
 		if err := api.ValidateConnectRequest(req); err != nil {
-			http.Error(w, err.Error(), lifecycleStatusCode(err))
+			writeDaemonAPIHTTPError(w, daemonAPIBadRequest(err))
 			return
 		}
 		action, err := connectAuthorizationAction(req.Mode)
 		if err != nil {
-			http.Error(w, err.Error(), lifecycleStatusCode(err))
+			writeDaemonAPIHTTPError(w, daemonAPIBadRequest(err))
 			return
 		}
 		if err := authorizeHTTPRequest(r, authorizer, action); err != nil {
 			writeAuthorizationHTTPError(w, err)
 			return
 		}
+		if lifecycleConnectionActive(r.Context(), lifecycle) {
+			writeDaemonAPIHTTPError(w, daemonAPIConflict(activeConnectionError()))
+			return
+		}
 		response, err := lifecycle.Connect(r.Context(), req)
 		if err != nil {
-			http.Error(w, err.Error(), lifecycleStatusCode(err))
+			writeDaemonAPIHTTPError(w, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -69,7 +73,7 @@ func registerLifecycleHandlers(mux *http.ServeMux, lifecycle lifecycleService, a
 		}
 		response, err := lifecycle.Disconnect(r.Context())
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeDaemonAPIHTTPError(w, daemonAPIInternal(err))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -103,13 +107,16 @@ func decodeJSONBody(r *http.Request, dst any) error {
 	return nil
 }
 
-func lifecycleStatusCode(err error) int {
-	message := err.Error()
-	if strings.Contains(message, "unsupported connect mode") || strings.Contains(message, "invalid profile") || strings.Contains(message, "missing ") {
-		return http.StatusBadRequest
+func lifecycleConnectionActive(ctx context.Context, lifecycle lifecycleService) bool {
+	reporter, ok := lifecycle.(interface {
+		Status(context.Context) api.StatusResponse
+	})
+	if !ok {
+		return false
 	}
-	if strings.Contains(message, "connection already active") {
-		return http.StatusConflict
-	}
-	return http.StatusInternalServerError
+	return reporter.Status(ctx).Connection == "active"
+}
+
+func activeConnectionError() error {
+	return errConnectionAlreadyActive
 }
