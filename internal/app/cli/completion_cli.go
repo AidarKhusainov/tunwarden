@@ -64,11 +64,15 @@ _podlaz()
         return 0
     fi
 
-    case "${COMP_TYPE:-63}" in
-        37|42)
-            insert_only=true
-            ;;
-    esac
+    if [[ -z "${COMP_TYPE+x}" ]]; then
+        insert_only=true
+    else
+        case "$COMP_TYPE" in
+            37|42)
+                insert_only=true
+                ;;
+        esac
+    fi
 
     for line in "${runtime_lines[@]}"; do
         case "$line" in
