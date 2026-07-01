@@ -1,11 +1,8 @@
 package cli
 
 import (
-	"bufio"
-	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/AidarKhusainov/podlaz/internal/profile"
@@ -109,19 +106,8 @@ func confirmSubscriptionDelete(stdout io.Writer, opts options, source sub.Source
 	if keepProfiles {
 		action = "keep"
 	}
-	fmt.Fprintf(stdout, "Delete subscription %s and %s %d imported profiles? Type yes to continue: ", render.Redact(source.ID), action, len(source.ProfileIDs))
-	reader := opts.stdin
-	if reader == nil {
-		reader = os.Stdin
-	}
-	line, err := bufio.NewReader(reader).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("read subscription delete confirmation: %w", err)
-	}
-	if strings.EqualFold(strings.TrimSpace(line), "yes") {
-		return nil
-	}
-	return exitError{code: 1, err: errors.New("subscription delete canceled")}
+	prompt := fmt.Sprintf("Delete subscription %s and %s %d imported profiles? Type yes to continue", render.Redact(source.ID), action, len(source.ProfileIDs))
+	return confirmDefaultYes(stdout, confirmationReader(opts), prompt, "subscription delete", "subscription delete canceled")
 }
 
 func subscriptionDeleteInputIsTerminal(opts options) bool {
