@@ -5,6 +5,9 @@ podlaz \- CLI for Xray-compatible VPN and proxy profiles
 .SY podlaz
 .OP --help
 .YS
+.SY plz
+.OP --help
+.YS
 .SY podlaz
 .B version
 .YS
@@ -81,7 +84,11 @@ Print version, commit, and build date.
 Print general or command-specific help.
 .TP
 .B completion bash|zsh|fish
-Write static shell completion definitions to stdout.
+Write static shell completion definitions to stdout. Generated scripts support
+both
+.B podlaz
+and
+.BR plz .
 .TP
 .B import <input>
 Import a share URI, local profile file, or subscription URL.
@@ -268,9 +275,8 @@ podlaz disconnect
 .EE
 .PP
 .EX
-podlaz import https://example.com/subscription
-podlaz subscription update personal
-podlaz logs --daemon --since "1 hour ago"
+plz status
+plz logs --daemon --since "1 hour ago"
 podlaz recover
 .EE
 .SH SEE ALSO
