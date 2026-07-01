@@ -8,7 +8,7 @@ packaging, releases, or contributors.
 
 | Document | Purpose |
 | --- | --- |
-| [CLI reference](./cli.md) | Commands, flags, modes, exit codes, and JSON/deferred behavior. |
+| [CLI reference](./cli.md) | Commands, flags, modes, exit codes, alias, and completion behavior. |
 | [State and security](./state-and-security.md) | State locations, redaction, daemon boundary, privileged networking safety. |
 | [Debian package](./debian-package.md) | `.deb` layout, install behavior, service behavior, validation gates. |
 | [Development guide](./development.md) | Local checks and contribution rules. |
