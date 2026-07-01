@@ -22,7 +22,7 @@ func TestRunCLICompletionGeneratesSupportedShells(t *testing.T) {
 		{
 			name: "bash",
 			args: []string{"completion", "bash"},
-			want: []string{"_podlaz()", "__complete bash", "complete -o default -F _podlaz podlaz", "proxy-only tun", "vless vmess trojan shadowsocks"},
+			want: []string{"_podlaz()", "__complete bash", "complete -o default -F _podlaz podlaz", "proxy-only tun", "vless vmess trojan shadowsocks", "if [[ -z \"${COMP_TYPE+x}\" ]]; then", "insert_only=true"},
 		},
 		{
 			name: "zsh",
