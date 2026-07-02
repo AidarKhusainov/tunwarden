@@ -36,7 +36,7 @@ Required host capabilities:
 - Go from the workflow setup step;
 - passwordless sudo for the repository E2E scripts.
 
-Additional OS/architecture coverage requires additional dedicated runners or VMs.
+Additional Debian/Ubuntu or arm64 coverage requires dedicated runners or VMs.
 
 ## Secrets and variables
 
@@ -98,8 +98,8 @@ not used.
 ## Diagnostics
 
 Artifacts are written under `${RUNNER_TEMP}/podlaz-e2e-artifacts` and uploaded by
-the workflow. Diagnostics must stay sanitized and must not include raw profile
-URIs, subscription URLs, generated runtime configs, credentials, or tokens.
+the workflow. Diagnostics must stay sanitized and must not include sensitive
+runtime or account material.
 
 ## Non-goals
 
