@@ -28,23 +28,48 @@ func TestPlanProxyOnlyBuildsInspectableDryRun(t *testing.T) {
 	if !strings.Contains(string(plan.XrayConfig), "podlaz-socks") || !strings.Contains(string(plan.XrayConfig), "podlaz-proxy") {
 		t.Fatalf("expected generated Xray config in plan, got %s", plan.XrayConfig)
 	}
-	for _, step := range plan.Steps {
-		lower := strings.ToLower(step)
-		if strings.Contains(lower, "apply route") || strings.Contains(lower, "apply nft") || strings.Contains(lower, "mutate") {
-			t.Fatalf("proxy-only plan contains a networking mutation step: %q", step)
+	assertProxyOnlyPlanDoesNotMutateNetworking(t, plan)
+}
+
+func TestPlanProxyOnlySupportsVLESSXHTTPWithoutNetworkingMutations(t *testing.T) {
+	p := testVLESSProfile()
+	p.Transport = "xhttp"
+	p.Path = "/xhttp"
+	p.HostHeader = "edge.example"
+
+	plan, err := PlanProxyOnly(p)
+	if err != nil {
+		t.Fatalf("plan proxy-only xhttp: %v", err)
+	}
+
+	config := string(plan.XrayConfig)
+	for _, want := range []string{`"network": "xhttp"`, `"xhttpSettings"`, `"path": "/xhttp"`, `"host": "edge.example"`} {
+		if !strings.Contains(config, want) {
+			t.Fatalf("expected generated xhttp config to contain %s, got %s", want, config)
 		}
 	}
+	assertProxyOnlyPlanDoesNotMutateNetworking(t, plan)
 }
 
 func TestPlanProxyOnlyRejectsUnsupportedProfileSettings(t *testing.T) {
 	p := testVLESSProfile()
-	p.Transport = "xhttp"
+	p.Transport = "quic"
 	_, err := PlanProxyOnly(p)
 	if err == nil {
 		t.Fatal("expected unsupported transport to fail")
 	}
 	if !strings.Contains(err.Error(), "unsupported proxy-only VLESS transport") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func assertProxyOnlyPlanDoesNotMutateNetworking(t *testing.T, plan ProxyOnlyPlan) {
+	t.Helper()
+	for _, step := range plan.Steps {
+		lower := strings.ToLower(step)
+		if strings.Contains(lower, "apply route") || strings.Contains(lower, "apply nft") || strings.Contains(lower, "mutate") {
+			t.Fatalf("proxy-only plan contains a networking mutation step: %q", step)
+		}
 	}
 }
 
