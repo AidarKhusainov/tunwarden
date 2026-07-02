@@ -7,6 +7,17 @@ start_service() {
 	deb-systemd-invoke start "$1" >/dev/null || true
 }
 
+repair_stale_enablement() {
+	if ! command -v systemctl >/dev/null 2>&1; then
+		return 0
+	fi
+	if systemctl is-enabled --quiet "$1" >/dev/null 2>&1; then
+		return 0
+	fi
+	deb-systemd-helper reenable "$1" >/dev/null || true
+	deb-systemd-helper update-state "$1" >/dev/null || true
+}
+
 if [ "${1:-configure}" != "configure" ]; then
 	exit 0
 fi
@@ -19,6 +30,7 @@ if command -v deb-systemd-helper >/dev/null 2>&1; then
 	deb-systemd-helper unmask "$unit" >/dev/null || true
 	deb-systemd-helper enable "$unit" >/dev/null || true
 	deb-systemd-helper update-state "$unit" >/dev/null || true
+	repair_stale_enablement "$unit"
 fi
 
 if command -v deb-systemd-invoke >/dev/null 2>&1; then
