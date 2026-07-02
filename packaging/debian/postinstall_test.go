@@ -12,7 +12,7 @@ import (
 
 func TestPreinstallMarksConfigFilesInstallForStaleHelperRepair(t *testing.T) {
 	dir := t.TempDir()
-	cmd := exec.Command("sh", "preinstall.txt", "install", "0.0.0~dev-1", "0.0.0~dev-1")
+	cmd := exec.Command("sh", "preinstall.sh", "install", "0.0.0~dev-1", "0.0.0~dev-1")
 	cmd.Env = append(os.Environ(), "PODLAZ_MAINTSCRIPT_RUN_DIR="+dir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -26,7 +26,7 @@ func TestPreinstallMarksConfigFilesInstallForStaleHelperRepair(t *testing.T) {
 
 func TestPreinstallDoesNotMarkFreshInstall(t *testing.T) {
 	dir := t.TempDir()
-	cmd := exec.Command("sh", "preinstall.txt", "install")
+	cmd := exec.Command("sh", "preinstall.sh", "install")
 	cmd.Env = append(os.Environ(), "PODLAZ_MAINTSCRIPT_RUN_DIR="+dir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -111,7 +111,7 @@ func TestPostinstallDoesNotReenableAlreadyEnabledUnit(t *testing.T) {
 }
 
 func TestMaintainerScriptsAvoidRawSystemctlServiceMutation(t *testing.T) {
-	for _, script := range []string{"preinstall.txt", "postinstall", "preremove", "postremove"} {
+	for _, script := range []string{"preinstall.sh", "postinstall", "preremove", "postremove"} {
 		content, err := os.ReadFile(script)
 		if os.IsNotExist(err) {
 			continue
