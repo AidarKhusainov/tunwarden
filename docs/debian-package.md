@@ -128,7 +128,8 @@ Package installation:
 - installs the sysusers configuration;
 - creates or declares packaged service identities through `systemd-sysusers` when that command is available;
 - unmasks, enables, and records `podlazd.service` state through Debian systemd helper tools when available;
-- requests `podlazd.service` startup through Debian systemd invocation helper tools when available;
+- repairs stale Debian helper-state-only enablement only for install-from-Config-Files package state marked by `preinstall` and confirmed by Debian helper state;
+- requests `podlazd.service` startup through Debian systemd invocation helper tools when the unit is enabled after helper processing;
 - does not start Xray because of package installation alone;
 - does not create TUN devices;
 - does not change routes, DNS, nftables, firewall rules, or host resolver files;
@@ -164,4 +165,4 @@ dist/podlaz_0.0.0~dev-1_linux_amd64.deb
 dist/podlaz_0.0.0~dev-1_linux_arm64.deb
 ```
 
-The package gate validates the declarative packaged contract: sysusers identities, service `User=`/`Group=`, `UMask=`, runtime and state directory modes, bounded daemon capabilities, the narrow ambient capabilities required for daemon-owned child lifecycle, static polkit action IDs, absence of broad polkit defaults, `plz` alias and alias completion files, absence of AppStream/metainfo files, Debian helper-based daemon availability hooks, and absence of direct `systemctl start` or `systemctl enable` maintainer-script calls.
+The package gate validates the declarative packaged contract: sysusers identities, service `User=`/`Group=`, `UMask=`, runtime and state directory modes, bounded daemon capabilities, the narrow ambient capabilities required for daemon-owned child lifecycle, static polkit action IDs, absence of broad polkit defaults, `plz` alias and alias completion files, absence of AppStream/metainfo files, Debian helper-based daemon availability hooks, and absence of direct `systemctl start` or `systemctl enable` maintainer-script calls. The maintainer-script regression tests validate the stale helper-state repair contract and the wider raw `systemctl start|enable` guard.
