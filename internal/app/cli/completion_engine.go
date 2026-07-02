@@ -8,9 +8,6 @@ import (
 
 	profilecheck "github.com/AidarKhusainov/podlaz/internal/check"
 	"github.com/AidarKhusainov/podlaz/internal/network/planner"
-	"github.com/AidarKhusainov/podlaz/internal/profile"
-	"github.com/AidarKhusainov/podlaz/internal/render"
-	"github.com/AidarKhusainov/podlaz/internal/sub"
 )
 
 type completionDirective string
