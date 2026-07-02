@@ -100,6 +100,20 @@ and `delete` mutate user-owned subscription/profile state. Failed update/delete
 must preserve existing state. `delete --keep-profiles` keeps imported profiles.
 `subscription update --json` and `subscription delete --json` are deferred.
 
+### VLESS xhttp Xray JSON profiles
+
+Single-location VLESS profiles imported from Xray JSON subscriptions may use
+`streamSettings.network: "xhttp"`. In `proxy-only` mode podlaz treats these as
+renderable VLESS profiles, preserves the parsed `xhttpSettings.path` and
+`xhttpSettings.host` fields, and generates a runtime Xray outbound containing
+`streamSettings.network: "xhttp"` plus `xhttpSettings`. The daemon still owns
+only the local SOCKS/HTTP listeners and must not mutate TUN, routes, DNS,
+nftables, or firewall state for proxy-only connects.
+
+`xhttp` is not enabled for `tun` mode yet. TUN validation and planning must fail
+before host networking snapshots or mutations until the TUN bypass and routing
+semantics are explicitly designed and tested.
+
 ### Grouped Remnawave/Xray JSON profiles
 
 Some Remnawave subscriptions return one provider-owned Xray JSON object with

@@ -25,6 +25,48 @@ func TestGenerateXrayProxyOnlyConfigMatchesFixture(t *testing.T) {
 	}
 }
 
+func TestGenerateXrayProxyOnlyConfigSupportsVLESSRealityXHTTP(t *testing.T) {
+	p := proxyOnlyRealityProfile()
+	p.Transport = "xhttp"
+	p.Path = "/xhttp"
+	p.HostHeader = "edge.example"
+
+	got, err := GenerateXrayProxyOnlyConfig(p, DefaultXrayProxyOnlyConfigOptions())
+	if err != nil {
+		t.Fatalf("generate proxy-only Xray xhttp config: %v", err)
+	}
+
+	var cfg struct {
+		Outbounds []struct {
+			StreamSettings map[string]any `json:"streamSettings"`
+		} `json:"outbounds"`
+	}
+	if err := json.Unmarshal(got, &cfg); err != nil {
+		t.Fatalf("decode proxy-only Xray xhttp config: %v", err)
+	}
+	if len(cfg.Outbounds) != 1 {
+		t.Fatalf("expected one outbound, got %#v", cfg.Outbounds)
+	}
+	stream := cfg.Outbounds[0].StreamSettings
+	if stream["network"] != "xhttp" || stream["security"] != "reality" {
+		t.Fatalf("unexpected xhttp stream settings: %#v", stream)
+	}
+	xhttpSettings, ok := stream["xhttpSettings"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected xhttpSettings object, got %#v", stream["xhttpSettings"])
+	}
+	if xhttpSettings["path"] != "/xhttp" || xhttpSettings["host"] != "edge.example" {
+		t.Fatalf("unexpected xhttp settings: %#v", xhttpSettings)
+	}
+	realitySettings, ok := stream["realitySettings"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected realitySettings object, got %#v", stream["realitySettings"])
+	}
+	if realitySettings["serverName"] != "www.example.com" || realitySettings["publicKey"] != "test-public-key" {
+		t.Fatalf("unexpected Reality settings: %#v", realitySettings)
+	}
+}
+
 func TestGenerateXrayTunConfigUsesPrivateSocksInbound(t *testing.T) {
 	got, err := GenerateXrayTunConfig(proxyOnlyRealityProfile(), DefaultXrayTunConfigOptions())
 	if err != nil {
@@ -96,6 +138,21 @@ func TestGenerateXrayTunConfigCanUsePreResolvedOutboundAddress(t *testing.T) {
 	}
 }
 
+func TestGenerateXrayTunConfigRejectsXHTTPProfileUntilBypassValidationExists(t *testing.T) {
+	p := proxyOnlyRealityProfile()
+	p.Transport = "xhttp"
+	p.Path = "/xhttp"
+	p.HostHeader = "edge.example"
+
+	_, err := GenerateXrayTunConfig(p, DefaultXrayTunConfigOptions())
+	if err == nil {
+		t.Fatal("expected TUN-mode xhttp generation to fail")
+	}
+	if !strings.Contains(err.Error(), "unsupported TUN-mode VLESS transport") {
+		t.Fatalf("expected unsupported TUN-mode xhttp error, got %v", err)
+	}
+}
+
 func TestGenerateXrayProxyOnlyConfigRejectsUnsupportedProfiles(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -113,7 +170,7 @@ func TestGenerateXrayProxyOnlyConfigRejectsUnsupportedProfiles(t *testing.T) {
 		{
 			name: "unsupported-transport",
 			mutate: func(p profile.Profile) profile.Profile {
-				p.Transport = "xhttp"
+				p.Transport = "quic"
 				return p
 			},
 			wantMessage: "unsupported proxy-only VLESS transport",

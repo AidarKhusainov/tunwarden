@@ -72,6 +72,63 @@ while true; do sleep 1; done
 	}
 }
 
+func TestXrayManagerConnectWritesVLESSXHTTPRuntimeConfigWithoutSystemNetworking(t *testing.T) {
+	runtimeDir := t.TempDir()
+	fakeXray := writeFakeXray(t, `#!/bin/sh
+config=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-config" ]; then
+    shift
+    config="$1"
+  fi
+  shift
+done
+if [ ! -s "$config" ]; then
+  exit 65
+fi
+trap 'exit 0' TERM
+while true; do sleep 1; done
+`)
+	manager := &XrayManager{RuntimeDir: runtimeDir, XrayPath: fakeXray, StopTimeout: time.Second}
+	req := connectRequestForTest()
+	req.Profile.ID = "test-vless-xhttp"
+	req.Profile.Name = "test vless xhttp"
+	req.Profile.Transport = "xhttp"
+	req.Profile.Security = "reality"
+	req.Profile.ServerName = "xhttp.edge.invalid"
+	req.Profile.Path = "/xhttp"
+	req.Profile.HostHeader = "xhttp.edge.invalid"
+	req.Profile.RealityPublicKey = "test-public-key"
+	req.Profile.RealityShortID = "abcd"
+
+	connected, err := manager.Connect(context.Background(), req)
+	if err != nil {
+		t.Fatalf("connect xhttp failed: %v", err)
+	}
+	if connected.Connection != "active" || connected.Mode != "proxy-only" {
+		t.Fatalf("unexpected xhttp connect response: %#v", connected)
+	}
+	if connected.Routes != "not modified" || connected.DNS != "not modified" || connected.Firewall != "not modified" {
+		t.Fatalf("expected proxy-only xhttp connect not to mutate system networking, got %#v", connected)
+	}
+
+	configPath := filepath.Join(runtimeDir, "generated", "xray.json")
+	generated, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read generated xhttp config: %v", err)
+	}
+	config := string(generated)
+	for _, want := range []string{`"network": "xhttp"`, `"xhttpSettings"`, `"path": "/xhttp"`, `"host": "xhttp.edge.invalid"`, `"realitySettings"`} {
+		if !strings.Contains(config, want) {
+			t.Fatalf("expected generated xhttp config to contain %s, got %s", want, config)
+		}
+	}
+
+	if _, err := manager.Disconnect(context.Background()); err != nil {
+		t.Fatalf("disconnect xhttp failed: %v", err)
+	}
+}
+
 func TestXrayManagerReportsCoreCrashInStatus(t *testing.T) {
 	runtimeDir := t.TempDir()
 	fakeXray := writeFakeXray(t, "#!/bin/sh\nexit 23\n")

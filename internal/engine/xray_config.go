@@ -198,7 +198,7 @@ func vlessStreamSettings(modeName string, p profile.Profile) (map[string]any, er
 	if err != nil {
 		return nil, err
 	}
-	if security == "reality" && network != "raw" && network != "grpc" {
+	if security == "reality" && network != "raw" && network != "grpc" && network != "xhttp" {
 		return nil, fmt.Errorf("unsupported %s VLESS transport/security combination: security %q is not compatible with transport %q", modeName, security, network)
 	}
 
@@ -236,7 +236,12 @@ func canonicalVLESSTransport(modeName string, transport string) (string, error) 
 		return "grpc", nil
 	case "httpupgrade":
 		return "httpupgrade", nil
-	case "xhttp", "quic", "kcp", "mkcp":
+	case "xhttp":
+		if modeName != "proxy-only" {
+			return "", fmt.Errorf("unsupported %s VLESS transport %q for generated Xray config", modeName, transport)
+		}
+		return "xhttp", nil
+	case "quic", "kcp", "mkcp":
 		return "", fmt.Errorf("unsupported %s VLESS transport %q for generated Xray config", modeName, transport)
 	default:
 		return "", fmt.Errorf("unsupported %s VLESS transport %q", modeName, transport)
@@ -268,6 +273,9 @@ func vlessTransportSettings(network string, p profile.Profile) map[string]any {
 	case "httpupgrade":
 		putIfNotEmpty(settings, "path", p.Path)
 		putIfNotEmpty(settings, "host", p.HostHeader)
+	case "xhttp":
+		putIfNotEmpty(settings, "path", p.Path)
+		putIfNotEmpty(settings, "host", p.HostHeader)
 	}
 	return settings
 }
@@ -280,6 +288,8 @@ func transportSettingsKey(network string) string {
 		return "grpcSettings"
 	case "httpupgrade":
 		return "httpupgradeSettings"
+	case "xhttp":
+		return "xhttpSettings"
 	default:
 		return ""
 	}
