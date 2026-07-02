@@ -528,20 +528,13 @@ func (w *coreLogWriter) flushCompleteLinesLocked() {
 		if idx < 0 {
 			return
 		}
-		line := w.pending[:idx]
-		w.pending = w.pending[idx+1:]
-		w.logLineLocked(line)
+		w.logLineLocked(w.pending[:idx])
+		copy(w.pending, w.pending[idx+1:])
+		w.pending = w.pending[:len(w.pending)-idx-1]
 	}
 }
 
 func (w *coreLogWriter) logLineLocked(line []byte) {
-	message := strings.TrimSpace(string(line))
-	if message == "" {
-		return
-	}
-	pidPart := "unknown"
-	if w.pidKnown {
-		pidPart = fmt.Sprintf("%d", w.pid)
-	}
-	log.Printf("core profile=%s pid=%s stream=%s line=%s", render.Redact(w.profileID), pidPart, w.streamName, render.Redact(message))
+	cleanLine := strings.TrimRight(string(line), "\r")
+	log.Printf("podlazd: core xray %s pid=%d profile=%s: %s", w.streamName, w.pid, render.Redact(w.profileID), render.Redact(cleanLine))
 }
