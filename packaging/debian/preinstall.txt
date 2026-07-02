@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-marker_dir="${PODLAZ_MAINTSCRIPT_RUN_DIR:-/tmp/podlaz-maintscript}"
+marker_dir="${PODLAZ_MAINTSCRIPT_RUN_DIR:-/run/podlaz-maintscript}"
 marker="$marker_dir/repair-helper-enable"
 
 if [ "${1:-}" = "install" ] && [ -n "${2:-}" ]; then
