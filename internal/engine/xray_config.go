@@ -210,7 +210,7 @@ func vlessStreamSettings(modeName string, p profile.Profile) (map[string]any, er
 		settings[transportSettingsKey(network)] = transportSettings
 	}
 
-		 switch security {
+	switch security {
 	case "tls":
 		if tlsSettings := tlsSettings(p); len(tlsSettings) > 0 {
 			settings["tlsSettings"] = tlsSettings
