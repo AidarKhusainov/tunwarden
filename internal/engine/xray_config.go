@@ -81,12 +81,18 @@ type xrayVLESSSettings struct {
 // ValidateXrayProxyOnlyProfile checks whether a normalized profile can produce a
 // supported proxy-only Xray config without writing runtime state.
 func ValidateXrayProxyOnlyProfile(p profile.Profile) error {
+	if profile.IsProviderXrayConfigProfile(p) {
+		return ValidateProviderXrayProxyOnlyProfile(p)
+	}
 	return validateXrayVLESSProfile(p, "proxy-only")
 }
 
 // ValidateXrayTunProfile checks whether a normalized profile can produce a
 // supported TUN-mode Xray config without writing runtime state.
 func ValidateXrayTunProfile(p profile.Profile) error {
+	if profile.IsProviderXrayConfigProfile(p) {
+		return unsupportedProviderXrayTunModeError()
+	}
 	return validateXrayVLESSProfile(p, "TUN-mode")
 }
 
@@ -109,6 +115,9 @@ func validateXrayVLESSProfile(p profile.Profile, modeName string) error {
 
 // GenerateXrayProxyOnlyConfig builds deterministic Xray JSON for a proxy-only plan.
 func GenerateXrayProxyOnlyConfig(p profile.Profile, opts XrayProxyOnlyConfigOptions) ([]byte, error) {
+	if profile.IsProviderXrayConfigProfile(p) {
+		return GenerateProviderXrayProxyOnlyConfig(p, opts)
+	}
 	if opts.SOCKSListen == "" {
 		return nil, fmt.Errorf("proxy-only Xray config requires a SOCKS listen address")
 	}

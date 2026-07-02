@@ -37,6 +37,9 @@ func DefaultXrayTunConfigOptions() XrayTunConfigOptions {
 // SOCKS inbound for the adapter and must not be reused as a user-visible
 // proxy-only config.
 func GenerateXrayTunConfig(p profile.Profile, opts XrayTunConfigOptions) ([]byte, error) {
+	if profile.IsProviderXrayConfigProfile(p) {
+		return nil, unsupportedProviderXrayTunModeError()
+	}
 	if opts.SOCKSListen == "" {
 		return nil, fmt.Errorf("TUN-mode Xray config requires a SOCKS listen address")
 	}

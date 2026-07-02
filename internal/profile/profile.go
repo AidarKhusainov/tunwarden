@@ -28,6 +28,13 @@ const (
 	SourceImportedURI  SourceType = "imported_uri"
 )
 
+const (
+	// ProtocolXrayJSON identifies a provider-owned Xray JSON profile that must be
+	// rendered from stored provider config instead of the flat single-outbound
+	// profile fields.
+	ProtocolXrayJSON = "xray-json"
+)
+
 // Profile is the normalized internal VPN connection model.
 //
 // Subscription-specific formats should be parsed into this model before any
@@ -96,6 +103,27 @@ func Validate(p Profile) error {
 		messages = append(messages, "protocol is required")
 	} else if !supportedManualProtocol(p.Protocol) {
 		messages = append(messages, fmt.Sprintf("unsupported protocol %q", p.Protocol))
+	}
+	if IsProviderXrayConfigProfile(p) {
+		if !strings.EqualFold(strings.TrimSpace(p.Protocol), ProtocolXrayJSON) {
+			messages = append(messages, fmt.Sprintf("provider Xray config profiles must use protocol %q", ProtocolXrayJSON))
+		}
+		if p.Source != SourceSubscription {
+			messages = append(messages, "provider Xray config profiles must have source subscription")
+		}
+		if p.Engine != EngineXray {
+			messages = append(messages, fmt.Sprintf("provider Xray config profiles require engine %q", EngineXray))
+		}
+		providerConfig := ProviderXrayConfigJSON(p)
+		if strings.TrimSpace(providerConfig) == "" {
+			messages = append(messages, "reality_spider_x is required for provider Xray config profiles")
+		} else if !validProviderXrayConfigJSON(providerConfig) {
+			messages = append(messages, "reality_spider_x must contain a valid provider Xray JSON object")
+		}
+		if len(messages) > 0 {
+			return ValidationError{Messages: messages}
+		}
+		return nil
 	}
 	if strings.TrimSpace(p.Server) == "" {
 		messages = append(messages, "server is required")
@@ -179,7 +207,7 @@ func SortStable(profiles []Profile) {
 
 func supportedManualProtocol(protocol string) bool {
 	switch strings.ToLower(protocol) {
-	case "vless", "vmess", "trojan", "shadowsocks":
+	case "vless", "vmess", "trojan", "shadowsocks", ProtocolXrayJSON:
 		return true
 	default:
 		return false

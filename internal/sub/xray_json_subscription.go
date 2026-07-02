@@ -59,6 +59,9 @@ func parseXrayJSONObjectSubscription(content []byte) (Parsed, error) {
 	if err := rejectUnsupportedClientXrayJSONObject(content); err != nil {
 		return Parsed{}, err
 	}
+	if looksLikeGroupedProviderXrayObject(content) {
+		return parseGroupedProviderXrayProfile(content)
+	}
 	local, err := profile.ImportLocalContent(content)
 	if err != nil {
 		return Parsed{}, fmt.Errorf("parse Xray JSON subscription: %w", err)
@@ -75,14 +78,9 @@ func parseXrayJSONObjectSubscription(content []byte) (Parsed, error) {
 }
 
 func rejectUnsupportedClientXrayJSONObject(content []byte) error {
-	decoder := json.NewDecoder(bytes.NewReader(content))
-	decoder.UseNumber()
-	var object map[string]json.RawMessage
-	if err := decoder.Decode(&object); err != nil {
-		return fmt.Errorf("malformed Xray JSON subscription object: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return fmt.Errorf("malformed Xray JSON subscription object: trailing data")
+	object, err := decodeSubscriptionJSONObject(content)
+	if err != nil {
+		return err
 	}
 	if _, ok := unsupportedClientProviderMessage(object); ok {
 		return fmt.Errorf("unsupported Xray JSON subscription response: provider reports unsupported %s", "client")

@@ -100,6 +100,27 @@ and `delete` mutate user-owned subscription/profile state. Failed update/delete
 must preserve existing state. `delete --keep-profiles` keeps imported profiles.
 `subscription update --json` and `subscription delete --json` are deferred.
 
+### Grouped Remnawave/Xray JSON profiles
+
+Some Remnawave subscriptions return one provider-owned Xray JSON object with
+multiple `outbounds`, provider `routing`, and location selection/balancer rules
+instead of independent single-location profile objects. podlaz imports such an
+object as one subscription-owned `xray-json` grouped profile so duplicate
+location/user identifiers do not collapse or overwrite each other.
+
+Grouped `xray-json` support is intentionally mode-limited:
+
+- `proxy-only` is supported. podlaz preserves provider-owned `outbounds`,
+  `routing`, balancers, stream settings, and selection rules, then replaces
+  provider `inbounds` with podlaz-owned local SOCKS/HTTP listeners at runtime.
+- `tun` is not supported yet. `profile validate --mode tun`, `plan --mode tun`,
+  and `connect --mode tun` must fail before mutation with a clear unsupported
+  grouped-profile diagnostic, because podlaz cannot safely derive one VPN server
+  bypass from provider-owned routing.
+- CLI profile output must not print raw provider Xray JSON, UUIDs, user identity,
+  or generated runtime config. Stored provider source JSON is treated as
+  sensitive profile material and is redacted in human and JSON output.
+
 ```bash
 podlaz status
 ```
@@ -129,7 +150,8 @@ podlaz plan --mode tun <profile-id> [--json]
 ```
 
 Read-only dry-run. Must not start Xray, write runtime config, or mutate host
-networking.
+networking. Grouped `xray-json` profiles support `proxy-only` planning only;
+`plan --mode tun` fails before collecting a host networking snapshot.
 
 ```bash
 podlaz connect [--mode proxy-only|tun] <profile-id>

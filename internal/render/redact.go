@@ -13,6 +13,10 @@ var (
 
 // Redact returns a single-line string safe for default human CLI output.
 func Redact(s string) string {
+	trimmed := strings.TrimSpace(s)
+	if looksLikeStructuredPayload(trimmed) {
+		return "REDACTED"
+	}
 	s = strings.Join(strings.Fields(s), " ")
 	s = urlQueryPattern.ReplaceAllStringFunc(s, func(match string) string {
 		idx := strings.Index(match, "?")
@@ -26,4 +30,12 @@ func Redact(s string) string {
 		return match[:4] + "…" + match[len(match)-4:]
 	})
 	return s
+}
+
+func looksLikeStructuredPayload(s string) bool {
+	if len(s) < 2 {
+		return false
+	}
+	return (strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}")) ||
+		(strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]"))
 }
