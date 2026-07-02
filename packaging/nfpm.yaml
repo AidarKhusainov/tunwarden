@@ -20,7 +20,7 @@ depends:
   - ca-certificates
 
 scripts:
-  preinstall: ./packaging/debian/preinstall
+  preinstall: ./packaging/debian/preinstall.txt
   postinstall: ./packaging/debian/postinstall
   preremove: ./packaging/debian/preremove
   postremove: ./packaging/debian/postremove
