@@ -32,8 +32,8 @@ func TestRunCLIConnectRejectsUnsupportedProfileBeforeDaemon(t *testing.T) {
 			name: "proxy-only unsupported transport",
 			mode: planner.ModeProxyOnly,
 			mutate: func(p profile.Profile) profile.Profile {
-				p.ID = "xhttp-profile"
-				p.Transport = "xhttp"
+				p.ID = "quic-profile"
+				p.Transport = "quic"
 				return p
 			},
 			wantMessage: "unsupported proxy-only VLESS transport",
