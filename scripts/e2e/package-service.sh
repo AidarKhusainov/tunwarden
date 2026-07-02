@@ -132,6 +132,7 @@ test -x /usr/bin/plz || fail "missing /usr/bin/plz"
 test -x /usr/bin/podlazd || fail "missing /usr/bin/podlazd"
 test -f /usr/lib/systemd/system/podlazd.service || fail "missing podlazd.service"
 test -f /usr/lib/sysusers.d/podlaz.conf || fail "missing sysusers contract"
+assert_contains /usr/lib/systemd/system/podlazd.service "Environment=PODLAZ_POLKIT_AUTHORIZATION=required"
 
 log "package first-run service availability"
 sudo -n systemctl daemon-reload
@@ -142,6 +143,7 @@ fi
 SERVICE_TOUCHED=1
 wait_for_installed_service_active
 collect_service_diagnostics installed-service-active
+expect_success installed-status-access podlaz status
 sudo -n systemctl stop podlazd.service
 SERVICE_TOUCHED=0
 

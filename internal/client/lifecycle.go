@@ -39,6 +39,23 @@ func (c LifecycleClient) do(ctx context.Context, operation, path string, payload
 		timeout = defaultLifecycleTimeout
 	}
 
+	lifecycle, err := c.doViaSocket(ctx, socketPath, timeout, operation, path, payload)
+	if err == nil {
+		return lifecycle, nil
+	}
+	if shouldTryAbstractSocket(socketPath, err) {
+		if lifecycle, fallbackErr := c.doViaSocket(ctx, api.AbstractSocketAddress(), timeout, operation, path, payload); fallbackErr == nil {
+			return lifecycle, nil
+		}
+	}
+	return api.LifecycleResponse{}, daemonUnavailableError{
+		detail:           unavailableDetail(socketPath, err),
+		cause:            err,
+		permissionDenied: isPermissionDenied(err),
+	}
+}
+
+func (c LifecycleClient) doViaSocket(ctx context.Context, socketPath string, timeout time.Duration, operation, path string, payload any) (api.LifecycleResponse, error) {
 	var body io.Reader
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
@@ -67,7 +84,7 @@ func (c LifecycleClient) do(ctx context.Context, operation, path string, payload
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return api.LifecycleResponse{}, fmt.Errorf("%w: %s", ErrDaemonUnavailable, unavailableDetail(socketPath, err))
+		return api.LifecycleResponse{}, err
 	}
 	defer resp.Body.Close()
 
