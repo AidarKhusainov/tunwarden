@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AidarKhusainov/podlaz/internal/engine"
 	"github.com/AidarKhusainov/podlaz/internal/profile"
 )
 
@@ -50,6 +51,39 @@ func TestParseSubscriptionContentImportsXrayJSONObject(t *testing.T) {
 	}
 	if p.Server != "json-object.example" || p.Transport != "tcp" || p.Security != "tls" {
 		t.Fatalf("unexpected normalized profile: %#v", p)
+	}
+}
+
+func TestParseSubscriptionContentImportsVLESSRealityXHTTPAsRenderableProxyOnlyProfile(t *testing.T) {
+	format, parsed, err := ParseSubscriptionContent([]byte(remoteXrayConfigObject("00000000-0000-4000-8000-000000000181", "xhttp.edge.invalid", "xhttp-reality", "xhttp", "reality")))
+	if err != nil {
+		t.Fatalf("ParseSubscriptionContent failed: %v", err)
+	}
+	if format != FormatXrayJSON {
+		t.Fatalf("expected format %q, got %q", FormatXrayJSON, format)
+	}
+	if got := len(parsed.Profiles); got != 1 {
+		t.Fatalf("expected 1 profile, got %d", got)
+	}
+	p := parsed.Profiles[0]
+	if p.Source != profile.SourceSubscription || p.Protocol != "vless" || p.Transport != "xhttp" || p.Security != "reality" {
+		t.Fatalf("unexpected xhttp subscription profile: %#v", p)
+	}
+	if p.Server != "xhttp.edge.invalid" || p.Path != "/xhttp" || p.HostHeader != "xhttp.edge.invalid" || p.RealityPublicKey != "public-key" {
+		t.Fatalf("expected xhttp metadata to be preserved, got %#v", p)
+	}
+	if err := engine.ValidateXrayProxyOnlyProfile(p); err != nil {
+		t.Fatalf("expected xhttp subscription profile to be proxy-only renderable: %v", err)
+	}
+	generated, err := engine.GenerateXrayProxyOnlyConfig(p, engine.DefaultXrayProxyOnlyConfigOptions())
+	if err != nil {
+		t.Fatalf("generate xhttp proxy-only config: %v", err)
+	}
+	config := string(generated)
+	for _, want := range []string{`"network": "xhttp"`, `"xhttpSettings"`, `"path": "/xhttp"`, `"host": "xhttp.edge.invalid"`, `"realitySettings"`} {
+		if !strings.Contains(config, want) {
+			t.Fatalf("expected generated xhttp config to contain %s, got %s", want, config)
+		}
 	}
 }
 
@@ -204,43 +238,47 @@ func xrayObjectWithTopLevelField(object, field string) string {
 
 func remoteXrayConfigObject(userID, host, tag, network, security string) string {
 	return fmt.Sprintf(`{
-  "outbounds": [
-    {
-      "protocol": "vless",
-      "tag": %q,
-      "settings": {
-        "vnext": [
-          {
-            "address": %q,
-            "port": 443,
-            "users": [
-              {
-                "id": %q,
-                "encryption": "none"
-              }
-            ]
-          }
-        ]
-      },
-      "streamSettings": {
-        "network": %q,
-        "security": %q,
-        "tlsSettings": {
-          "serverName": %q
-        },
-        "realitySettings": {
-          "serverName": %q,
-          "publicKey": "public-key",
-          "shortId": "abcd"
-        },
-        "grpcSettings": {
-          "serviceName": "svc"
-        },
-        "wsSettings": {
-          "path": "/ws"
-        }
-      }
-    }
-  ]
-}`, tag, host, userID, network, security, host, host)
+   "outbounds": [
+     {
+       "protocol": "vless",
+       "tag": %q,
+       "settings": {
+         "vnext": [
+           {
+             "address": %q,
+             "port": 443,
+             "users": [
+               {
+                 "id": %q,
+                 "encryption": "none"
+               }
+             ]
+           }
+         ]
+       },
+       "streamSettings": {
+         "network": %q,
+         "security": %q,
+         "tlsSettings": {
+           "serverName": %q
+         },
+         "realitySettings": {
+           "serverName": %q,
+           "publicKey": "public-key",
+           "shortId": "abcd"
+         },
+         "grpcSettings": {
+           "serviceName": "svc"
+         },
+         "wsSettings": {
+           "path": "/ws"
+         },
+         "xhttpSettings": {
+           "path": "/xhttp",
+           "host": %q
+         }
+       }
+     }
+   ]
+ }`, tag, host, userID, network, security, host, host, host)
 }
