@@ -12,7 +12,67 @@ import (
 	profilecheck "github.com/AidarKhusainov/podlaz/internal/check"
 	"github.com/AidarKhusainov/podlaz/internal/network/planner"
 	"github.com/AidarKhusainov/podlaz/internal/profile"
+	"github.com/AidarKhusainov/podlaz/internal/status"
 )
+
+func TestRunCLICheckProductionPathStartsProbesAndCleansUpOwnedProxy(t *testing.T) {
+	storePath := t.TempDir() + "/profiles.json"
+	p := testConnectProfile()
+	addCheckTestProfile(t, storePath, p)
+
+	connection := "inactive"
+	connectCalled := false
+	disconnectCalled := false
+	probeCalls := map[string]int{}
+	proxyLine := "listening on 127.0.0.1:1080 (SOCKS), 127.0.0.1:8080 (HTTP)"
+	statusForState := func() status.Report {
+		report := status.Report{Daemon: "running", Service: api.ServiceManual, Connection: connection, Proxy: "inactive", TUN: "disabled"}
+		if connection == "active" {
+			report.Mode = planner.ModeProxyOnly
+			report.ProfileID = p.ID
+			report.ProfileName = p.Name
+			report.Proxy = proxyLine
+			report.RuntimeConfigPath = planner.DefaultRuntimeConfigPath
+		}
+		return report
+	}
+
+	var out bytes.Buffer
+	err := runWithOptions(context.Background(), []string{"check", p.ID, "--target", "telegram"}, &out, options{
+		profileStorePath: storePath,
+		daemonStatus: func(context.Context) (status.Report, error) {
+			return statusForState(), nil
+		},
+		connect: func(_ context.Context, got profile.Profile, mode string) (api.LifecycleResponse, error) {
+			connectCalled = true
+			if got.ID != p.ID || mode != planner.ModeProxyOnly {
+				t.Fatalf("unexpected connect request: profile=%s mode=%s", got.ID, mode)
+			}
+			connection = "active"
+			return api.LifecycleResponse{Connection: "active", Mode: planner.ModeProxyOnly, ProfileID: p.ID, ProfileName: p.Name, Proxy: proxyLine, TUN: "disabled", Routes: "not modified", DNS: "not modified", Firewall: "not modified", RuntimeConfigPath: planner.DefaultRuntimeConfigPath}, nil
+		},
+		disconnect: func(context.Context) (api.LifecycleResponse, error) {
+			disconnectCalled = true
+			connection = "inactive"
+			return api.LifecycleResponse{Connection: "inactive", Proxy: "inactive", TUN: "disabled"}, nil
+		},
+		checkProbes: successfulCheckProbes(probeCalls),
+	})
+	if err != nil {
+		t.Fatalf("check production path failed: %v\n%s", err, out.String())
+	}
+	if !connectCalled || !disconnectCalled {
+		t.Fatalf("expected connect and ownership-checked cleanup, connect=%v disconnect=%v", connectCalled, disconnectCalled)
+	}
+	for _, name := range []string{"server_tcp", "socks", "http"} {
+		if probeCalls[name] == 0 {
+			t.Fatalf("expected %s probe to run, calls=%#v", name, probeCalls)
+		}
+	}
+	if got := out.String(); !strings.Contains(got, "Result: ok") || !strings.Contains(got, "Telegram: reachable") {
+		t.Fatalf("expected successful check output, got %q", got)
+	}
+}
 
 func TestRunCLICheckRendersInjectedProfileReport(t *testing.T) {
 	storePath := t.TempDir() + "/profiles.json"
@@ -136,6 +196,23 @@ func successfulCheckReport(p profile.Profile, targets []profilecheck.Target) pro
 		SOCKSEgress:   profilecheck.OK("socks_egress", "SOCKS egress", 10*time.Millisecond, "HTTP 204"),
 		HTTPEgress:    profilecheck.OK("http_proxy_egress", "HTTP proxy egress", 10*time.Millisecond, "HTTP 204"),
 		Services:      services,
+	}
+}
+
+func successfulCheckProbes(calls map[string]int) checkProbeRunner {
+	return checkProbeRunner{
+		serverTCP: func(context.Context, string, time.Duration) profilecheck.ProbeResult {
+			calls["server_tcp"]++
+			return profilecheck.OK("server_tcp", "Server TCP handshake", time.Millisecond, "tcp connect to profile server")
+		},
+		socks: func(context.Context, profilecheck.Endpoint, profilecheck.Target, time.Duration) profilecheck.ProbeResult {
+			calls["socks"]++
+			return profilecheck.OK("socks_egress", "SOCKS egress", time.Millisecond, "HTTP 204")
+		},
+		httpProxy: func(_ context.Context, _ profilecheck.Endpoint, target profilecheck.Target, _ time.Duration) profilecheck.ProbeResult {
+			calls["http"]++
+			return profilecheck.OK(target.ID, target.DisplayName, time.Millisecond, "HTTP 204")
+		},
 	}
 }
 
