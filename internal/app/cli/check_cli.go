@@ -241,21 +241,24 @@ func runDefaultProfileCheck(ctx context.Context, p profile.Profile, execOpts che
 	} else {
 		markEgressSkipped(&r, "HTTP proxy listener is not available")
 	}
-	if err := cleanupMatchingTemporaryProxy(context.Background(), opts, resp, execOpts.Timeout); err != nil {
+	if err := cleanupMatchingTemporaryProxy(context.Background(), opts, p.ID, resp, execOpts.Timeout); err != nil {
 		r.Warnings = append(r.Warnings, err.Error())
 	}
 	return finalizeProfileCheckReport(r)
 }
 
-func cleanupMatchingTemporaryProxy(ctx context.Context, opts options, started api.LifecycleResponse, timeout time.Duration) error {
+func cleanupMatchingTemporaryProxy(ctx context.Context, opts options, profileID string, started api.LifecycleResponse, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, lifecycleCheckTimeout(timeout))
 	defer cancel()
 	current, err := runDaemonStatus(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("temporary proxy cleanup skipped: verify active connection failed: %w", err)
 	}
-	if current.Connection != "active" || current.Mode != planner.ModeProxyOnly || current.RuntimeConfigPath != started.RuntimeConfigPath || current.Proxy != started.Proxy {
+	if current.Connection != "active" || current.Mode != planner.ModeProxyOnly || current.ProfileID == "" || current.ProfileID != profileID || current.RuntimeConfigPath != started.RuntimeConfigPath || current.Proxy != started.Proxy {
 		return errors.New("temporary proxy cleanup skipped: active connection does not match the check connection")
+	}
+	if started.ProfileID != "" && current.ProfileID != started.ProfileID {
+		return errors.New("temporary proxy cleanup skipped: active connection profile changed")
 	}
 	_, err = runDisconnect(ctx, opts)
 	if err != nil {
