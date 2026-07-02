@@ -49,6 +49,7 @@ type options struct {
 	connect               connectRunner
 	disconnect            disconnectRunner
 	check                 checkRunner
+	checkProbes           checkProbeRunner
 	doctor                func(context.Context) doctor.Report
 	coreDoctor            func(context.Context, string) doctor.Report
 	daemonDoctor          func(context.Context) (doctor.Report, error)
