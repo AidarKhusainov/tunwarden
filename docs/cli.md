@@ -178,6 +178,37 @@ mutate host networking. TUN mode is daemon-owned and transaction-backed.
 deferred.
 
 ```bash
+podlaz check <profile-id> [--target <target-id>] [--timeout <duration>] [--json]
+podlaz check --all [--target <target-id>] [--timeout <duration>] [--json]
+```
+
+Explicit bounded proxy-only profile diagnostics. The command validates profile
+renderability first, measures direct server TCP reachability when the profile
+exposes one server endpoint, uses daemon status to avoid disrupting an already
+active connection, starts temporary proxy-only Xray only through `podlazd` when
+the daemon is inactive, probes local SOCKS/HTTP egress through loopback
+listeners, runs a small documented service target set, and disconnects only the
+temporary proxy connection that the check started.
+
+`check` never mutates TUN devices, routes, DNS, nftables, firewall rules, or host
+resolver files. It does not replace or disconnect an existing active connection.
+Every network probe is bounded by `--timeout` and the default target set is
+conservative. `--all` runs profiles with deterministic output and a small default
+concurrency limit. A non-`ok` check returns exit code `3`.
+
+Supported target ids are `cloudflare`, `github`, `google`, `instagram`,
+`telegram`, and `youtube`. Each target is a best-effort diagnostic probe with a
+known hostname/URL, timeout, expected HTTP/TLS success condition, proxy-side DNS
+resolution, and a privacy note in the target catalog. A successful probe means the
+specific low-impact endpoint was reachable through the proxy path; it does not
+guarantee that the full application behavior works.
+
+`check --json` emits stable JSON with `schema_version`, `status`, `warnings`,
+`errors`, profile metadata, validation result, daemon result, server TCP result,
+proxy startup result, SOCKS/HTTP egress results, and per-service results. Human
+and JSON output use the same redaction rules.
+
+```bash
 podlaz recover
 podlaz recover --execute --yes [--json]
 ```
