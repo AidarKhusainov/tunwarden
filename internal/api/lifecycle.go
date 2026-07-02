@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 const (
@@ -81,14 +82,20 @@ func ValidateConnectRequest(r ConnectRequest) error {
 	if r.Profile.Name == "" {
 		return errors.New("missing profile.name field")
 	}
+	if r.Profile.Protocol == "" {
+		return errors.New("missing profile.protocol field")
+	}
+	if strings.EqualFold(strings.TrimSpace(r.Profile.Protocol), "xray-json") {
+		if strings.TrimSpace(r.Profile.RealitySpiderX) == "" {
+			return errors.New("missing profile.reality_spider_x field")
+		}
+		return nil
+	}
 	if r.Profile.Server == "" {
 		return errors.New("missing profile.server field")
 	}
 	if r.Profile.Port == 0 {
 		return errors.New("missing profile.port field")
-	}
-	if r.Profile.Protocol == "" {
-		return errors.New("missing profile.protocol field")
 	}
 	return nil
 }

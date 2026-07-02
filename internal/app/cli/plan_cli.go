@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/AidarKhusainov/podlaz/internal/engine"
 	"github.com/AidarKhusainov/podlaz/internal/network/planner"
 	netsnapshot "github.com/AidarKhusainov/podlaz/internal/network/snapshot"
 	"github.com/AidarKhusainov/podlaz/internal/profile"
@@ -39,6 +40,9 @@ func runPlanCommand(ctx context.Context, args []string, stdout io.Writer, opts o
 		}
 		renderProxyOnlyPlan(stdout, plan)
 		return nil
+	}
+	if err := engine.ValidateXrayTunProfile(p); err != nil {
+		return usageError("%s", err.Error())
 	}
 	collect := opts.systemSnapshot
 	if collect == nil {
